@@ -9,8 +9,12 @@ use jni::objects::{JThrowable, JValue};
 use jni::sys::jobject;
 
 use device_transfer::Error as DeviceTransferError;
-use libsignal_protocol::utils::traits::serde::RefSerializable;
-use libsignal_protocol::*;
+use libsignal_protocol::{
+    protocol::{CiphertextMessage, CiphertextMessageType},
+    sender_keys::SenderKeyRecord,
+    state::{PreKeyRecord, SessionRecord, SignedPreKeyRecord},
+    *,
+};
 use signal_crypto::Error as SignalCryptoError;
 use std::convert::{TryFrom, TryInto};
 use std::error::Error;

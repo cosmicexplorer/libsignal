@@ -4,6 +4,12 @@
 //
 
 use super::*;
+use libsignal_protocol::{
+    curve::{PrivateKey, PublicKey},
+    sender_keys::SenderKeyRecord,
+    state::{PreKeyRecord, SessionRecord, SignedPreKeyRecord},
+};
+
 use async_trait::async_trait;
 use libc::{c_int, c_uint, c_void};
 use uuid::Uuid;

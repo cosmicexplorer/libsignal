@@ -6,13 +6,18 @@
 mod support;
 use support::*;
 
+use crate::{
+    sealed_sender::{MessageCodec, SealedSenderV1},
+    utils::traits::{message::SignatureVerifiable, serde::Deserializable},
+};
+
 use futures::executor::block_on;
 use libsignal_protocol::utils::traits::{
     message::SignatureVerifiable,
     serde::{Deserializable, RefSerializable},
 };
 use libsignal_protocol::*;
-use rand::rngs::OsRng;
+use rand::{rngs::OsRng, CryptoRng, Rng};
 use std::convert::TryFrom;
 use uuid::Uuid;
 
@@ -108,11 +113,17 @@ fn test_sender_cert() -> Result<(), SignalProtocolError> {
     );
 
     assert_eq!(
-        sender_cert.verify_signature(ServerSignature::new(trust_root.public_key, expires))?,
+        sender_cert.verify_signature(ServerSignature {
+            trust_root: trust_root.public_key,
+            validation_time: expires
+        })?,
         true
     );
     assert_eq!(
-        sender_cert.verify_signature(ServerSignature::new(trust_root.public_key, expires + 1))?,
+        sender_cert.verify_signature(ServerSignature {
+            trust_root: trust_root.public_key,
+            validation_time: expires + 1
+        })?,
         false
     ); // expired
 
@@ -127,7 +138,10 @@ fn test_sender_cert() -> Result<(), SignalProtocolError> {
         match cert {
             Ok(cert) => {
                 assert_eq!(
-                    cert.verify_signature(ServerSignature::new(trust_root.public_key, expires))?,
+                    cert.verify_signature(ServerSignature {
+                        trust_root: trust_root.public_key,
+                        validation_time: expires
+                    })?,
                     false
                 );
             }
@@ -145,6 +159,34 @@ fn test_sender_cert() -> Result<(), SignalProtocolError> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+async fn sealed_sender_v1_encrypt<R: Rng + CryptoRng>(
+    destination: &ProtocolAddress,
+    sender_cert: &SenderCertificate,
+    ptext: &[u8],
+    session_store: &mut dyn SessionStore,
+    identity_store: &mut dyn IdentityKeyStore,
+    ctx: Context,
+    rng: &mut R,
+) -> crate::error::Result<Vec<u8>> {
+    let message = message_encrypt(ptext, destination, session_store, identity_store, ctx).await?;
+    let usmc = UnidentifiedSenderMessageContent::new(
+        message.message_type(),
+        sender_cert.clone(),
+        message.serialize().to_vec(),
+        ContentHint::Default,
+        None,
+    );
+    SealedSenderV1::encrypt::<R>(
+        &Box::new(destination.clone()),
+        &usmc,
+        identity_store,
+        ctx,
+        rng,
+    )
+    .await
 }
 
 #[test]
@@ -200,7 +242,7 @@ fn test_sealed_sender() -> Result<(), SignalProtocolError> {
         );
 
         let alice_ptext = vec![1, 2, 3, 23, 99];
-        let alice_ctext = sealed_sender_encrypt(
+        let alice_ctext = sealed_sender_v1_encrypt(
             &bob_uuid_address,
             &sender_cert,
             &alice_ptext,
@@ -233,7 +275,7 @@ fn test_sealed_sender() -> Result<(), SignalProtocolError> {
 
         // Now test but with an expired cert:
 
-        let alice_ctext = sealed_sender_encrypt(
+        let alice_ctext = sealed_sender_v1_encrypt(
             &bob_uuid_address,
             &sender_cert,
             &alice_ptext,
@@ -271,7 +313,7 @@ fn test_sealed_sender() -> Result<(), SignalProtocolError> {
 
         // Now test but try to verify using some other trust root
 
-        let alice_ctext = sealed_sender_encrypt(
+        let alice_ctext = sealed_sender_v1_encrypt(
             &bob_uuid_address,
             &sender_cert,
             &alice_ptext,

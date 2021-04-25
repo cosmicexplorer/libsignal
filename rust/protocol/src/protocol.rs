@@ -7,11 +7,12 @@
 
 use crate::{
     consts::{
-        types::{Counter, VersionType},
+        types::{as_key_bytes, Counter, KeyBytes, VersionType},
         CIPHERTEXT_MESSAGE_CURRENT_VERSION,
     },
     curve::{PrivateKey, PublicKey, PublicKeySignature, SIGNATURE_LENGTH},
     proto,
+    sealed_sender::ProtoMessageType,
     sender_keys::ChainId,
     state::PreKeyId,
     utils::{
@@ -38,7 +39,6 @@ use uuid::Uuid;
 /// Sub-objects required to create a message in a Double Ratchet chain.
 pub mod chain_message {
     use crate::{consts::types::Counter, IdentityKey};
-    use arrayref::array_ref;
 
     /// Pair used to disambiguate sender and receiver keys for MAC validation.
     #[derive(Debug, Copy, Clone)]
@@ -85,6 +85,48 @@ pub struct SignalMessage {
     counters: SignalIncrementingCounters,
     ciphertext: Box<[u8]>,
     serialized: Box<[u8]>,
+}
+
+impl<'a> RefSerializable<'a> for SignalMessage {
+    #[inline]
+    fn serialize(&'a self) -> &'a [u8] {
+        &*self.serialized
+    }
+}
+
+impl<'a> SignalProtocolMessage<'a> for SignalMessage {
+    #[inline]
+    fn message_version(&self) -> VersionType {
+        self.message_version
+    }
+}
+
+impl SequencedMessage for SignalMessage {
+    type Count = crate::consts::types::Counter;
+
+    #[inline]
+    fn counter(&self) -> Self::Count {
+        self.counters.counter
+    }
+}
+
+impl<'a> SignatureVerifiable<MACSignature<'a>> for SignalMessage {
+    fn verify_signature(&self, signature: MACSignature<'a>) -> Result<bool> {
+        let our_mac = &Self::compute_mac(
+            signature,
+            &self.serialized[..self.serialized.len() - Self::MAC_LENGTH],
+        );
+        let their_mac = &self.serialized[self.serialized.len() - Self::MAC_LENGTH..];
+        let result: bool = our_mac.ct_eq(their_mac).into();
+        if !result {
+            log::error!(
+                "Bad Mac! Their Mac: {} Our Mac: {}",
+                hex::encode(their_mac),
+                hex::encode(our_mac)
+            );
+        }
+        Ok(result)
+    }
 }
 
 impl SignalMessage {
@@ -148,48 +190,6 @@ impl SignalMessage {
         let mut result = [0u8; Self::MAC_LENGTH];
         result.copy_from_slice(&mac.finalize().into_bytes()[..Self::MAC_LENGTH]);
         result
-    }
-}
-
-impl<'a> RefSerializable<'a> for SignalMessage {
-    #[inline]
-    fn serialize(&'a self) -> &'a [u8] {
-        &*self.serialized
-    }
-}
-
-impl<'a> SignalProtocolMessage<'a> for SignalMessage {
-    #[inline]
-    fn message_version(&self) -> VersionType {
-        self.message_version
-    }
-}
-
-impl SequencedMessage for SignalMessage {
-    type Count = crate::consts::types::Counter;
-
-    #[inline]
-    fn counter(&self) -> Self::Count {
-        self.counters.counter
-    }
-}
-
-impl<'a> SignatureVerifiable<MACSignature<'a>> for SignalMessage {
-    fn verify_signature(&self, signature: MACSignature<'a>) -> Result<bool> {
-        let our_mac = &Self::compute_mac(
-            signature,
-            &self.serialized[..self.serialized.len() - Self::MAC_LENGTH],
-        );
-        let their_mac = &self.serialized[self.serialized.len() - Self::MAC_LENGTH..];
-        let result: bool = our_mac.ct_eq(their_mac).into();
-        if !result {
-            log::error!(
-                "Bad Mac! Their Mac: {} Our Mac: {}",
-                hex::encode(their_mac),
-                hex::encode(our_mac)
-            );
-        }
-        Ok(result)
     }
 }
 
@@ -397,6 +397,46 @@ impl TryFrom<&[u8]> for PreKeySignalMessage {
     }
 }
 
+/// The types of messages with ciphertext which are seen in the X3DH and Double Ratchet protocols.
+pub enum CiphertextMessage {
+    SignalMessage(SignalMessage),
+    PreKeySignalMessage(PreKeySignalMessage),
+    SenderKeyMessage(SenderKeyMessage),
+}
+
+/// C-like enum to convert [CiphertextMessage] to a [u8].
+#[derive(Copy, Clone, Eq, PartialEq, Debug, num_enum::TryFromPrimitive)]
+#[repr(u8)]
+pub enum CiphertextMessageType {
+    /// Whisper = 2
+    Whisper = 2,
+    /// PreKey = 3
+    PreKey = 3,
+    /// SenderKey = 7
+    // Further cases should line up with Envelope.Type (proto), even though old cases don't.
+    SenderKey = 7,
+}
+
+impl CiphertextMessage {
+    pub fn message_type(&self) -> CiphertextMessageType {
+        match self {
+            CiphertextMessage::SignalMessage(_) => CiphertextMessageType::Whisper,
+            CiphertextMessage::PreKeySignalMessage(_) => CiphertextMessageType::PreKey,
+            CiphertextMessage::SenderKeyMessage(_) => CiphertextMessageType::SenderKey,
+        }
+    }
+}
+
+impl<'a> RefSerializable<'a> for CiphertextMessage {
+    fn serialize(&'a self) -> &'a [u8] {
+        match self {
+            CiphertextMessage::SignalMessage(x) => x.serialize(),
+            CiphertextMessage::PreKeySignalMessage(x) => x.serialize(),
+            CiphertextMessage::SenderKeyMessage(x) => x.serialize(),
+        }
+    }
+}
+
 /// This is the initial [`post-X3DH message`] of the X3DH specification.
 ///
 /// [`post-X3DH message`]: https://signal.org/docs/specifications/x3dh/#sending-the-initial-message
@@ -553,7 +593,7 @@ pub struct SenderKeyDistributionMessage {
     distribution_id: Uuid,
     chain_id: ChainId,
     iteration: Counter,
-    chain_key: [u8; 32],
+    chain_key: KeyBytes,
     signing_key: PublicKey,
     serialized: Box<[u8]>,
 }
@@ -577,7 +617,7 @@ impl SenderKeyDistributionMessage {
         distribution_id: Uuid,
         chain_id: ChainId,
         iteration: Counter,
-        chain_key: [u8; 32],
+        chain_key: KeyBytes,
         signing_key: PublicKey,
     ) -> Self {
         let proto_message = proto::wire::SenderKeyDistributionMessage {
@@ -618,8 +658,8 @@ impl SenderKeyDistributionMessage {
     }
 
     #[inline]
-    pub fn chain_key(&self) -> [u8; 32] {
-        self.chain_key
+    pub fn chain_key(&self) -> &KeyBytes {
+        &self.chain_key
     }
 
     #[inline]
@@ -686,10 +726,36 @@ impl TryFrom<&[u8]> for SenderKeyDistributionMessage {
             distribution_id,
             chain_id,
             iteration,
-            chain_key: *array_ref![&chain_key, 0, 32],
+            chain_key: *as_key_bytes(&chain_key),
             signing_key,
             serialized: Box::from(value),
         })
+    }
+}
+
+impl From<ProtoMessageType> for CiphertextMessageType {
+    fn from(message_type: ProtoMessageType) -> Self {
+        let result = match message_type {
+            ProtoMessageType::Message => Self::Whisper,
+            ProtoMessageType::PrekeyMessage => Self::PreKey,
+            ProtoMessageType::SenderkeyMessage => Self::SenderKey,
+        };
+        // Keep raw values in sync from now on, for efficient codegen.
+        assert!(result == Self::PreKey || message_type as i32 == result as i32);
+        result
+    }
+}
+
+impl From<CiphertextMessageType> for ProtoMessageType {
+    fn from(message_type: CiphertextMessageType) -> Self {
+        let result = match message_type {
+            CiphertextMessageType::PreKey => Self::PrekeyMessage,
+            CiphertextMessageType::Whisper => Self::Message,
+            CiphertextMessageType::SenderKey => Self::SenderkeyMessage,
+        };
+        // Keep raw values in sync from now on, for efficient codegen.
+        assert!(result == Self::PrekeyMessage || message_type as i32 == result as i32);
+        result
     }
 }
 
@@ -730,7 +796,7 @@ mod tests {
                     sender: sender_identity_key_pair.public_key.into(),
                     receiver: receiver_identity_key_pair.public_key.into(),
                 },
-                mac_key.as_ref(),
+                mac_key,
             ),
         )
     }

@@ -1,5 +1,5 @@
 //
-// Copyright 2020-2021 Signal Messenger, LLC.
+// Copyright 2020, 2021 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
@@ -44,7 +44,7 @@ fn test_basic_prekey_v3() -> Result<(), SignalProtocolError> {
             Some((pre_key_id, bob_pre_key_pair.public_key)), // pre key
             signed_pre_key_id,                               // signed pre key id
             bob_signed_pre_key_pair.public_key,
-            bob_signed_pre_key_signature,
+            *bob_signed_pre_key_signature,
             *bob_store.get_identity_key_pair(None).await?.identity_key(),
         );
 
@@ -98,7 +98,7 @@ fn test_basic_prekey_v3() -> Result<(), SignalProtocolError> {
                     signed_pre_key_id,
                     /*timestamp*/ 42,
                     &bob_signed_pre_key_pair,
-                    &bob_signed_pre_key_signature,
+                    bob_signed_pre_key_signature.as_ref(),
                 ),
                 None,
             )
@@ -164,7 +164,7 @@ fn test_basic_prekey_v3() -> Result<(), SignalProtocolError> {
             Some((pre_key_id + 1, bob_pre_key_pair.public_key)), // pre key,
             signed_pre_key_id + 1,
             bob_signed_pre_key_pair.public_key,
-            bob_signed_pre_key_signature,
+            *bob_signed_pre_key_signature,
             *bob_store.get_identity_key_pair(None).await?.identity_key(),
         );
 
@@ -182,7 +182,7 @@ fn test_basic_prekey_v3() -> Result<(), SignalProtocolError> {
                     signed_pre_key_id + 1,
                     /*timestamp*/ 42,
                     &bob_signed_pre_key_pair,
-                    &bob_signed_pre_key_signature,
+                    bob_signed_pre_key_signature.as_ref(),
                 ),
                 None,
             )
@@ -234,7 +234,7 @@ fn test_basic_prekey_v3() -> Result<(), SignalProtocolError> {
             Some((pre_key_id, bob_pre_key_pair.public_key)), // pre key
             signed_pre_key_id,
             bob_signed_pre_key_pair.public_key,
-            bob_signed_pre_key_signature,
+            *bob_signed_pre_key_signature,
             *alice_store
                 .get_identity_key_pair(None)
                 .await?
@@ -288,7 +288,7 @@ fn chain_jump_over_limit() -> Result<(), SignalProtocolError> {
             Some((pre_key_id, bob_pre_key_pair.public_key)), // pre key
             signed_pre_key_id,                               // signed pre key id
             bob_signed_pre_key_pair.public_key,
-            bob_signed_pre_key_signature,
+            *bob_signed_pre_key_signature,
             *bob_store.get_identity_key_pair(None).await?.identity_key(),
         );
 
@@ -316,7 +316,7 @@ fn chain_jump_over_limit() -> Result<(), SignalProtocolError> {
                     signed_pre_key_id,
                     /*timestamp*/ 42,
                     &bob_signed_pre_key_pair,
-                    &bob_signed_pre_key_signature,
+                    bob_signed_pre_key_signature.as_ref(),
                 ),
                 None,
             )
@@ -375,7 +375,7 @@ fn chain_jump_over_limit_with_self() -> Result<(), SignalProtocolError> {
             Some((pre_key_id, a2_pre_key_pair.public_key)), // pre key
             signed_pre_key_id,                              // signed pre key id
             a2_signed_pre_key_pair.public_key,
-            a2_signed_pre_key_signature,
+            *a2_signed_pre_key_signature,
             *a2_store.get_identity_key_pair(None).await?.identity_key(),
         );
 
@@ -403,7 +403,7 @@ fn chain_jump_over_limit_with_self() -> Result<(), SignalProtocolError> {
                     signed_pre_key_id,
                     /*timestamp*/ 42,
                     &a2_signed_pre_key_pair,
-                    &a2_signed_pre_key_signature,
+                    a2_signed_pre_key_signature.as_ref(),
                 ),
                 None,
             )
@@ -473,7 +473,7 @@ fn test_bad_signed_pre_key_signature() -> Result<(), SignalProtocolError> {
                 Some((pre_key_id, bob_pre_key_pair.public_key)),
                 signed_pre_key_id,
                 bob_signed_pre_key_pair.public_key,
-                *array_ref![&bad_signature, 0, 64],
+                *as_signature_bytes(&bad_signature),
                 *bob_store.get_identity_key_pair(None).await?.identity_key(),
             );
 
@@ -497,7 +497,7 @@ fn test_bad_signed_pre_key_signature() -> Result<(), SignalProtocolError> {
             Some((pre_key_id, bob_pre_key_pair.public_key)),
             signed_pre_key_id,
             bob_signed_pre_key_pair.public_key,
-            *array_ref![&bob_signed_pre_key_signature, 0, 64],
+            *as_signature_bytes(&bob_signed_pre_key_signature),
             *bob_store.get_identity_key_pair(None).await?.identity_key(),
         );
 
@@ -547,7 +547,7 @@ fn repeat_bundle_message_v3() -> Result<(), SignalProtocolError> {
             Some((pre_key_id, bob_pre_key_pair.public_key)), // pre key
             signed_pre_key_id,                               // signed pre key id
             bob_signed_pre_key_pair.public_key,
-            bob_signed_pre_key_signature,
+            *bob_signed_pre_key_signature,
             *bob_store.get_identity_key_pair(None).await?.identity_key(),
         );
 
@@ -606,7 +606,7 @@ fn repeat_bundle_message_v3() -> Result<(), SignalProtocolError> {
                     signed_pre_key_id,
                     /*timestamp*/ 42,
                     &bob_signed_pre_key_pair,
-                    &bob_signed_pre_key_signature,
+                    bob_signed_pre_key_signature.as_ref(),
                 ),
                 None,
             )
@@ -680,7 +680,7 @@ fn bad_message_bundle() -> Result<(), SignalProtocolError> {
             Some((pre_key_id, bob_pre_key_pair.public_key)),
             signed_pre_key_id, // signed pre key id
             bob_signed_pre_key_pair.public_key,
-            bob_signed_pre_key_signature,
+            *bob_signed_pre_key_signature.as_ref(),
             *bob_store.get_identity_key_pair(None).await?.identity_key(),
         );
 
@@ -708,7 +708,7 @@ fn bad_message_bundle() -> Result<(), SignalProtocolError> {
                     signed_pre_key_id,
                     /*timestamp*/ 42,
                     &bob_signed_pre_key_pair,
-                    &bob_signed_pre_key_signature,
+                    &*bob_signed_pre_key_signature.as_ref(),
                 ),
                 None,
             )
@@ -798,7 +798,7 @@ fn optional_one_time_prekey() -> Result<(), SignalProtocolError> {
             None,              // no pre key
             signed_pre_key_id, // signed pre key id
             bob_signed_pre_key_pair.public_key,
-            bob_signed_pre_key_signature,
+            *bob_signed_pre_key_signature,
             *bob_store.get_identity_key_pair(None).await?.identity_key(),
         );
 
@@ -841,7 +841,7 @@ fn optional_one_time_prekey() -> Result<(), SignalProtocolError> {
                     signed_pre_key_id,
                     /*timestamp*/ 42,
                     &bob_signed_pre_key_pair,
-                    &bob_signed_pre_key_signature,
+                    bob_signed_pre_key_signature.as_ref(),
                 ),
                 None,
             )

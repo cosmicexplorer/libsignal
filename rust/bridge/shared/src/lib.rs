@@ -3,6 +3,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
+//! JS (node), JVM, and C ABI wrappers for the Signal Protocol.
+
 #![allow(clippy::missing_safety_doc)]
 #![deny(clippy::unwrap_used)]
 #![feature(min_const_generics)]
@@ -28,6 +30,6 @@ mod support;
 pub mod crypto;
 pub mod protocol;
 
-// Desktop does not make use of device transfer certificates
+// Desktop does not make use of device transfer certificates.
 #[cfg(any(feature = "jni", feature = "ffi"))]
 pub mod device_transfer;

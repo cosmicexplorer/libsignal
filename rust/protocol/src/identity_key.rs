@@ -5,10 +5,14 @@
 
 //! Wrappers over identity primitives from [crate::curve].
 
-use crate::proto;
 use crate::{
-    utils::traits::serde::{Deserializable, Serializable},
-    KeyPair, PrivateKey, PublicKey, Result, SignalProtocolError,
+    curve::{KeyPair, PrivateKey, PublicKey},
+    proto,
+    utils::{
+        unwrap::no_encoding_error,
+        traits::serde::{Deserializable, Serializable},
+    },
+    Result, SignalProtocolError,
 };
 
 use rand::{CryptoRng, Rng};
@@ -17,7 +21,7 @@ use std::convert::TryFrom;
 use prost::Message;
 
 /// Wrapper for [PublicKey].
-#[derive(Debug, PartialOrd, Ord, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialOrd, Ord, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct IdentityKey {
     public_key: PublicKey,
 }
@@ -35,6 +39,7 @@ impl IdentityKey {
 }
 
 impl Serializable<Box<[u8]>> for IdentityKey {
+    #[inline]
     fn serialize(&self) -> Box<[u8]> {
         self.public_key.serialize()
     }
@@ -62,7 +67,7 @@ impl From<PublicKey> for IdentityKey {
 }
 
 /// Wrapper for [KeyPair].
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub struct IdentityKeyPair {
     identity_key: IdentityKey,
     private_key: PrivateKey,
@@ -111,10 +116,18 @@ impl Serializable<Box<[u8]>> for IdentityKeyPair {
         };
         let mut result = Vec::new();
 
-        // prost documents the only possible encoding error is if there is insufficient
-        // space, which is not a problem when it is allowed to encode into a Vec
-        structure.encode(&mut result).expect("No encoding error");
+        no_encoding_error(structure.encode(&mut result));
         result.into_boxed_slice()
+    }
+}
+
+impl Deserializable for IdentityKeyPair {
+    fn deserialize(value: &[u8]) -> Result<Self> {
+        let structure = proto::storage::IdentityKeyPairStructure::decode(value)?;
+        Ok(Self {
+            identity_key: IdentityKey::try_from(&structure.public_key[..])?,
+            private_key: PrivateKey::deserialize(&structure.private_key)?,
+        })
     }
 }
 
@@ -122,11 +135,7 @@ impl TryFrom<&[u8]> for IdentityKeyPair {
     type Error = SignalProtocolError;
 
     fn try_from(value: &[u8]) -> Result<Self> {
-        let structure = proto::storage::IdentityKeyPairStructure::decode(value)?;
-        Ok(Self {
-            identity_key: IdentityKey::try_from(&structure.public_key[..])?,
-            private_key: PrivateKey::deserialize(&structure.private_key)?,
-        })
+        Self::deserialize(value)
     }
 }
 

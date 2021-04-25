@@ -4,21 +4,33 @@
 //
 
 use libsignal_bridge_macros::*;
-use libsignal_protocol::*;
 use libsignal_protocol::{
-    consts::byte_lengths::SIGNATURE_LENGTH,
+    consts::types::{as_key_bytes, as_signature_bytes},
+    curve::{KeyPair, PrivateKey, PublicKey, PublicKeySignature},
     error::Result,
-    protocol::chain_message::{MACPair, MACSignature, SignalIncrementingCounters},
+    fingerprint::ScannableFingerprint,
+    group_cipher::{
+        create_sender_key_distribution_message, process_sender_key_distribution_message,
+    },
+    protocol::{
+        chain_message::{MACPair, MACSignature, SignalIncrementingCounters, MAC_KEY_LENGTH},
+        CiphertextMessage, CiphertextMessageType,
+    },
+    sender_keys::SenderKeyRecord,
+    session::process_prekey_bundle,
+    session_cipher::message_encrypt,
+    state::{PreKeyBundle, PreKeyRecord, SessionRecord, SignedPreKeyRecord},
     utils::traits::{
         message::{SequencedMessage, SignalProtocolMessage, SignatureVerifiable},
-        serde::{Deserializable, RefSerializable, Serializable},
+        serde::{Deserializable, Serializable},
     },
+    *,
 };
 
-use arrayref::array_ref;
 use static_assertions::const_assert_eq;
-use std::convert::TryFrom;
 use uuid::Uuid;
+
+use std::convert::TryFrom;
 
 use crate::support::*;
 use crate::*;
@@ -46,12 +58,12 @@ bridge_handle!(SealedSenderDecryptionResult, ffi = false, jni = false);
 fn HKDF_DeriveSecrets<E: Env>(
     env: E,
     output_length: u32,
-    version: u32,
+    version: u8,
     ikm: &[u8],
     label: &[u8],
     salt: Option<&[u8]>,
 ) -> Result<E::Buffer> {
-    let kdf = HKDF::new(version)?;
+    let kdf = HKDF::new_from_version(version)?;
     let buffer = match salt {
         Some(salt) => kdf.derive_salted_secrets(ikm, salt, label, output_length as usize),
         None => kdf.derive_secrets(ikm, label, output_length as usize),
@@ -63,12 +75,12 @@ fn HKDF_DeriveSecrets<E: Env>(
 #[bridge_fn_void(jni = false, node = false)]
 fn HKDF_Derive(
     output: &mut [u8],
-    version: u32,
+    version: u8,
     ikm: &[u8],
     label: &[u8],
     salt: &[u8],
 ) -> Result<()> {
-    let kdf = HKDF::new(version)?;
+    let kdf = HKDF::new_from_version(version)?;
     let kdf_output = kdf.derive_salted_secrets(ikm, salt, label, output.len());
     output.copy_from_slice(&kdf_output);
     Ok(())
@@ -114,7 +126,7 @@ fn ECPublicKey_Compare(key1: &PublicKey, key2: &PublicKey) -> i32 {
 fn ECPublicKey_Verify(key: &PublicKey, message: &[u8], signature: &[u8]) -> Result<bool> {
     key.verify_signature(PublicKeySignature {
         message,
-        signature: array_ref![signature, 0, SIGNATURE_LENGTH],
+        signature: as_signature_bytes(signature),
     })
 }
 
@@ -212,7 +224,7 @@ fn NumericFingerprintGenerator_New(
 
 #[bridge_fn_buffer(jni = "NumericFingerprintGenerator_1GetScannableEncoding")]
 fn Fingerprint_ScannableEncoding<E: Env>(env: E, obj: &Fingerprint) -> Result<E::Buffer> {
-    Ok(env.buffer(obj.scannable.serialize()?))
+    Ok(env.buffer(obj.scannable.serialize()))
 }
 
 bridge_get!(
@@ -278,7 +290,7 @@ fn SignalMessage_VerifyMac(
             sender: IdentityKey::new(*sender_identity_key),
             receiver: IdentityKey::new(*receiver_identity_key),
         },
-        &mac_key,
+        mac_key,
     ))
 }
 
@@ -445,7 +457,7 @@ fn SenderKeyDistributionMessage_New(
         distribution_id,
         chain_id,
         iteration,
-        *array_ref![chainkey, 0, 32],
+        *as_key_bytes(chainkey.into()),
         *pk,
     ))
 }
@@ -486,7 +498,7 @@ fn PreKeyBundle_New(
         prekey,
         signed_prekey_id,
         *signed_prekey,
-        *array_ref![signed_prekey_signature, 0, 64],
+        *as_signature_bytes(signed_prekey_signature),
         identity_key,
     ))
 }
@@ -591,7 +603,10 @@ fn SenderCertificate_Validate(
     key: &PublicKey,
     time: u64,
 ) -> Result<bool> {
-    cert.verify_signature(ServerSignature::new(*key, time))
+    cert.verify_signature(ServerSignature {
+        trust_root: *key,
+        validation_time: time,
+    })
 }
 
 #[bridge_fn]
@@ -771,9 +786,10 @@ fn SessionRecord_FromSingleSessionState(session_state: &[u8]) -> Result<SessionR
     SessionRecord::from_single_session_state(session_state)
 }
 
-// For historical reasons Android assumes this function will return zero if there is no session state
+/// For historical reasons, Android assumes this function will return zero if there is no
+/// session state.
 #[bridge_fn(ffi = false, node = false)]
-fn SessionRecord_GetSessionVersion(s: &SessionRecord) -> Result<u32> {
+fn SessionRecord_GetSessionVersion(s: &SessionRecord) -> Result<u8> {
     match s.session_version() {
         Ok(v) => Ok(v.into()),
         Err(SignalProtocolError::InvalidState(_, _)) => Ok(0),

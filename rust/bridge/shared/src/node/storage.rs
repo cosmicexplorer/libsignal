@@ -4,6 +4,11 @@
 //
 
 use super::*;
+use libsignal_protocol::{
+    curve::{PrivateKey, PublicKey},
+    sender_keys::SenderKeyRecord,
+    state::{PreKeyRecord, SessionRecord, SignedPreKeyRecord},
+};
 
 use async_trait::async_trait;
 use signal_neon_futures::*;

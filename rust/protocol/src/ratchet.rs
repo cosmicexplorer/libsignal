@@ -3,32 +3,38 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-//! Initialize a [Double Ratchet] chain.
+//! Create a session of the [Double Ratchet] algorithm.
 //!
 //! [Double Ratchet]: https://signal.org/docs/specifications/doubleratchet/#initialization
 
-mod keys;
-mod params;
+pub mod keys;
+pub mod params;
 
-pub use self::keys::{ChainKey, MessageKeys, RootKey};
-pub use self::params::{AliceSignalProtocolParameters, BobSignalProtocolParameters};
+use self::keys::{ChainKey, RootKey};
+use self::params::{
+    AliceSignalProtocolParameters, AliceSpecificParameters, BobSignalProtocolParameters,
+    BobSpecificParameters, SignalProtocolParametersBase,
+};
 
-use crate::consts::CIPHERTEXT_MESSAGE_CURRENT_VERSION;
-use crate::proto::storage::SessionStructure;
-use crate::state::SessionState;
-use crate::utils::traits::serde::Serializable;
-use crate::{KeyPair, Result, SessionRecord};
+use crate::{
+    consts::{byte_lengths::KEY_LENGTH, types::as_key_bytes, CIPHERTEXT_MESSAGE_CURRENT_VERSION},
+    curve::KeyPair,
+    kdf::{HKDF, KDF},
+    proto::storage::SessionStructure,
+    state::{SessionRecord, SessionState},
+    utils::traits::serde::Serializable,
+    Result,
+};
 
-use arrayref::array_ref;
 use rand::{CryptoRng, Rng};
 
 fn derive_keys(secret_input: &[u8]) -> Result<(RootKey, ChainKey)> {
-    let kdf = crate::kdf::HKDF::new_current();
+    let kdf = HKDF::new();
 
     let secrets = kdf.derive_secrets(secret_input, b"WhisperText", 64);
 
-    let root_key = RootKey::new(kdf, array_ref![&secrets, 0, 32]);
-    let chain_key = ChainKey::new(kdf, array_ref![&secrets, 32, 32], 0);
+    let root_key = RootKey::new(kdf, as_key_bytes(&secrets[..KEY_LENGTH]));
+    let chain_key = ChainKey::new(kdf, as_key_bytes(&secrets[KEY_LENGTH..]), 0);
 
     Ok((root_key, chain_key))
 }
@@ -48,22 +54,31 @@ pub(crate) fn initialize_alice_session<R: Rng + CryptoRng>(
     let our_base_private_key = parameters.our_base_key_pair().private_key;
 
     secrets.extend_from_slice(
-        &parameters
+        parameters
             .our_identity_key_pair()
             .private_key()
-            .calculate_agreement(parameters.their_signed_pre_key()),
+            .calculate_agreement(parameters.their_signed_pre_key())
+            .as_ref(),
     );
 
     secrets.extend_from_slice(
-        &our_base_private_key.calculate_agreement(parameters.their_identity_key().public_key()),
+        our_base_private_key
+            .calculate_agreement(parameters.their_identity_key().public_key())
+            .as_ref(),
     );
 
     secrets.extend_from_slice(
-        &our_base_private_key.calculate_agreement(parameters.their_signed_pre_key()),
+        our_base_private_key
+            .calculate_agreement(parameters.their_signed_pre_key())
+            .as_ref(),
     );
 
     if let Some(their_one_time_prekey) = parameters.their_one_time_pre_key() {
-        secrets.extend_from_slice(&our_base_private_key.calculate_agreement(their_one_time_prekey));
+        secrets.extend_from_slice(
+            our_base_private_key
+                .calculate_agreement(their_one_time_prekey)
+                .as_ref(),
+        );
     }
 
     let (root_key, chain_key) = derive_keys(&secrets)?;
@@ -106,31 +121,35 @@ pub(crate) fn initialize_bob_session(
     secrets.extend_from_slice(&[0xFFu8; 32]); // "discontinuity bytes"
 
     secrets.extend_from_slice(
-        &parameters
+        parameters
             .our_signed_pre_key_pair()
             .private_key
-            .calculate_agreement(parameters.their_identity_key().public_key()),
+            .calculate_agreement(parameters.their_identity_key().public_key())
+            .as_ref(),
     );
 
     secrets.extend_from_slice(
-        &parameters
+        parameters
             .our_identity_key_pair()
             .private_key()
-            .calculate_agreement(parameters.their_base_key()),
+            .calculate_agreement(parameters.their_base_key())
+            .as_ref(),
     );
 
     secrets.extend_from_slice(
-        &parameters
+        parameters
             .our_signed_pre_key_pair()
             .private_key
-            .calculate_agreement(parameters.their_base_key()),
+            .calculate_agreement(parameters.their_base_key())
+            .as_ref(),
     );
 
     if let Some(our_one_time_pre_key_pair) = parameters.our_one_time_pre_key_pair() {
         secrets.extend_from_slice(
-            &our_one_time_pre_key_pair
+            our_one_time_pre_key_pair
                 .private_key
-                .calculate_agreement(parameters.their_base_key()),
+                .calculate_agreement(parameters.their_base_key())
+                .as_ref(),
         );
     }
 
@@ -158,9 +177,9 @@ pub(crate) fn initialize_bob_session(
     Ok(session)
 }
 
-/// [Initialize Alice's side] of the Double Ratchet chain.
+/// ???/Create a ratchet chain used for the [Double Ratchet] algorithm.
 ///
-/// [Initialize Alice's side]: https://signal.org/docs/specifications/doubleratchet/#initialization
+/// [Double Ratchet]: https://signal.org/docs/specifications/doubleratchet/#diffie-hellman-ratchet
 pub fn initialize_alice_session_record<R: Rng + CryptoRng>(
     parameters: &AliceSignalProtocolParameters,
     csprng: &mut R,
@@ -170,9 +189,9 @@ pub fn initialize_alice_session_record<R: Rng + CryptoRng>(
     )?))
 }
 
-/// [Initialize Bob's side] of the Double Ratchet chain.
+/// ???/Create a ratchet chain used for the [Double Ratchet] algorithm.
 ///
-/// [Initialize Bob's side]: https://signal.org/docs/specifications/doubleratchet/#initialization
+/// [Double Ratchet]: https://signal.org/docs/specifications/doubleratchet/#diffie-hellman-ratchet
 pub fn initialize_bob_session_record(
     parameters: &BobSignalProtocolParameters,
 ) -> Result<SessionRecord> {

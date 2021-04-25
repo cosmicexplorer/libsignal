@@ -6,12 +6,37 @@
 //! Key derivation functions.
 
 use crate::{
-    consts::CIPHERTEXT_MESSAGE_CURRENT_VERSION, utils::unwrap::no_hmac_varkey_error, Result,
-    SignalProtocolError,
+    consts::{types::VersionType, CIPHERTEXT_MESSAGE_CURRENT_VERSION},
+    Result, SignalProtocolError,
 };
 
 use hmac::{Hmac, Mac, NewMac};
 use sha2::Sha256;
+
+/// Trait describing general behavior we expect of a key derivation function.
+///
+/// Note that all of the member methods consume `self` in order to avoid accidental aliasing.
+pub trait KDF {
+    /// The length of bytes returned by all methods.
+    const HASH_OUTPUT_SIZE: usize;
+
+    /// TODO: ???
+    fn derive_secrets(
+        self,
+        input_key_material: &[u8],
+        info: &[u8],
+        output_length: usize,
+    ) -> Box<[u8]>;
+
+    /// TODO: ???
+    fn derive_salted_secrets(
+        self,
+        input_key_material: &[u8],
+        salt: &[u8],
+        info: &[u8],
+        output_length: usize,
+    ) -> Box<[u8]>;
+}
 
 /// The KDF used in the [Double Ratchet] algorithm.
 ///
@@ -22,18 +47,17 @@ pub struct HKDF {
 }
 
 impl HKDF {
-    const HASH_OUTPUT_SIZE: usize = crate::crypto::HMAC_OUTPUT_SIZE;
-
     /// Create a new instance, using the most recent message version
     /// [CIPHERTEXT_MESSAGE_CURRENT_VERSION].
-    pub fn new_current() -> Self {
-        Self::new(CIPHERTEXT_MESSAGE_CURRENT_VERSION.into()).unwrap()
+    pub fn new() -> Self {
+        Self::new_from_version(CIPHERTEXT_MESSAGE_CURRENT_VERSION)
+            .expect("instantiating the current version should always succeed")
     }
 
     /// Create a new instance for a particular `message_version`.
     ///
     /// Will error if an unrecognized version is provided.
-    pub fn new(message_version: u32) -> Result<Self> {
+    pub fn new_from_version(message_version: VersionType) -> Result<Self> {
         match message_version {
             2 => Ok(HKDF {
                 iteration_start_offset: 0,
@@ -45,31 +69,6 @@ impl HKDF {
                 message_version,
             )),
         }
-    }
-
-    pub fn derive_secrets(
-        self,
-        input_key_material: &[u8],
-        info: &[u8],
-        output_length: usize,
-    ) -> Box<[u8]> {
-        self.derive_salted_secrets(
-            input_key_material,
-            &[0u8; Self::HASH_OUTPUT_SIZE],
-            info,
-            output_length,
-        )
-    }
-
-    pub fn derive_salted_secrets(
-        self,
-        input_key_material: &[u8],
-        salt: &[u8],
-        info: &[u8],
-        output_length: usize,
-    ) -> Box<[u8]> {
-        let prk = self.extract(salt, input_key_material);
-        self.expand(&prk, info, output_length)
     }
 
     fn extract(self, salt: &[u8], input_key_material: &[u8]) -> [u8; Self::HASH_OUTPUT_SIZE] {
@@ -101,6 +100,34 @@ impl HKDF {
     }
 }
 
+impl KDF for HKDF {
+    /// Re-export of [crate::curve::KEY_LENGTH].
+    const HASH_OUTPUT_SIZE: usize = crate::curve::KEY_LENGTH;
+    fn derive_secrets(
+        self,
+        input_key_material: &[u8],
+        info: &[u8],
+        output_length: usize,
+    ) -> Box<[u8]> {
+        self.derive_salted_secrets(
+            input_key_material,
+            &[0u8; Self::HASH_OUTPUT_SIZE],
+            info,
+            output_length,
+        )
+    }
+    fn derive_salted_secrets(
+        self,
+        input_key_material: &[u8],
+        salt: &[u8],
+        info: &[u8],
+        output_length: usize,
+    ) -> Box<[u8]> {
+        let prk = self.extract(salt, input_key_material);
+        self.expand(&prk, info, output_length)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -121,7 +148,7 @@ mod tests {
             0xec, 0xc4, 0xc5, 0xbf, 0x34, 0x00, 0x72, 0x08, 0xd5, 0xb8, 0x87, 0x18, 0x58, 0x65,
         ];
 
-        let output = HKDF::new_current().derive_salted_secrets(&ikm, &salt, &info, okm.len());
+        let output = HKDF::new().derive_salted_secrets(&ikm, &salt, &info, okm.len());
 
         assert_eq!(&okm[..], &output[..]);
 
@@ -163,7 +190,7 @@ mod tests {
             0x3e, 0x87, 0xc1, 0x4c, 0x01, 0xd5, 0xc1, 0xf3, 0x43, 0x4f, 0x1d, 0x87,
         ];
 
-        let output = HKDF::new_current().derive_salted_secrets(&ikm, &salt, &info, okm.len());
+        let output = HKDF::new().derive_salted_secrets(&ikm, &salt, &info, okm.len());
 
         assert_eq!(&okm[..], &output[..]);
 
@@ -188,7 +215,8 @@ mod tests {
             0x4a, 0xa9, 0xfd, 0xa8, 0x99, 0xda, 0xeb, 0xec,
         ];
 
-        let output = HKDF::new(2)?.derive_salted_secrets(&ikm, &salt, &info, okm.len());
+        let output =
+            HKDF::new_from_version(2)?.derive_salted_secrets(&ikm, &salt, &info, okm.len());
 
         assert_eq!(&okm[..], &output[..]);
 

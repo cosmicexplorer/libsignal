@@ -4,10 +4,14 @@
 //
 
 use crate::{
-    consts::{self, types::VersionType},
+    consts::{
+        self,
+        byte_lengths::KEY_LENGTH,
+        types::{as_key_bytes, VersionType},
+    },
     curve::{KeyPair, PrivateKey, PublicKey},
     proto::storage::{session_structure, RecordStructure, SessionStructure},
-    ratchet::{ChainKey, MessageKeys, RootKey},
+    ratchet::keys::{ChainKey, MessageKeys, RootKey},
     state::{PreKeyId, SignedPreKeyId},
     utils::{
         traits::serde::{Deserializable, Serializable},
@@ -124,14 +128,11 @@ impl SessionState {
     }
 
     pub(crate) fn root_key(&self) -> Result<RootKey> {
-        if self.session.root_key.len() != 32 {
+        if self.session.root_key.len() != KEY_LENGTH {
             return Err(SignalProtocolError::InvalidProtobufEncoding);
         }
-        let hkdf = HKDF::new(self.session_version()?.into())?;
-        Ok(RootKey::new(
-            hkdf,
-            array_ref![&self.session.root_key, 0, 32],
-        ))
+        let hkdf = HKDF::new_from_version(self.session_version()?)?;
+        Ok(RootKey::new(hkdf, as_key_bytes(&self.session.root_key)))
     }
 
     pub(crate) fn set_root_key(&mut self, root_key: &RootKey) -> Result<()> {
@@ -209,7 +210,7 @@ impl SessionState {
                     if c.key.len() != 32 {
                         return Err(SignalProtocolError::InvalidProtobufEncoding);
                     }
-                    let hkdf = HKDF::new(self.session_version()?.into())?;
+                    let hkdf = HKDF::new_from_version(self.session_version()?)?;
                     Ok(Some(ChainKey::new(
                         hkdf,
                         array_ref![&c.key, 0, 32],
@@ -283,7 +284,7 @@ impl SessionState {
             SignalProtocolError::InvalidState("get_sender_chain_key", "No chain key".to_owned())
         })?;
 
-        let hkdf = HKDF::new(self.session_version()?.into())?;
+        let hkdf = HKDF::new_from_version(self.session_version()?)?;
         Ok(ChainKey::new(
             hkdf,
             array_ref![&chain_key.key, 0, 32],

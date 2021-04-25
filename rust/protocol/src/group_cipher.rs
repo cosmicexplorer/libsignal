@@ -3,19 +3,72 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-use crate::consts::limits;
+//! Send and receive encrypted messages within a particular Double Ratchet chain.
+
+use crate::consts;
 use crate::crypto;
 
 use crate::sender_keys::{SenderKeyState, SenderMessageKey};
 use crate::utils::traits::message::SignatureVerifiable;
 use crate::{
-    Context, KeyPair, ProtocolAddress, Result, SenderKeyDistributionMessage, SenderKeyMessage,
-    SenderKeyRecord, SenderKeyStore, SignalProtocolError,
+    curve::KeyPair,
+    protocol::{SenderKeyDistributionMessage, SenderKeyMessage},
+    sender_keys::SenderKeyRecord,
+    utils::traits::{message::SignatureVerifiable, serde::RefSerializable},
+    Context, ProtocolAddress, Result, SenderKeyStore, SignalProtocolError,
 };
 
 use rand::{CryptoRng, Rng};
-use std::convert::TryFrom;
 use uuid::Uuid;
+
+use std::convert::TryFrom;
+
+pub struct GroupSender;
+
+pub struct GroupSenderMessage {
+    pub skm_bytes: Box<[u8]>,
+    pub sender: ProtocolAddress,
+}
+
+pub struct GroupMessageContent {
+    pub plaintext: Box<[u8]>,
+    pub sender: ProtocolAddress,
+}
+
+pub struct GroupDecryptedMessage {
+    pub plaintext: Box<[u8]>,
+    pub sender: ProtocolAddress,
+}
+
+impl GroupSender {
+    pub async fn encrypt<R: Rng + CryptoRng>(
+        destination: &Uuid,
+        usmc: &GroupMessageContent,
+        sender_store: &mut dyn SenderKeyStore,
+        ctx: Context,
+        rng: &mut R,
+    ) -> Result<Vec<u8>> {
+        let GroupMessageContent { plaintext, sender } = usmc;
+        Ok(
+            group_encrypt(sender_store, sender, *destination, plaintext, rng, ctx)
+                .await?
+                .serialize()
+                .to_vec(),
+        )
+    }
+    pub async fn decrypt(
+        identity_store: &mut dyn SenderKeyStore,
+        ctx: Context,
+        sender_message: GroupSenderMessage,
+    ) -> Result<GroupDecryptedMessage> {
+        let GroupSenderMessage { skm_bytes, sender } = sender_message;
+        let content = group_decrypt(&skm_bytes, identity_store, &sender, ctx).await?;
+        Ok(GroupDecryptedMessage {
+            plaintext: Box::from(content),
+            sender,
+        })
+    }
+}
 
 pub async fn group_encrypt<R: Rng + CryptoRng>(
     sender_key_store: &mut dyn SenderKeyStore,
@@ -61,7 +114,7 @@ fn get_sender_key(state: &mut SenderKeyState, iteration: u32) -> Result<SenderMe
     let sender_chain_key = state.sender_chain_key()?;
 
     if sender_chain_key.iteration() > iteration {
-        if let Some(smk) = state.remove_sender_message_key(iteration) {
+        if let Some(smk) = state.remove_sender_message_key(iteration)? {
             return Ok(smk);
         } else {
             return Err(SignalProtocolError::DuplicatedMessage(
@@ -72,7 +125,7 @@ fn get_sender_key(state: &mut SenderKeyState, iteration: u32) -> Result<SenderMe
     }
 
     let jump = (iteration - sender_chain_key.iteration()) as usize;
-    if jump > limits::MAX_FORWARD_JUMPS {
+    if jump > consts::limits::MAX_FORWARD_JUMPS {
         return Err(SignalProtocolError::InvalidMessage(
             "message from too far into the future",
         ));
@@ -135,7 +188,7 @@ pub async fn process_sender_key_distribution_message(
     sender_key_record.add_sender_key_state(
         skdm.chain_id(),
         skdm.iteration(),
-        &skdm.chain_key(),
+        skdm.chain_key(),
         *skdm.signing_key(),
         None,
     );

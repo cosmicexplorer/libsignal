@@ -11,9 +11,11 @@ use crate::{
     consts::limits::MAX_FORWARD_JUMPS,
     crypto,
     curve::{KeyPair, PublicKey},
-    protocol::chain_message::{MACPair, MACSignature, SignalIncrementingCounters},
-    ratchet::{ChainKey, MessageKeys},
-    sealed_sender::CiphertextMessage,
+    protocol::{
+        chain_message::{MACPair, MACSignature, SignalIncrementingCounters},
+        CiphertextMessage,
+    },
+    ratchet::keys::{ChainKey, MessageKeys},
     session,
     state::{SessionRecord, SessionState},
     utils::traits::message::{SequencedMessage, SignalProtocolMessage, SignatureVerifiable},
@@ -22,8 +24,6 @@ use crate::{
 };
 
 use rand::{CryptoRng, Rng};
-
-use std::convert::TryInto;
 
 /// Encrypt `ptext` to send to `remote_address`.
 pub async fn message_encrypt(
@@ -500,7 +500,7 @@ fn decrypt_message_with_state<R: Rng + CryptoRng>(
     }
 
     let ciphertext_version = ciphertext.message_version();
-    if ciphertext_version != state.session_version()?.try_into()? {
+    if ciphertext_version != state.session_version()? {
         return Err(SignalProtocolError::UnrecognizedMessageVersion(
             ciphertext_version.into(),
         ));

@@ -5,7 +5,7 @@
 
 use crate::{
     address::DeviceId,
-    consts::byte_lengths::SIGNATURE_LENGTH,
+    consts::types::SignatureBytes,
     curve::PublicKey,
     state::{PreKeyId, SignedPreKeyId},
     IdentityKey,
@@ -25,7 +25,7 @@ pub struct PreKeyBundle {
     pre_key_public: Option<PublicKey>,
     signed_pre_key_id: SignedPreKeyId,
     signed_pre_key_public: PublicKey,
-    signed_pre_key_signature: [u8; SIGNATURE_LENGTH],
+    signed_pre_key_signature: SignatureBytes,
     identity_key: IdentityKey,
 }
 
@@ -37,7 +37,7 @@ impl PreKeyBundle {
         pre_key: Option<(PreKeyId, PublicKey)>,
         signed_pre_key_id: SignedPreKeyId,
         signed_pre_key_public: PublicKey,
-        signed_pre_key_signature: [u8; SIGNATURE_LENGTH],
+        signed_pre_key_signature: SignatureBytes,
         identity_key: IdentityKey,
     ) -> Self {
         let (pre_key_id, pre_key_public) = match pre_key {
@@ -83,7 +83,7 @@ impl PreKeyBundle {
     }
 
     #[inline]
-    pub fn signed_pre_key_signature(&self) -> &[u8; SIGNATURE_LENGTH] {
+    pub fn signed_pre_key_signature(&self) -> &SignatureBytes {
         &self.signed_pre_key_signature
     }
 

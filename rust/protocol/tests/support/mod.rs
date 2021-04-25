@@ -5,6 +5,27 @@
 
 use libsignal_protocol::utils::traits::serde::Serializable;
 use libsignal_protocol::*;
+pub use libsignal_protocol::{
+    consts::types::as_signature_bytes,
+    curve::{KeyPair, PrivateKey, PublicKey},
+    fingerprint::{DisplayableFingerprint, ScannableFingerprint},
+    group_cipher::{
+        create_sender_key_distribution_message, process_sender_key_distribution_message,
+    },
+    protocol::{CiphertextMessage, CiphertextMessageType},
+    sender_keys::SenderKeyRecord,
+    session::process_prekey_bundle,
+    session_cipher::{message_decrypt, message_encrypt},
+    state::{PreKeyBundle, PreKeyRecord, SessionRecord, SignedPreKeyRecord},
+    storage::inmem::{
+        InMemIdentityKeyStore, InMemPreKeyStore, InMemSenderKeyStore, InMemSessionStore,
+        InMemSignalProtocolStore, InMemSignedPreKeyStore,
+    },
+    utils::traits::{
+        message::{SequencedMessage, SignalProtocolMessage, SignatureVerifiable},
+        serde::{Deserializable, Serializable},
+    },
+};
 use rand::{rngs::OsRng, CryptoRng, Rng};
 
 pub fn test_in_memory_protocol_store() -> Result<InMemSignalProtocolStore, SignalProtocolError> {
@@ -76,7 +97,7 @@ pub async fn create_pre_key_bundle<R: Rng + CryptoRng>(
         Some((pre_key_id, pre_key_pair.public_key)),
         signed_pre_key_id,
         signed_pre_key_pair.public_key,
-        signed_pre_key_signature,
+        *signed_pre_key_signature,
         *store.get_identity_key_pair(None).await?.identity_key(),
     );
 
@@ -97,7 +118,7 @@ pub async fn create_pre_key_bundle<R: Rng + CryptoRng>(
                 signed_pre_key_id,
                 timestamp,
                 &signed_pre_key_pair,
-                &signed_pre_key_signature,
+                signed_pre_key_signature.as_ref(),
             ),
             None,
         )

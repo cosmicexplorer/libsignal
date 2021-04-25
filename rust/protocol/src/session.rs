@@ -6,15 +6,18 @@
 //! Transform a signed pre-key into an active "session" or message chain.
 //!
 //! These functions are on [`SessionBuilder`] in the Java implementation. However, using
-//! `SessionBuilder` and `SessionCipher` ([crate::session_cipher] in Rust) at the same time causes
-//! `&mut` sharing issues. And as `SessionBuilder` has no actual state beyond its reference to the
-//! various data stores, instead the functions are free standing.
+//! `SessionBuilder` and `SessionCipher` at the same time causes `&mut` sharing issues. And as
+//! `SessionBuilder` has no actual state beyond its reference to the various data stores, instead
+//! the functions are free standing.
 //!
 //! [`SessionBuilder`]: https://github.com/signalapp/libsignal-protocol-java/blob/fde96d22004f32a391554e4991e4e1f0a14c2d50/java/src/main/java/org/whispersystems/libsignal/SessionBuilder.java#L62
 
 use crate::{
     curve::{KeyPair, PublicKeySignature},
-    ratchet::{self, AliceSignalProtocolParameters, BobSignalProtocolParameters},
+    ratchet::{
+        self,
+        params::{AliceSignalProtocolParameters, BobSignalProtocolParameters},
+    },
     state::{PreKeyBundle, PreKeyId, SessionRecord},
     utils::traits::{
         message::{SignalProtocolMessage, SignatureVerifiable},
@@ -24,7 +27,6 @@ use crate::{
     Result, SessionStore, SignalProtocolError, SignedPreKeyStore,
 };
 
-use arrayref::array_ref;
 use rand::{CryptoRng, Rng};
 
 /// Transform a signed pre-key into an active "session" or message chain.
@@ -82,10 +84,9 @@ async fn process_prekey_v3(
     identity_store: &mut dyn IdentityKeyStore,
     ctx: Context,
 ) -> Result<Option<PreKeyId>> {
-    if session_record.has_session_state(
-        message.message_version().into(),
-        &message.base_key().serialize(),
-    )? {
+    if session_record
+        .has_session_state(message.message_version(), &message.base_key().serialize())?
+    {
         // We've already setup a session for this V3 message, letting bundled message fall through
         return Ok(None);
     }
@@ -157,7 +158,7 @@ pub async fn process_prekey_bundle<R: Rng + CryptoRng>(
         .public_key()
         .verify_signature(PublicKeySignature {
             message: &bundle.signed_pre_key_public().serialize(),
-            signature: array_ref![bundle.signed_pre_key_signature(), 0, 64],
+            signature: bundle.signed_pre_key_signature(),
         })?
     {
         return Err(SignalProtocolError::SignatureValidationFailed);

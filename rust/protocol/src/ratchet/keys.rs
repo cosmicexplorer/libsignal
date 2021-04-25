@@ -3,52 +3,67 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
+//! Structs forming the key material described in the [Double Ratchet] algorithm.
+//!
+//! [Double Ratchet]: https://signal.org/docs/specifications/doubleratchet/#kdf-chains
+
 use arrayref::array_ref;
 
-use crate::consts::types::Counter;
-use crate::crypto;
-use crate::{PrivateKey, PublicKey, HKDF};
+use crate::{
+    consts::{
+        byte_lengths::KEY_LENGTH,
+        types::{as_iv_bytes, as_key_bytes, Counter, IVBytes, KeyBytes, SeedBytes},
+    },
+    crypto,
+    curve::{PrivateKey, PublicKey},
+    kdf::{HKDF, KDF},
+    Result,
+};
+
 use std::fmt;
 
+/// TODO: ???
 pub struct MessageKeys {
-    cipher_key: [u8; 32],
-    mac_key: [u8; 32],
-    iv: [u8; 16],
+    cipher_key: KeyBytes,
+    mac_key: KeyBytes,
+    iv: IVBytes,
     counter: Counter,
 }
 
 impl MessageKeys {
+    /// TODO: ???
     pub fn derive_keys(input_key_material: &[u8], kdf: HKDF, counter: Counter) -> Self {
         let okm = kdf.derive_secrets(input_key_material, b"WhisperMessageKeys", 80);
         MessageKeys {
-            cipher_key: *array_ref![okm, 0, 32],
-            mac_key: *array_ref![okm, 32, 32],
-            iv: *array_ref![okm, 64, 16],
+            cipher_key: *as_key_bytes(&okm[..KEY_LENGTH]),
+            mac_key: *as_key_bytes(&okm[KEY_LENGTH..(2 * KEY_LENGTH)]),
+            iv: *as_iv_bytes(&okm[(2 * KEY_LENGTH)..]),
             counter,
         }
     }
 
-    pub fn new(cipher_key: &[u8; 32], mac_key: &[u8; 32], iv: &[u8; 16], counter: Counter) -> Self {
+    /// Create a new instance.
+    pub fn new(cipher_key: &KeyBytes, mac_key: &KeyBytes, iv: &IVBytes, counter: Counter) -> Self {
         MessageKeys {
-            cipher_key: *cipher_key,
-            mac_key: *mac_key,
-            iv: *iv,
+            cipher_key: *array_ref![cipher_key, 0, 32],
+            mac_key: *array_ref![mac_key, 0, 32],
+            iv: *array_ref![iv, 0, 16],
             counter,
         }
     }
 
     #[inline]
-    pub fn cipher_key(&self) -> &[u8; 32] {
+    pub fn cipher_key(&self) -> &KeyBytes {
         &self.cipher_key
     }
 
     #[inline]
-    pub fn mac_key(&self) -> &[u8; 32] {
+    pub fn mac_key(&self) -> &KeyBytes {
         &self.mac_key
     }
 
     #[inline]
-    pub fn iv(&self) -> &[u8; 16] {
+    pub fn iv(&self) -> &IVBytes {
         &self.iv
     }
 
@@ -58,27 +73,29 @@ impl MessageKeys {
     }
 }
 
+/// TODO: ???
 #[derive(Clone, Debug)]
 pub struct ChainKey {
     kdf: HKDF,
-    key: [u8; 32],
+    key: KeyBytes,
     index: Counter,
 }
 
 impl ChainKey {
-    const MESSAGE_KEY_SEED: [u8; 1] = [0x01u8];
-    const CHAIN_KEY_SEED: [u8; 1] = [0x02u8];
+    const MESSAGE_KEY_SEED: SeedBytes = [0x01u8];
+    const CHAIN_KEY_SEED: SeedBytes = [0x02u8];
 
-    pub fn new(kdf: HKDF, key: &[u8; 32], index: Counter) -> Self {
+    /// Create a new instance.
+    pub fn new(kdf: HKDF, key: &KeyBytes, index: Counter) -> Self {
         Self {
             kdf,
-            key: *array_ref![key, 0, 32],
+            key: *key,
             index,
         }
     }
 
     #[inline]
-    pub fn key(&self) -> &[u8; 32] {
+    pub fn key(&self) -> &KeyBytes {
         &self.key
     }
 
@@ -87,6 +104,7 @@ impl ChainKey {
         self.index
     }
 
+    /// ???
     pub fn next_chain_key(&self) -> Self {
         Self {
             kdf: self.kdf,
@@ -95,6 +113,7 @@ impl ChainKey {
         }
     }
 
+    /// ???
     pub fn message_keys(&self) -> MessageKeys {
         MessageKeys::derive_keys(
             &self.calculate_base_material(Self::MESSAGE_KEY_SEED),
@@ -103,34 +122,36 @@ impl ChainKey {
         )
     }
 
-    fn calculate_base_material(&self, seed: [u8; 1]) -> [u8; 32] {
+    /// ???
+    fn calculate_base_material(&self, seed: SeedBytes) -> KeyBytes {
         crypto::hmac_sha256(&self.key, &seed)
     }
 }
 
+/// TODO: ???
 #[derive(Clone, Debug)]
 pub struct RootKey {
     kdf: HKDF,
-    key: [u8; 32],
+    key: KeyBytes,
 }
 
 impl RootKey {
-    pub fn new(kdf: HKDF, key: &[u8; 32]) -> Self {
-        Self {
-            kdf,
-            key: *array_ref![key, 0, 32],
-        }
+    /// Create a new instance.
+    pub fn new(kdf: HKDF, key: &KeyBytes) -> Self {
+        Self { kdf, key: *key }
     }
 
-    pub fn key(&self) -> &[u8; 32] {
+    #[inline]
+    pub fn key(&self) -> &KeyBytes {
         &self.key
     }
 
+    /// ???
     pub fn create_chain(
         &self,
         their_ratchet_key: &PublicKey,
         our_ratchet_key: &PrivateKey,
-    ) -> (RootKey, ChainKey) {
+    ) -> Result<(RootKey, ChainKey)> {
         let shared_secret = our_ratchet_key.calculate_agreement(their_ratchet_key);
         let derived_secret_bytes = self.kdf.derive_salted_secrets(
             shared_secret.as_ref(),
@@ -138,10 +159,17 @@ impl RootKey {
             b"WhisperRatchet",
             64,
         );
-        (
-            RootKey::new(self.kdf, array_ref![derived_secret_bytes, 0, 32]),
-            ChainKey::new(self.kdf, array_ref![derived_secret_bytes, 32, 32], 0),
-        )
+        Ok((
+            RootKey {
+                kdf: self.kdf,
+                key: *as_key_bytes(&derived_secret_bytes[..KEY_LENGTH]),
+            },
+            ChainKey {
+                kdf: self.kdf,
+                key: *as_key_bytes(&derived_secret_bytes[KEY_LENGTH..]),
+                index: 0,
+            },
+        ))
     }
 }
 
@@ -154,7 +182,10 @@ impl fmt::Display for RootKey {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{utils::traits::serde::Deserializable, PrivateKey, PublicKey, Result};
+    use crate::{
+        curve::{PrivateKey, PublicKey},
+        utils::traits::serde::Deserializable,
+    };
 
     #[test]
     fn test_chain_key_derivation_v2() -> Result<()> {
@@ -179,7 +210,7 @@ mod tests {
             0xa2, 0x46, 0xd1, 0x5d,
         ];
 
-        let chain_key = ChainKey::new(HKDF::new(2)?, &seed, 0);
+        let chain_key = ChainKey::new(HKDF::new_from_version(2)?, &seed, 0);
         assert_eq!(&seed, chain_key.key());
         assert_eq!(&message_key, chain_key.message_keys().cipher_key());
         assert_eq!(&mac_key, chain_key.message_keys().mac_key());
@@ -214,7 +245,7 @@ mod tests {
             0xa2, 0x46, 0xd1, 0x5d,
         ];
 
-        let chain_key = ChainKey::new(HKDF::new_current(), &seed, 0);
+        let chain_key = ChainKey::new(HKDF::new(), &seed, 0);
         assert_eq!(&seed, chain_key.key());
         assert_eq!(&message_key, chain_key.message_keys().cipher_key());
         assert_eq!(&mac_key, chain_key.message_keys().mac_key());
@@ -263,7 +294,7 @@ mod tests {
 
         let alice_private_key = PrivateKey::deserialize(&alice_private)?;
         let bob_public_key = PublicKey::deserialize(&bob_public)?;
-        let root_key = RootKey::new(HKDF::new(2)?, &root_key_seed);
+        let root_key = RootKey::new(HKDF::new_from_version(2)?, &root_key_seed);
 
         let (next_root_key, next_chain_key) =
             root_key.create_chain(&bob_public_key, &alice_private_key);

@@ -3,8 +3,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-use libc::{c_uchar, size_t};
 use libsignal_protocol::*;
+
+use libc::{c_uchar, size_t};
+
 use std::ffi::CString;
 
 #[macro_use]

@@ -24,8 +24,8 @@ pub mod consts;
 pub mod crypto;
 pub mod curve;
 pub mod error;
-mod fingerprint;
-mod group_cipher;
+pub mod fingerprint;
+pub mod group_cipher;
 pub mod identity_key;
 pub mod kdf;
 pub mod proto;
@@ -42,39 +42,37 @@ pub mod utils;
 use error::Result;
 
 pub use {
-    address::ProtocolAddress,
-    curve::{KeyPair, PrivateKey, PublicKey, PublicKeySignature},
+    address::{DeviceId, ProtocolAddress},
+    consts::types::{Counter, IVBytes, KeyBytes, SignatureBytes},
     error::SignalProtocolError,
-    fingerprint::{DisplayableFingerprint, Fingerprint, ScannableFingerprint},
-    group_cipher::{
-        create_sender_key_distribution_message, group_decrypt, group_encrypt,
-        process_sender_key_distribution_message,
-    },
+    fingerprint::Fingerprint,
+    group_cipher::{group_decrypt, group_encrypt},
     identity_key::{IdentityKey, IdentityKeyPair},
-    kdf::HKDF,
+    kdf::{HKDF, KDF},
     protocol::{
         PreKeySignalMessage, SenderKeyDistributionMessage, SenderKeyMessage, SignalMessage,
     },
     ratchet::{
         initialize_alice_session_record, initialize_bob_session_record,
-        AliceSignalProtocolParameters, BobSignalProtocolParameters,
+        params::{AliceSignalProtocolParameters, BobSignalProtocolParameters},
     },
     sealed_sender::{
-        sealed_sender_decrypt, sealed_sender_decrypt_to_usmc, sealed_sender_encrypt,
-        sealed_sender_encrypt_from_usmc, sealed_sender_multi_recipient_encrypt,
-        sealed_sender_multi_recipient_fan_out, CiphertextMessage, CiphertextMessageType,
-        ContentHint, SealedSenderDecryptionResult, SealedSenderV1, SealedSenderV2,
-        SenderCertificate, ServerCertificate, ServerSignature, UnidentifiedSenderMessageContent,
+        sealed_sender_decrypt, sealed_sender_decrypt_to_usmc, sealed_sender_encrypt_from_usmc,
+        sealed_sender_multi_recipient_encrypt, sealed_sender_multi_recipient_fan_out, ContentHint,
+        SealedSenderDecryptionResult, SenderCertificate, ServerCertificate, ServerSignature,
+        UnidentifiedSenderMessageContent,
     },
-    sender_keys::SenderKeyRecord,
-    session::{process_prekey, process_prekey_bundle},
-    session_cipher::{
-        message_decrypt, message_decrypt_prekey, message_decrypt_signal, message_encrypt,
+    session::process_prekey,
+    session_cipher::{message_decrypt_prekey, message_decrypt_signal},
+    storage::traits::{
+        Context, Direction, IdentityKeyStore, PreKeyStore, ProtocolStore, SenderKeyStore,
+        SessionStore, SignedPreKeyStore,
     },
-    state::{PreKeyBundle, PreKeyRecord, SessionRecord, SignedPreKeyRecord},
-    storage::{
-        Context, Direction, IdentityKeyStore, InMemIdentityKeyStore, InMemPreKeyStore,
-        InMemSenderKeyStore, InMemSessionStore, InMemSignalProtocolStore, InMemSignedPreKeyStore,
-        PreKeyStore, ProtocolStore, SenderKeyStore, SessionStore, SignedPreKeyStore,
+    utils::{
+        traits::{
+            message::{SequencedMessage, SignalProtocolMessage, SignatureVerifiable},
+            serde::{Deserializable, RefSerializable, Serializable},
+        },
+        unwrap,
     },
 };

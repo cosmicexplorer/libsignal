@@ -1,10 +1,13 @@
 //
-// Copyright 2020-2021 Signal Messenger, LLC.
+// Copyright 2020, 2021 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-use libsignal_protocol::utils::traits::serde::Deserializable;
-use libsignal_protocol::*;
+use libsignal_protocol::{
+    curve::{KeyPair, PrivateKey, PublicKey},
+    utils::traits::serde::Deserializable,
+    *,
+};
 
 #[test]
 fn test_ratcheting_session_as_bob() -> Result<(), SignalProtocolError> {

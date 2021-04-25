@@ -8,13 +8,17 @@
 //! [Double Ratchet]: https://signal.org/docs/specifications/doubleratchet/#diffie-hellman-ratchet
 
 use crate::{
-    consts::{self, types::Counter},
+    consts::{
+        self,
+        types::{as_iv_bytes, as_key_bytes, Counter, IVBytes, KeyBytes},
+    },
     crypto::hmac_sha256,
     curve::{PrivateKey, PublicKey},
+    kdf::KDF,
     proto::storage as storage_proto,
     utils::{
-        traits::serde::{Deserializable, Serializable},
         unwrap::no_encoding_error,
+        traits::serde::{Deserializable, Serializable},
     },
     Result, SignalProtocolError, HKDF,
 };
@@ -30,20 +34,20 @@ use std::convert::TryFrom;
 #[derive(Debug, Clone)]
 pub struct SenderMessageKey {
     iteration: Counter,
-    iv: [u8; 16],
-    cipher_key: [u8; 32],
+    iv: IVBytes,
+    cipher_key: KeyBytes,
     seed: Vec<u8>,
 }
 
 impl SenderMessageKey {
     pub fn new(iteration: Counter, seed: &[u8]) -> Self {
-        let hkdf = HKDF::new_current();
+        let hkdf = HKDF::new();
         let derived = hkdf.derive_secrets(&seed, b"WhisperGroup", 48);
         Self {
             iteration,
             seed: seed.to_vec(),
-            iv: *array_ref![&derived, 0, 16],
-            cipher_key: *array_ref![&derived, 16, 32],
+            iv: *as_iv_bytes(&derived[0..16]),
+            cipher_key: *as_key_bytes(&derived[16..48]),
         }
     }
 
@@ -55,12 +59,12 @@ impl SenderMessageKey {
         self.iteration
     }
 
-    pub fn iv(&self) -> [u8; 16] {
-        self.iv
+    pub fn iv(&self) -> IVBytes {
+        self.iv.clone()
     }
 
-    pub fn cipher_key(&self) -> [u8; 32] {
-        self.cipher_key
+    pub fn cipher_key(&self) -> KeyBytes {
+        self.cipher_key.clone()
     }
 
     pub fn seed(&self) -> Vec<u8> {
@@ -79,14 +83,14 @@ impl SenderMessageKey {
 #[derive(Debug, Clone)]
 pub struct SenderChainKey {
     iteration: Counter,
-    chain_key: [u8; 32],
+    chain_key: KeyBytes,
 }
 
 impl SenderChainKey {
     const MESSAGE_KEY_SEED: u8 = 0x01;
     const CHAIN_KEY_SEED: u8 = 0x02;
 
-    pub fn new(iteration: Counter, chain_key: [u8; 32]) -> Self {
+    pub fn new(iteration: Counter, chain_key: KeyBytes) -> Self {
         Self {
             iteration,
             chain_key,
@@ -99,8 +103,8 @@ impl SenderChainKey {
     }
 
     #[inline]
-    pub fn seed(&self) -> [u8; 32] {
-        self.chain_key
+    pub fn seed(&self) -> KeyBytes {
+        self.chain_key.clone()
     }
 
     pub fn next(&self) -> SenderChainKey {
@@ -117,7 +121,7 @@ impl SenderChainKey {
         )
     }
 
-    fn get_derivative(&self, label: u8) -> [u8; 32] {
+    fn get_derivative(&self, label: u8) -> KeyBytes {
         let label = [label];
         hmac_sha256(&self.chain_key, &label)
     }
@@ -145,7 +149,7 @@ impl SenderKeyState {
     pub fn new(
         chain_id: ChainId,
         iteration: Counter,
-        chain_key: &[u8; 32],
+        chain_key: &KeyBytes,
         signature_key: PublicKey,
         signature_private_key: Option<PrivateKey>,
     ) -> SenderKeyState {
@@ -183,7 +187,7 @@ impl SenderKeyState {
             .ok_or(SignalProtocolError::InvalidProtobufEncoding)?;
         Ok(SenderChainKey::new(
             sender_chain.iteration,
-            *array_ref![&sender_chain.seed, 0, 32],
+            *as_key_bytes(&sender_chain.seed),
         ))
     }
 
@@ -207,7 +211,7 @@ impl SenderKeyState {
         }
     }
 
-    pub fn has_sender_message_key(&self, iteration: Counter) -> bool {
+    pub fn has_sender_message_key(&self, iteration: Counter) -> Result<bool> {
         for sender_message_key in &self.state.sender_message_keys {
             if sender_message_key.iteration == iteration {
                 return true;
@@ -220,7 +224,7 @@ impl SenderKeyState {
         self.state.clone()
     }
 
-    pub fn add_sender_message_key(&mut self, sender_message_key: &SenderMessageKey) {
+    pub fn add_sender_message_key(&mut self, sender_message_key: &SenderMessageKey) -> () {
         self.state
             .sender_message_keys
             .push(sender_message_key.as_protobuf());
@@ -229,7 +233,10 @@ impl SenderKeyState {
         }
     }
 
-    pub fn remove_sender_message_key(&mut self, iteration: Counter) -> Option<SenderMessageKey> {
+    pub fn remove_sender_message_key(
+        &mut self,
+        iteration: Counter,
+    ) -> Result<Option<SenderMessageKey>> {
         if let Some(index) = self
             .state
             .sender_message_keys
@@ -237,7 +244,7 @@ impl SenderKeyState {
             .position(|x| x.iteration == iteration)
         {
             let smk = self.state.sender_message_keys.remove(index);
-            Some(SenderMessageKey::from_protobuf(smk))
+            Ok(Some(SenderMessageKey::from_protobuf(smk)))
         } else {
             None
         }
@@ -303,7 +310,7 @@ impl SenderKeyRecord {
         &mut self,
         chain_id: ChainId,
         iteration: Counter,
-        chain_key: &[u8; 32],
+        chain_key: &KeyBytes,
         signature_key: PublicKey,
         signature_private_key: Option<PrivateKey>,
     ) {
@@ -324,7 +331,7 @@ impl SenderKeyRecord {
         &mut self,
         chain_id: ChainId,
         iteration: Counter,
-        chain_key: &[u8; 32],
+        chain_key: &KeyBytes,
         signature_key: PublicKey,
         signature_private_key: Option<PrivateKey>,
     ) {
