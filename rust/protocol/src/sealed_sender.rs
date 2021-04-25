@@ -4,9 +4,11 @@
 //
 
 use crate::{
-    message_encrypt, CiphertextMessageType, Context, Direction, IdentityKeyStore, KeyPair,
-    PreKeySignalMessage, PreKeyStore, PrivateKey, ProtocolAddress, PublicKey, Result, SessionStore,
-    SignalMessage, SignalProtocolError, SignedPreKeyStore, HKDF,
+    message_encrypt,
+    protocol::{SignalProtocolMessage, CIPHERTEXT_MESSAGE_CURRENT_VERSION},
+    Context, Direction, IdentityKeyStore, KeyPair, PreKeySignalMessage, PreKeyStore, PrivateKey,
+    ProtocolAddress, PublicKey, Result, SessionStore, SignalMessage, SignalProtocolError,
+    SignedPreKeyStore, HKDF,
 };
 
 use crate::crypto;
@@ -326,6 +328,315 @@ impl SenderCertificate {
 
     pub fn signature(&self) -> Result<&[u8]> {
         Ok(&self.signature)
+    }
+}
+
+pub enum CiphertextMessage {
+    SignalMessage(SignalMessage),
+    PreKeySignalMessage(PreKeySignalMessage),
+    SenderKeyMessage(SenderKeyMessage),
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Debug, num_enum::TryFromPrimitive)]
+#[repr(u8)]
+pub enum CiphertextMessageType {
+    Whisper = 2,
+    PreKey = 3,
+    // Further cases should line up with Envelope.Type (proto), even though old cases don't.
+    SenderKey = 7,
+}
+
+impl CiphertextMessage {
+    pub fn message_type(&self) -> CiphertextMessageType {
+        match self {
+            CiphertextMessage::SignalMessage(_) => CiphertextMessageType::Whisper,
+            CiphertextMessage::PreKeySignalMessage(_) => CiphertextMessageType::PreKey,
+            CiphertextMessage::SenderKeyMessage(_) => CiphertextMessageType::SenderKey,
+        }
+    }
+
+    pub fn serialize(&self) -> &[u8] {
+        match self {
+            CiphertextMessage::SignalMessage(x) => x.serialized(),
+            CiphertextMessage::PreKeySignalMessage(x) => x.serialized(),
+            CiphertextMessage::SenderKeyMessage(x) => x.serialized(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SenderKeyMessage {
+    message_version: u8,
+    distribution_id: Uuid,
+    chain_id: u32,
+    iteration: u32,
+    ciphertext: Box<[u8]>,
+    serialized: Box<[u8]>,
+}
+
+impl SignalProtocolMessage for SenderKeyMessage {
+    #[inline]
+    fn message_version(&self) -> u8 {
+        self.message_version
+    }
+    #[inline]
+    fn serialized(&self) -> &[u8] {
+        &*self.serialized
+    }
+}
+
+impl SenderKeyMessage {
+    const SIGNATURE_LEN: usize = 64;
+
+    pub fn new<R: CryptoRng + Rng>(
+        distribution_id: Uuid,
+        chain_id: u32,
+        iteration: u32,
+        ciphertext: Box<[u8]>,
+        csprng: &mut R,
+        signature_key: &PrivateKey,
+    ) -> Result<Self> {
+        let proto_message = proto::wire::SenderKeyMessage {
+            distribution_uuid: Some(distribution_id.as_bytes().to_vec()),
+            chain_id: Some(chain_id),
+            iteration: Some(iteration),
+            ciphertext: Some(ciphertext.to_vec()),
+        };
+        let mut serialized = vec![0u8; proto_message.encoded_len()];
+        proto_message.encode(&mut &mut serialized)?;
+        let signature = signature_key.calculate_signature(&serialized, csprng)?;
+        serialized.copy_from_slice(&signature[..]);
+        Ok(Self {
+            message_version: CIPHERTEXT_MESSAGE_CURRENT_VERSION,
+            distribution_id,
+            chain_id,
+            iteration,
+            ciphertext: Box::from(ciphertext),
+            serialized: Box::from(serialized),
+        })
+    }
+
+    pub fn verify_signature(&self, signature_key: &PublicKey) -> Result<bool> {
+        let valid = signature_key.verify_signature(
+            &self.serialized[..self.serialized.len() - Self::SIGNATURE_LEN],
+            &self.serialized[self.serialized.len() - Self::SIGNATURE_LEN..],
+        )?;
+
+        Ok(valid)
+    }
+
+    #[inline]
+    pub fn distribution_id(&self) -> Uuid {
+        self.distribution_id
+    }
+
+    #[inline]
+    pub fn chain_id(&self) -> u32 {
+        self.chain_id
+    }
+
+    #[inline]
+    pub fn iteration(&self) -> u32 {
+        self.iteration
+    }
+
+    #[inline]
+    pub fn ciphertext(&self) -> &[u8] {
+        &*self.ciphertext
+    }
+}
+
+impl AsRef<[u8]> for SenderKeyMessage {
+    fn as_ref(&self) -> &[u8] {
+        &*self.serialized
+    }
+}
+
+impl TryFrom<&[u8]> for SenderKeyMessage {
+    type Error = SignalProtocolError;
+
+    fn try_from(value: &[u8]) -> Result<Self> {
+        if value.len() < 1 + Self::SIGNATURE_LEN {
+            return Err(SignalProtocolError::CiphertextMessageTooShort(value.len()));
+        }
+        let message_version = value[0] >> 4;
+        if message_version < CIPHERTEXT_MESSAGE_CURRENT_VERSION {
+            return Err(SignalProtocolError::LegacyCiphertextVersion(
+                message_version,
+            ));
+        }
+        if message_version > CIPHERTEXT_MESSAGE_CURRENT_VERSION {
+            return Err(SignalProtocolError::UnrecognizedCiphertextVersion(
+                message_version,
+            ));
+        }
+        let proto_structure =
+            proto::wire::SenderKeyMessage::decode(&value[1..value.len() - Self::SIGNATURE_LEN])?;
+
+        let distribution_id = proto_structure
+            .distribution_uuid
+            .and_then(|bytes| Uuid::from_slice(bytes.as_slice()).ok())
+            .ok_or(SignalProtocolError::InvalidProtobufEncoding)?;
+        let chain_id = proto_structure
+            .chain_id
+            .ok_or(SignalProtocolError::InvalidProtobufEncoding)?;
+        let iteration = proto_structure
+            .iteration
+            .ok_or(SignalProtocolError::InvalidProtobufEncoding)?;
+        let ciphertext = proto_structure
+            .ciphertext
+            .ok_or(SignalProtocolError::InvalidProtobufEncoding)?
+            .into_boxed_slice();
+
+        Ok(SenderKeyMessage {
+            message_version,
+            distribution_id,
+            chain_id,
+            iteration,
+            ciphertext,
+            serialized: Box::from(value),
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SenderKeyDistributionMessage {
+    message_version: u8,
+    distribution_id: Uuid,
+    chain_id: u32,
+    iteration: u32,
+    chain_key: Vec<u8>,
+    signing_key: PublicKey,
+    serialized: Box<[u8]>,
+}
+
+impl SignalProtocolMessage for SenderKeyDistributionMessage {
+    #[inline]
+    fn message_version(&self) -> u8 {
+        self.message_version
+    }
+    #[inline]
+    fn serialized(&self) -> &[u8] {
+        &*self.serialized
+    }
+}
+
+impl SenderKeyDistributionMessage {
+    pub fn new(
+        distribution_id: Uuid,
+        chain_id: u32,
+        iteration: u32,
+        chain_key: Vec<u8>,
+        signing_key: PublicKey,
+    ) -> Result<Self> {
+        let proto_message = proto::wire::SenderKeyDistributionMessage {
+            distribution_uuid: Some(distribution_id.as_bytes().to_vec()),
+            chain_id: Some(chain_id),
+            iteration: Some(iteration),
+            chain_key: Some(chain_key.clone()),
+            signing_key: Some(signing_key.serialize().to_vec()),
+        };
+        let mut serialized = vec![0u8; proto_message.encoded_len()];
+        proto_message.encode(&mut &mut serialized)?;
+        Ok(Self {
+            message_version: CIPHERTEXT_MESSAGE_CURRENT_VERSION,
+            distribution_id,
+            chain_id,
+            iteration,
+            chain_key,
+            signing_key,
+            serialized: Box::from(serialized),
+        })
+    }
+
+    #[inline]
+    pub fn distribution_id(&self) -> Result<Uuid> {
+        Ok(self.distribution_id)
+    }
+
+    #[inline]
+    pub fn chain_id(&self) -> Result<u32> {
+        Ok(self.chain_id)
+    }
+
+    #[inline]
+    pub fn iteration(&self) -> Result<u32> {
+        Ok(self.iteration)
+    }
+
+    #[inline]
+    pub fn chain_key(&self) -> Result<&[u8]> {
+        Ok(&self.chain_key)
+    }
+
+    #[inline]
+    pub fn signing_key(&self) -> Result<&PublicKey> {
+        Ok(&self.signing_key)
+    }
+}
+
+impl AsRef<[u8]> for SenderKeyDistributionMessage {
+    fn as_ref(&self) -> &[u8] {
+        &*self.serialized
+    }
+}
+
+impl TryFrom<&[u8]> for SenderKeyDistributionMessage {
+    type Error = SignalProtocolError;
+
+    fn try_from(value: &[u8]) -> Result<Self> {
+        // The message contains at least a X25519 key and a chain key
+        if value.len() < 1 + 32 + 32 {
+            return Err(SignalProtocolError::CiphertextMessageTooShort(value.len()));
+        }
+
+        let message_version = value[0] >> 4;
+
+        if message_version < CIPHERTEXT_MESSAGE_CURRENT_VERSION {
+            return Err(SignalProtocolError::LegacyCiphertextVersion(
+                message_version,
+            ));
+        }
+        if message_version > CIPHERTEXT_MESSAGE_CURRENT_VERSION {
+            return Err(SignalProtocolError::UnrecognizedCiphertextVersion(
+                message_version,
+            ));
+        }
+
+        let proto_structure = proto::wire::SenderKeyDistributionMessage::decode(&value[1..])?;
+
+        let distribution_id = proto_structure
+            .distribution_uuid
+            .and_then(|bytes| Uuid::from_slice(bytes.as_slice()).ok())
+            .ok_or(SignalProtocolError::InvalidProtobufEncoding)?;
+        let chain_id = proto_structure
+            .chain_id
+            .ok_or(SignalProtocolError::InvalidProtobufEncoding)?;
+        let iteration = proto_structure
+            .iteration
+            .ok_or(SignalProtocolError::InvalidProtobufEncoding)?;
+        let chain_key = proto_structure
+            .chain_key
+            .ok_or(SignalProtocolError::InvalidProtobufEncoding)?;
+        let signing_key = proto_structure
+            .signing_key
+            .ok_or(SignalProtocolError::InvalidProtobufEncoding)?;
+
+        if chain_key.len() != 32 || signing_key.len() != 33 {
+            return Err(SignalProtocolError::InvalidProtobufEncoding);
+        }
+
+        let signing_key = PublicKey::deserialize(&signing_key)?;
+
+        Ok(SenderKeyDistributionMessage {
+            message_version,
+            distribution_id,
+            chain_id,
+            iteration,
+            chain_key,
+            signing_key,
+            serialized: Box::from(value),
+        })
     }
 }
 

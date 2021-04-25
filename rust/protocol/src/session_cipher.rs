@@ -4,14 +4,16 @@
 //
 
 use crate::{
-    CiphertextMessage, Context, Direction, IdentityKeyStore, KeyPair, PreKeySignalMessage,
-    PreKeyStore, ProtocolAddress, PublicKey, Result, SessionRecord, SessionStore, SignalMessage,
+    Context, Direction, IdentityKeyStore, KeyPair, PreKeySignalMessage, PreKeyStore,
+    ProtocolAddress, PublicKey, Result, SessionRecord, SessionStore, SignalMessage,
     SignalProtocolError, SignedPreKeyStore,
 };
 
 use crate::consts::MAX_FORWARD_JUMPS;
 use crate::crypto;
+use crate::protocol::{MACPair, SignalProtocolMessage, SequencedMessage, MACVerifiable};
 use crate::ratchet::{ChainKey, MessageKeys};
+use crate::sealed_sender::CiphertextMessage;
 use crate::session;
 use crate::state::SessionState;
 
@@ -62,9 +64,11 @@ pub async fn message_encrypt(
             sender_ephemeral,
             chain_key.index(),
             previous_counter,
-            &ctext,
-            &local_identity_key,
-            &their_identity_key,
+            ctext,
+            MACPair {
+                sender: local_identity_key,
+                receiver: their_identity_key,
+            },
         )?;
 
         CiphertextMessage::PreKeySignalMessage(PreKeySignalMessage::new(
@@ -83,9 +87,11 @@ pub async fn message_encrypt(
             sender_ephemeral,
             chain_key.index(),
             previous_counter,
-            &ctext,
-            &local_identity_key,
-            &their_identity_key,
+            ctext,
+            MACPair {
+                sender: local_identity_key,
+                receiver: their_identity_key,
+            },
         )?)
     };
 
@@ -195,7 +201,7 @@ pub async fn message_decrypt_prekey<R: Rng + CryptoRng>(
     let ptext = decrypt_message_with_record(
         &remote_address,
         &mut session_record,
-        ciphertext.message(),
+        ciphertext.as_ref(),
         csprng,
     )?;
 
@@ -462,8 +468,10 @@ fn decrypt_message_with_state<R: Rng + CryptoRng>(
         .ok_or(SignalProtocolError::InvalidSessionStructure)?;
 
     let mac_valid = ciphertext.verify_mac(
-        &their_identity_key,
-        &state.local_identity_key()?,
+        MACPair {
+            sender: their_identity_key,
+            receiver: state.local_identity_key()?,
+        },
         message_keys.mac_key(),
     )?;
 

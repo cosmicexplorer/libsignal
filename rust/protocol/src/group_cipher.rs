@@ -1,5 +1,5 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020, 2021 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
@@ -7,8 +7,9 @@ use crate::consts;
 use crate::crypto;
 
 use crate::{
-    Context, KeyPair, ProtocolAddress, Result, SenderKeyDistributionMessage, SenderKeyMessage,
-    SenderKeyRecord, SenderKeyStore, SignalProtocolError,
+    sealed_sender::{SenderKeyDistributionMessage, SenderKeyMessage},
+    Context, KeyPair, ProtocolAddress, Result, SenderKeyRecord, SenderKeyStore,
+    SignalProtocolError,
 };
 
 use crate::sender_keys::{SenderKeyState, SenderMessageKey};

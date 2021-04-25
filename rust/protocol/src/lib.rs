@@ -40,8 +40,7 @@ pub use {
     identity_key::{IdentityKey, IdentityKeyPair},
     kdf::HKDF,
     protocol::{
-        CiphertextMessage, CiphertextMessageType, PreKeySignalMessage,
-        SenderKeyDistributionMessage, SenderKeyMessage, SignalMessage,
+        MACVerifiable, PreKeySignalMessage, SequencedMessage, SignalMessage, SignalProtocolMessage,
     },
     ratchet::{
         initialize_alice_session_record, initialize_bob_session_record,
@@ -50,8 +49,9 @@ pub use {
     sealed_sender::{
         sealed_sender_decrypt, sealed_sender_decrypt_to_usmc, sealed_sender_encrypt,
         sealed_sender_encrypt_from_usmc, sealed_sender_multi_recipient_encrypt,
-        sealed_sender_multi_recipient_fan_out, ContentHint, SealedSenderDecryptionResult,
-        SenderCertificate, ServerCertificate, UnidentifiedSenderMessageContent,
+        sealed_sender_multi_recipient_fan_out, CiphertextMessage, CiphertextMessageType,
+        ContentHint, SealedSenderDecryptionResult, SenderCertificate, SenderKeyDistributionMessage,
+        SenderKeyMessage, ServerCertificate, UnidentifiedSenderMessageContent,
     },
     sender_keys::SenderKeyRecord,
     session::{process_prekey, process_prekey_bundle},
