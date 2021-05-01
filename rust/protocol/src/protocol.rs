@@ -9,9 +9,12 @@ use crate::consts::{
     CIPHERTEXT_MESSAGE_CURRENT_VERSION,
 };
 use crate::proto;
-use crate::utils::traits::{
-    message::SignatureVerifiable,
-    serde::{Deserializable, Serializable},
+use crate::utils::{
+    traits::{
+        message::SignatureVerifiable,
+        serde::{Deserializable, Serializable},
+    },
+    unwrap::no_encoding_error,
 };
 use crate::{IdentityKey, PrivateKey, PublicKey, PublicKeySignature, Result, SignalProtocolError};
 
@@ -360,7 +363,7 @@ impl SenderKeyMessage {
         ciphertext: Box<[u8]>,
         csprng: &mut R,
         signature_key: &PrivateKey,
-    ) -> Result<Self> {
+    ) -> Self {
         let proto_message = proto::wire::SenderKeyMessage {
             distribution_uuid: Some(distribution_id.as_bytes().to_vec()),
             chain_id: Some(chain_id),
@@ -371,18 +374,18 @@ impl SenderKeyMessage {
         let mut serialized = vec![0u8; 1 + proto_message_len + SIGNATURE_LENGTH];
         serialized[0] =
             ((CIPHERTEXT_MESSAGE_CURRENT_VERSION & 0xF) << 4) | CIPHERTEXT_MESSAGE_CURRENT_VERSION;
-        proto_message.encode(&mut &mut serialized[1..1 + proto_message_len])?;
+        no_encoding_error(proto_message.encode(&mut &mut serialized[1..1 + proto_message_len]));
         let signature =
             signature_key.calculate_signature(&serialized[..1 + proto_message_len], csprng);
         serialized[1 + proto_message_len..].copy_from_slice(&signature[..]);
-        Ok(Self {
+        Self {
             message_version: CIPHERTEXT_MESSAGE_CURRENT_VERSION,
             distribution_id,
             chain_id,
             iteration,
             ciphertext,
             serialized: serialized.into_boxed_slice(),
-        })
+        }
     }
 
     pub fn verify_signature(&self, signature_key: &PublicKey) -> Result<bool> {
@@ -488,7 +491,7 @@ pub struct SenderKeyDistributionMessage {
     distribution_id: Uuid,
     chain_id: u32,
     iteration: Counter,
-    chain_key: Vec<u8>,
+    chain_key: [u8; 32],
     signing_key: PublicKey,
     serialized: Box<[u8]>,
 }
@@ -498,14 +501,14 @@ impl SenderKeyDistributionMessage {
         distribution_id: Uuid,
         chain_id: u32,
         iteration: Counter,
-        chain_key: Vec<u8>,
+        chain_key: [u8; 32],
         signing_key: PublicKey,
     ) -> Result<Self> {
         let proto_message = proto::wire::SenderKeyDistributionMessage {
             distribution_uuid: Some(distribution_id.as_bytes().to_vec()),
             chain_id: Some(chain_id),
             iteration: Some(iteration),
-            chain_key: Some(chain_key.clone()),
+            chain_key: Some(chain_key.to_vec()),
             signing_key: Some(signing_key.serialize().to_vec()),
         };
         let message_version = CIPHERTEXT_MESSAGE_CURRENT_VERSION;
@@ -530,28 +533,28 @@ impl SenderKeyDistributionMessage {
     }
 
     #[inline]
-    pub fn distribution_id(&self) -> Result<Uuid> {
-        Ok(self.distribution_id)
+    pub fn distribution_id(&self) -> Uuid {
+        self.distribution_id
     }
 
     #[inline]
-    pub fn chain_id(&self) -> Result<u32> {
-        Ok(self.chain_id)
+    pub fn chain_id(&self) -> u32 {
+        self.chain_id
     }
 
     #[inline]
-    pub fn iteration(&self) -> Result<Counter> {
-        Ok(self.iteration)
+    pub fn iteration(&self) -> Counter {
+        self.iteration
     }
 
     #[inline]
-    pub fn chain_key(&self) -> Result<&[u8]> {
-        Ok(&self.chain_key)
+    pub fn chain_key(&self) -> [u8; 32] {
+        self.chain_key
     }
 
     #[inline]
-    pub fn signing_key(&self) -> Result<&PublicKey> {
-        Ok(&self.signing_key)
+    pub fn signing_key(&self) -> &PublicKey {
+        &self.signing_key
     }
 
     #[inline]
@@ -618,7 +621,7 @@ impl TryFrom<&[u8]> for SenderKeyDistributionMessage {
             distribution_id,
             chain_id,
             iteration,
-            chain_key,
+            chain_key: *array_ref![&chain_key, 0, 32],
             signing_key,
             serialized: Box::from(value),
         })
@@ -744,7 +747,7 @@ mod tests {
             [1u8, 2, 3].into(),
             &mut csprng,
             &signature_key_pair.private_key,
-        )?;
+        );
         let deser_sender_key_message = SenderKeyMessage::try_from(sender_key_message.as_ref())
             .expect("should deserialize without error");
         assert_eq!(

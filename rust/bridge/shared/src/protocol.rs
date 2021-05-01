@@ -376,14 +376,14 @@ fn SenderKeyMessage_New(
     pk: &PrivateKey,
 ) -> Result<SenderKeyMessage> {
     let mut csprng = rand::rngs::OsRng;
-    SenderKeyMessage::new(
+    Ok(SenderKeyMessage::new(
         distribution_id,
         chain_id,
         iteration,
         ciphertext.into(),
         &mut csprng,
         pk,
-    )
+    ))
 }
 
 #[bridge_fn]
@@ -403,7 +403,7 @@ fn SenderKeyDistributionMessage_GetSignatureKeySerialized<E: Env>(
     env: E,
     m: &SenderKeyDistributionMessage,
 ) -> Result<E::Buffer> {
-    Ok(env.buffer(m.signing_key()?.serialize().into_vec()))
+    Ok(env.buffer(m.signing_key().serialize().into_vec()))
 }
 
 bridge_get_bytearray!(
@@ -420,7 +420,7 @@ fn SenderKeyDistributionMessageGetDistributionId(
     out: &mut [u8; 16],
     obj: &SenderKeyDistributionMessage,
 ) -> Result<()> {
-    *out = *obj.distribution_id()?.as_bytes();
+    *out = *obj.distribution_id().as_bytes();
     Ok(())
 }
 
@@ -432,14 +432,20 @@ fn SenderKeyDistributionMessage_New(
     chainkey: &[u8],
     pk: &PublicKey,
 ) -> Result<SenderKeyDistributionMessage> {
-    SenderKeyDistributionMessage::new(distribution_id, chain_id, iteration, chainkey.into(), *pk)
+    SenderKeyDistributionMessage::new(
+        distribution_id,
+        chain_id,
+        iteration,
+        *array_ref![chainkey, 0, 32],
+        *pk,
+    )
 }
 
 #[bridge_fn(jni = false, node = false)]
 fn SenderKeyDistributionMessage_GetSignatureKey(
     m: &SenderKeyDistributionMessage,
 ) -> Result<PublicKey> {
-    Ok(*m.signing_key()?)
+    Ok(*m.signing_key())
 }
 
 #[bridge_fn]

@@ -41,12 +41,12 @@ pub async fn group_encrypt<R: Rng + CryptoRng>(
 
     let skm = SenderKeyMessage::new(
         distribution_id,
-        sender_key_state.chain_id()?,
+        sender_key_state.chain_id(),
         sender_key.iteration(),
         ciphertext.into_boxed_slice(),
         csprng,
         &signing_key,
-    )?;
+    );
 
     sender_key_state.set_sender_chain_key(sender_key_state.sender_chain_key()?.next());
 
@@ -126,19 +126,19 @@ pub async fn process_sender_key_distribution_message(
     sender_key_store: &mut dyn SenderKeyStore,
     ctx: Context,
 ) -> Result<()> {
-    let distribution_id = skdm.distribution_id()?;
+    let distribution_id = skdm.distribution_id();
     let mut sender_key_record = sender_key_store
         .load_sender_key(sender, distribution_id, ctx)
         .await?
         .unwrap_or_else(SenderKeyRecord::new_empty);
 
     sender_key_record.add_sender_key_state(
-        skdm.chain_id()?,
-        skdm.iteration()?,
-        skdm.chain_key()?,
-        *skdm.signing_key()?,
+        skdm.chain_id(),
+        skdm.iteration(),
+        &skdm.chain_key(),
+        *skdm.signing_key(),
         None,
-    )?;
+    );
     sender_key_store
         .store_sender_key(sender, distribution_id, &sender_key_record, ctx)
         .await?;
@@ -157,7 +157,7 @@ pub async fn create_sender_key_distribution_message<R: Rng + CryptoRng>(
         .await?
         .unwrap_or_else(SenderKeyRecord::new_empty);
 
-    if sender_key_record.is_empty()? {
+    if sender_key_record.is_empty() {
         // libsignal-protocol-java uses 31-bit integers for sender key chain IDs
         let chain_id = (csprng.gen::<u32>()) >> 1;
         let iteration = 0;
@@ -169,7 +169,7 @@ pub async fn create_sender_key_distribution_message<R: Rng + CryptoRng>(
             &sender_key,
             signing_key.public_key,
             Some(signing_key.private_key),
-        )?;
+        );
         sender_key_store
             .store_sender_key(sender, distribution_id, &sender_key_record, ctx)
             .await?;
@@ -180,7 +180,7 @@ pub async fn create_sender_key_distribution_message<R: Rng + CryptoRng>(
 
     SenderKeyDistributionMessage::new(
         distribution_id,
-        state.chain_id()?,
+        state.chain_id(),
         sender_chain_key.iteration(),
         sender_chain_key.seed(),
         state.signing_key_public()?,

@@ -32,7 +32,7 @@ pub mod proto;
 mod protocol;
 pub mod ratchet;
 pub mod sealed_sender;
-mod sender_keys;
+pub mod sender_keys;
 mod session;
 mod session_cipher;
 mod state;
