@@ -33,7 +33,7 @@ mod protocol;
 pub mod ratchet;
 pub mod sealed_sender;
 pub mod sender_keys;
-mod session;
+pub mod session;
 mod session_cipher;
 mod state;
 mod storage;
