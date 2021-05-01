@@ -3,17 +3,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
+use crate::crypto;
+use crate::curve;
+use crate::proto;
+use crate::session_cipher;
 use crate::{
     message_encrypt, CiphertextMessageType, Context, Direction, IdentityKey, IdentityKeyPair,
     IdentityKeyStore, KeyPair, PreKeySignalMessage, PreKeyStore, PrivateKey, ProtocolAddress,
     PublicKey, Result, SessionRecord, SessionStore, SignalMessage, SignalProtocolError,
     SignedPreKeyStore,
 };
-
-use crate::crypto;
-use crate::curve;
-use crate::proto;
-use crate::session_cipher;
 
 use aes_gcm_siv::aead::{AeadInPlace, NewAead};
 use aes_gcm_siv::Aes256GcmSiv;
