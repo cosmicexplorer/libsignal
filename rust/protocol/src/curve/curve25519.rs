@@ -1,5 +1,5 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020-2021 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
@@ -12,10 +12,14 @@ use sha2::{Digest, Sha512};
 use subtle::ConstantTimeEq;
 use x25519_dalek::{PublicKey, StaticSecret};
 
-const AGREEMENT_LENGTH: usize = 32;
-const PRIVATE_KEY_LENGTH: usize = 32;
-const PUBLIC_KEY_LENGTH: usize = 32;
-const SIGNATURE_LENGTH: usize = 64;
+/// Length of an agreed-upon key after a Diffie-Hellman exchange.
+pub const AGREEMENT_LENGTH: usize = 32;
+/// Length of a private key.
+pub const PRIVATE_KEY_LENGTH: usize = 32;
+/// Length of a public key.
+pub const PUBLIC_KEY_LENGTH: usize = 32;
+/// Length of a signature.
+pub const SIGNATURE_LENGTH: usize = 64;
 
 #[derive(Debug, Clone)]
 pub struct KeyPair {

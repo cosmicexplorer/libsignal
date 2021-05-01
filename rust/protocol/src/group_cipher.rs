@@ -1,9 +1,9 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020-2021 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-use crate::consts;
+use crate::consts::limits;
 use crate::crypto;
 
 use crate::{
@@ -72,7 +72,7 @@ fn get_sender_key(state: &mut SenderKeyState, iteration: u32) -> Result<SenderMe
     }
 
     let jump = (iteration - sender_chain_key.iteration()?) as usize;
-    if jump > consts::MAX_FORWARD_JUMPS {
+    if jump > limits::MAX_FORWARD_JUMPS {
         return Err(SignalProtocolError::InvalidMessage(
             "message from too far into the future",
         ));

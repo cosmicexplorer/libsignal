@@ -1,9 +1,13 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020-2021 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
+//! Identity creation primitives.
+
 mod curve25519;
+
+pub use curve25519::{AGREEMENT_LENGTH, PRIVATE_KEY_LENGTH, PUBLIC_KEY_LENGTH, SIGNATURE_LENGTH};
 
 use crate::{Result, SignalProtocolError};
 
@@ -15,8 +19,10 @@ use arrayref::array_ref;
 use rand::{CryptoRng, Rng};
 use subtle::ConstantTimeEq;
 
+/// TODO: describe the intent of this enum!
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum KeyType {
+    /// TODO: What does this case mean?
     Djb,
 }
 
@@ -47,15 +53,17 @@ impl TryFrom<u8> for KeyType {
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 enum PublicKeyData {
-    DjbPublicKey([u8; 32]),
+    DjbPublicKey([u8; PUBLIC_KEY_LENGTH]),
 }
 
+/// Public key half of a [KeyPair].
 #[derive(Clone, Copy, Eq)]
 pub struct PublicKey {
     key: PublicKeyData,
 }
 
 impl PublicKey {
+    /// Create a new instance from the data in `key`.
     fn new(key: PublicKeyData) -> Self {
         Self { key }
     }
@@ -68,11 +76,11 @@ impl PublicKey {
         match key_type {
             KeyType::Djb => {
                 // We allow trailing data after the public key (why?)
-                if value.len() < 32 + 1 {
+                if value.len() < PUBLIC_KEY_LENGTH + 1 {
                     return Err(SignalProtocolError::BadKeyLength(KeyType::Djb, value.len()));
                 }
-                let mut key = [0u8; 32];
-                key.copy_from_slice(&value[1..33]);
+                let mut key = [0u8; PUBLIC_KEY_LENGTH];
+                key.copy_from_slice(&value[1..(PUBLIC_KEY_LENGTH + 1)]);
                 Ok(PublicKey {
                     key: PublicKeyData::DjbPublicKey(key),
                 })
@@ -80,14 +88,16 @@ impl PublicKey {
         }
     }
 
+    /// Return the bytes that make up this public key.
     pub fn public_key_bytes(&self) -> Result<&[u8]> {
         match self.key {
             PublicKeyData::DjbPublicKey(ref v) => Ok(v),
         }
     }
 
+    /// Create an instance by attempting to interpret `bytes` as a [KeyType::Djb] public key.
     pub fn from_djb_public_key_bytes(bytes: &[u8]) -> Result<Self> {
-        match <[u8; 32]>::try_from(bytes) {
+        match <[u8; PUBLIC_KEY_LENGTH]>::try_from(bytes) {
             Err(_) => Err(SignalProtocolError::BadKeyLength(KeyType::Djb, bytes.len())),
             Ok(key) => Ok(PublicKey {
                 key: PublicKeyData::DjbPublicKey(key),
@@ -197,9 +207,10 @@ impl fmt::Debug for PublicKey {
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 enum PrivateKeyData {
-    DjbPrivateKey([u8; 32]),
+    DjbPrivateKey([u8; PRIVATE_KEY_LENGTH]),
 }
 
+/// Private key half of a [KeyPair].
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct PrivateKey {
     key: PrivateKeyData,
@@ -207,15 +218,15 @@ pub struct PrivateKey {
 
 impl PrivateKey {
     pub fn deserialize(value: &[u8]) -> Result<Self> {
-        if value.len() != 32 {
+        if value.len() != PRIVATE_KEY_LENGTH {
             Err(SignalProtocolError::BadKeyLength(KeyType::Djb, value.len()))
         } else {
-            let mut key = [0u8; 32];
-            key.copy_from_slice(&value[..32]);
+            let mut key = [0u8; PRIVATE_KEY_LENGTH];
+            key.copy_from_slice(&value[..PRIVATE_KEY_LENGTH]);
             // Clamp:
             key[0] &= 0xF8;
-            key[31] &= 0x7F;
-            key[31] |= 0x40;
+            key[PRIVATE_KEY_LENGTH - 1] &= 0x7F;
+            key[PRIVATE_KEY_LENGTH - 1] |= 0x40;
             Ok(Self {
                 key: PrivateKeyData::DjbPrivateKey(key),
             })
@@ -228,6 +239,7 @@ impl PrivateKey {
         }
     }
 
+    /// Derive a public key from the current private key's contents.
     pub fn public_key(&self) -> Result<PublicKey> {
         match self.key {
             PrivateKeyData::DjbPrivateKey(private_key) => {
@@ -243,6 +255,7 @@ impl PrivateKey {
         }
     }
 
+    /// Calculate a signature for `message` given this private key.
     pub fn calculate_signature<R: CryptoRng + Rng>(
         &self,
         message: &[u8],
@@ -256,6 +269,7 @@ impl PrivateKey {
         }
     }
 
+    /// Calculate a new key agreed between this private key and the public key `their_key`.
     pub fn calculate_agreement(&self, their_key: &PublicKey) -> Result<Box<[u8]>> {
         match (self.key, their_key.key) {
             (PrivateKeyData::DjbPrivateKey(priv_key), PublicKeyData::DjbPublicKey(pub_key)) => {
@@ -280,6 +294,7 @@ impl TryFrom<&[u8]> for PrivateKey {
     }
 }
 
+/// A matching public and private key.
 #[derive(Copy, Clone)]
 pub struct KeyPair {
     pub public_key: PublicKey,
@@ -287,6 +302,7 @@ pub struct KeyPair {
 }
 
 impl KeyPair {
+    /// Create a new identity from random state.
     pub fn generate<R: Rng + CryptoRng>(csprng: &mut R) -> Self {
         let keypair = curve25519::KeyPair::new(csprng);
 
@@ -299,6 +315,7 @@ impl KeyPair {
         }
     }
 
+    /// Instantiate an identity from a known public/private key pair.
     pub fn new(public_key: PublicKey, private_key: PrivateKey) -> Self {
         Self {
             public_key,
@@ -306,6 +323,7 @@ impl KeyPair {
         }
     }
 
+    /// Instantiate an identity from byte strings for public and private keys.
     pub fn from_public_and_private(public_key: &[u8], private_key: &[u8]) -> Result<Self> {
         let public_key = PublicKey::try_from(public_key)?;
         let private_key = PrivateKey::try_from(private_key)?;
@@ -315,6 +333,7 @@ impl KeyPair {
         })
     }
 
+    /// Calculate a signature for `message` given the current identity's private key.
     pub fn calculate_signature<R: CryptoRng + Rng>(
         &self,
         message: &[u8],
@@ -323,6 +342,7 @@ impl KeyPair {
         self.private_key.calculate_signature(message, csprng)
     }
 
+    /// Calculate a new key agreed between our private key and the public key `their_key`.
     pub fn calculate_agreement(&self, their_key: &PublicKey) -> Result<Box<[u8]>> {
         self.private_key.calculate_agreement(their_key)
     }

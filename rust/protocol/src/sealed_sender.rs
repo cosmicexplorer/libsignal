@@ -626,7 +626,7 @@ mod sealed_sender_v1 {
             }
 
             let shared_secret = our_private.calculate_agreement(their_public)?;
-            let kdf = HKDF::new(3)?;
+            let kdf = HKDF::new_current();
             let derived_values =
                 kdf.derive_salted_secrets(&shared_secret, &ephemeral_salt, &[], 96)?;
 
@@ -661,7 +661,7 @@ mod sealed_sender_v1 {
             salt.extend_from_slice(ctext);
 
             let shared_secret = our_private.calculate_agreement(their_public)?;
-            let kdf = HKDF::new(3)?;
+            let kdf = HKDF::new_current();
             // 96 bytes are derived but the first 32 are discarded/unused
             let derived_values = kdf.derive_salted_secrets(&shared_secret, &salt, &[], 96)?;
 
@@ -797,7 +797,7 @@ mod sealed_sender_v2 {
 
     impl DerivedKeys {
         pub(super) fn calculate(m: &[u8]) -> DerivedKeys {
-            let kdf = HKDF::new(3).expect("valid KDF version");
+            let kdf = HKDF::new_current();
             let r = kdf
                 .derive_secrets(&m, LABEL_R, 64)
                 .expect("valid use of KDF");
@@ -834,7 +834,7 @@ mod sealed_sender_v2 {
         }
         .concat();
 
-        let mut result = HKDF::new(3)?.derive_secrets(&agreement_key_input, LABEL_DH, 32)?;
+        let mut result = HKDF::new_current().derive_secrets(&agreement_key_input, LABEL_DH, 32)?;
         result
             .iter_mut()
             .zip(input)
@@ -864,7 +864,7 @@ mod sealed_sender_v2 {
             }
         }
 
-        HKDF::new(3)?.derive_secrets(&agreement_key_input, LABEL_DH_S, 16)
+        HKDF::new_current().derive_secrets(&agreement_key_input, LABEL_DH_S, 16)
     }
 }
 

@@ -1,5 +1,5 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020-2021 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
@@ -14,7 +14,11 @@ pub struct HKDF {
 }
 
 impl HKDF {
-    const HASH_OUTPUT_SIZE: usize = 32;
+    const HASH_OUTPUT_SIZE: usize = crate::crypto::HMAC_OUTPUT_SIZE;
+
+    pub fn new_current() -> Self {
+        Self::new(crate::consts::CIPHERTEXT_MESSAGE_CURRENT_VERSION.into()).unwrap()
+    }
 
     pub fn new(message_version: u32) -> Result<Self> {
         match message_version {
@@ -109,7 +113,7 @@ mod tests {
             0xec, 0xc4, 0xc5, 0xbf, 0x34, 0x00, 0x72, 0x08, 0xd5, 0xb8, 0x87, 0x18, 0x58, 0x65,
         ];
 
-        let output = HKDF::new(3)?.derive_salted_secrets(&ikm, &salt, &info, okm.len())?;
+        let output = HKDF::new_current().derive_salted_secrets(&ikm, &salt, &info, okm.len())?;
 
         assert_eq!(&okm[..], &output[..]);
 
@@ -151,7 +155,7 @@ mod tests {
             0x3e, 0x87, 0xc1, 0x4c, 0x01, 0xd5, 0xc1, 0xf3, 0x43, 0x4f, 0x1d, 0x87,
         ];
 
-        let output = HKDF::new(3)?.derive_salted_secrets(&ikm, &salt, &info, okm.len())?;
+        let output = HKDF::new_current().derive_salted_secrets(&ikm, &salt, &info, okm.len())?;
 
         assert_eq!(&okm[..], &output[..]);
 

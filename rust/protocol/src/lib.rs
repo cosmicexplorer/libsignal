@@ -20,17 +20,17 @@
 #![deny(unsafe_code)]
 
 pub mod address;
-mod consts;
+pub mod consts;
 mod crypto;
-mod curve;
+pub mod curve;
 pub mod error;
 mod fingerprint;
 mod group_cipher;
 mod identity_key;
 mod kdf;
-mod proto;
+pub mod proto;
 mod protocol;
-mod ratchet;
+pub mod ratchet;
 mod sealed_sender;
 mod sender_keys;
 mod session;

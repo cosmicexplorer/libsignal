@@ -1,21 +1,25 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020-2021 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
+
+//! Initialize a [Double Ratchet] chain.
+//!
+//! [Double Ratchet]: https://signal.org/docs/specifications/doubleratchet/#initialization
 
 mod keys;
 mod params;
 
 pub use self::keys::{ChainKey, MessageKeys, RootKey};
 pub use self::params::{AliceSignalProtocolParameters, BobSignalProtocolParameters};
+use crate::consts::CIPHERTEXT_MESSAGE_CURRENT_VERSION;
 use crate::proto::storage::SessionStructure;
-use crate::protocol::CIPHERTEXT_MESSAGE_CURRENT_VERSION;
 use crate::state::SessionState;
 use crate::{KeyPair, Result, SessionRecord};
 use rand::{CryptoRng, Rng};
 
 fn derive_keys(secret_input: &[u8]) -> Result<(RootKey, ChainKey)> {
-    let kdf = crate::kdf::HKDF::new(3)?;
+    let kdf = crate::kdf::HKDF::new_current();
 
     let secrets = kdf.derive_secrets(secret_input, b"WhisperText", 64)?;
 
@@ -151,6 +155,9 @@ pub(crate) fn initialize_bob_session(
     Ok(session)
 }
 
+/// [Initialize Alice's side] of the Double Ratchet chain.
+///
+/// [Initialize Alice's side]: https://signal.org/docs/specifications/doubleratchet/#initialization
 pub fn initialize_alice_session_record<R: Rng + CryptoRng>(
     parameters: &AliceSignalProtocolParameters,
     csprng: &mut R,
@@ -160,6 +167,9 @@ pub fn initialize_alice_session_record<R: Rng + CryptoRng>(
     )?))
 }
 
+/// [Initialize Bob's side] of the Double Ratchet chain.
+///
+/// [Initialize Bob's side]: https://signal.org/docs/specifications/doubleratchet/#initialization
 pub fn initialize_bob_session_record(
     parameters: &BobSignalProtocolParameters,
 ) -> Result<SessionRecord> {

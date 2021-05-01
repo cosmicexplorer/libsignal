@@ -1,10 +1,11 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020-2021 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
 use arrayref::array_ref;
 
+use crate::consts::types::Counter;
 use crate::crypto;
 use crate::{PrivateKey, PublicKey, Result, SignalProtocolError, HKDF};
 use std::fmt;
@@ -13,11 +14,11 @@ pub struct MessageKeys {
     cipher_key: [u8; 32],
     mac_key: [u8; 32],
     iv: [u8; 16],
-    counter: u32,
+    counter: Counter,
 }
 
 impl MessageKeys {
-    pub fn derive_keys(input_key_material: &[u8], kdf: HKDF, counter: u32) -> Result<Self> {
+    pub fn derive_keys(input_key_material: &[u8], kdf: HKDF, counter: Counter) -> Result<Self> {
         let okm = kdf.derive_secrets(input_key_material, b"WhisperMessageKeys", 80)?;
         Ok(MessageKeys {
             cipher_key: *array_ref![okm, 0, 32],
@@ -27,7 +28,7 @@ impl MessageKeys {
         })
     }
 
-    pub fn new(cipher_key: &[u8], mac_key: &[u8], iv: &[u8], counter: u32) -> Result<Self> {
+    pub fn new(cipher_key: &[u8], mac_key: &[u8], iv: &[u8], counter: Counter) -> Result<Self> {
         if mac_key.len() != 32 {
             return Err(SignalProtocolError::InvalidMacKeyLength(mac_key.len()));
         }
@@ -62,7 +63,7 @@ impl MessageKeys {
     }
 
     #[inline]
-    pub fn counter(&self) -> u32 {
+    pub fn counter(&self) -> Counter {
         self.counter
     }
 }
@@ -71,14 +72,14 @@ impl MessageKeys {
 pub struct ChainKey {
     kdf: HKDF,
     key: [u8; 32],
-    index: u32,
+    index: Counter,
 }
 
 impl ChainKey {
     const MESSAGE_KEY_SEED: [u8; 1] = [0x01u8];
     const CHAIN_KEY_SEED: [u8; 1] = [0x02u8];
 
-    pub fn new(kdf: HKDF, key: &[u8], index: u32) -> Result<Self> {
+    pub fn new(kdf: HKDF, key: &[u8], index: Counter) -> Result<Self> {
         if key.len() != 32 {
             return Err(SignalProtocolError::InvalidChainKeyLength(key.len()));
         }
@@ -96,7 +97,7 @@ impl ChainKey {
     }
 
     #[inline]
-    pub fn index(&self) -> u32 {
+    pub fn index(&self) -> Counter {
         self.index
     }
 
@@ -237,7 +238,7 @@ mod tests {
             0xa2, 0x46, 0xd1, 0x5d,
         ];
 
-        let chain_key = ChainKey::new(HKDF::new(3)?, &seed, 0)?;
+        let chain_key = ChainKey::new(HKDF::new_current(), &seed, 0)?;
         assert_eq!(&seed, chain_key.key());
         assert_eq!(&message_key, chain_key.message_keys()?.cipher_key());
         assert_eq!(&mac_key, chain_key.message_keys()?.mac_key());
