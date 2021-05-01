@@ -1,16 +1,24 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020-2021 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
+// TODO: add documentation for each of the error cases!
+// #![warn(missing_docs)]
+
+//! Errors that may occur during various stages of the Signal Protocol.
+
 use crate::curve::KeyType;
 
+use std::convert::Infallible;
 use std::error::Error;
 use std::fmt;
 use std::panic::UnwindSafe;
 
+/// Return type for all fallible operations in the Signal Protocol.
 pub type Result<T> = std::result::Result<T, SignalProtocolError>;
 
+/// Error states recognized by the Signal Protocol.
 #[derive(Debug)]
 pub enum SignalProtocolError {
     InvalidArgument(String),
@@ -74,6 +82,12 @@ impl Error for SignalProtocolError {
             SignalProtocolError::ApplicationCallbackError(_, e) => Some(e.as_ref()),
             _ => None,
         }
+    }
+}
+
+impl From<Infallible> for SignalProtocolError {
+    fn from(_value: Infallible) -> Self {
+        unreachable!()
     }
 }
 
