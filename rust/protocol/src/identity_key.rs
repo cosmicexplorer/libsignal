@@ -1,7 +1,12 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020-2021 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
+
+// TODO
+// #![warn(missing_docs)]
+
+//! Wrappers over identity primitives from [crate::curve].
 
 use crate::proto;
 use crate::{KeyPair, PrivateKey, PublicKey, Result, SignalProtocolError};
@@ -11,6 +16,7 @@ use std::convert::TryFrom;
 
 use prost::Message;
 
+/// Wrapper for [PublicKey].
 #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, Clone, Copy)]
 pub struct IdentityKey {
     public_key: PublicKey,
@@ -51,6 +57,7 @@ impl From<PublicKey> for IdentityKey {
     }
 }
 
+/// Wrapper for [KeyPair].
 #[derive(Copy, Clone)]
 pub struct IdentityKeyPair {
     identity_key: IdentityKey,
@@ -58,6 +65,7 @@ pub struct IdentityKeyPair {
 }
 
 impl IdentityKeyPair {
+    /// Create a new key pair from a public `identity_key` and a private `private_key`.
     pub fn new(identity_key: IdentityKey, private_key: PrivateKey) -> Self {
         Self {
             identity_key,
@@ -65,6 +73,7 @@ impl IdentityKeyPair {
         }
     }
 
+    /// Generate a cryptographically random new identity from randomness in `csprng`.
     pub fn generate<R: CryptoRng + Rng>(csprng: &mut R) -> Self {
         let keypair = KeyPair::generate(csprng);
 
