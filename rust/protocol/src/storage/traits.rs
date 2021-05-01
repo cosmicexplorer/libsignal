@@ -1,31 +1,51 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020-2021 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
+
+//! Traits defining several stores used throughout the Signal Protocol.
 
 use async_trait::async_trait;
 use uuid::Uuid;
 
-use crate::state::{PreKeyId, SignedPreKeyId};
 use crate::{
-    IdentityKey, IdentityKeyPair, PreKeyRecord, ProtocolAddress, Result, SenderKeyRecord,
-    SessionRecord, SignedPreKeyRecord,
+    address::ProtocolAddress,
+    error::Result,
+    sender_keys::SenderKeyRecord,
+    state::{PreKeyId, PreKeyRecord, SessionRecord, SignedPreKeyId, SignedPreKeyRecord},
+    IdentityKey, IdentityKeyPair,
 };
 
+/// Handle to FFI-provided context object.
+///
+/// This object is not manipulated in rust, but is instead passed back to each FFI
+/// method invocation.
 pub type Context = Option<*mut std::ffi::c_void>;
 
+/// Each Signal message can be considered to have exactly two participants, a sender and receiver.
+///
+/// [IdentityKeyStore::is_trusted_identity] uses this to ensure the identity provided is configured
+/// for the appropriate role.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Direction {
     Sending,
     Receiving,
 }
 
+/// Interface defining the TOFU identity store, which may be in-memory, on-disk, etc.
 #[async_trait(?Send)]
 pub trait IdentityKeyStore {
+    /// Return the single specific identity each store is assumed to represent, with private key.
     async fn get_identity_key_pair(&self, ctx: Context) -> Result<IdentityKeyPair>;
 
+    /// Return a [u32] specific to this store instance.
+    ///
+    /// This numerical id should be randomly generated each time the store is instantiated.
     async fn get_local_registration_id(&self, ctx: Context) -> Result<u32>;
 
+    /// Record an identity into the store. The identity is then considered "trusted".
+    ///
+    /// ah TODO: what does `Ok(false)` represent here?
     async fn save_identity(
         &mut self,
         address: &ProtocolAddress,
@@ -33,6 +53,7 @@ pub trait IdentityKeyStore {
         ctx: Context,
     ) -> Result<bool>;
 
+    /// Return whether an identity is trusted for the role specified by `direction`.
     async fn is_trusted_identity(
         &self,
         address: &ProtocolAddress,
@@ -41,6 +62,7 @@ pub trait IdentityKeyStore {
         ctx: Context,
     ) -> Result<bool>;
 
+    /// Return the public identity for the given `address`, if known.
     async fn get_identity(
         &self,
         address: &ProtocolAddress,
@@ -48,6 +70,7 @@ pub trait IdentityKeyStore {
     ) -> Result<Option<IdentityKey>>;
 }
 
+/// Interface for storing pre-keys downloaded from a server.
 #[async_trait(?Send)]
 pub trait PreKeyStore {
     async fn get_pre_key(&self, prekey_id: PreKeyId, ctx: Context) -> Result<PreKeyRecord>;
@@ -62,6 +85,7 @@ pub trait PreKeyStore {
     async fn remove_pre_key(&mut self, prekey_id: PreKeyId, ctx: Context) -> Result<()>;
 }
 
+/// Interface for storing signed pre-keys downloaded from a server. (TODO: ???)
 #[async_trait(?Send)]
 pub trait SignedPreKeyStore {
     async fn get_signed_pre_key(
@@ -78,6 +102,7 @@ pub trait SignedPreKeyStore {
     ) -> Result<()>;
 }
 
+/// Interface for storing a session associated with the chat with a particular separate user.
 #[async_trait(?Send)]
 pub trait SessionStore {
     async fn load_session(
@@ -94,8 +119,11 @@ pub trait SessionStore {
     ) -> Result<()>;
 }
 
+/// Interface for storing a sender key for other users, allowing multiple keys per user.
 #[async_trait(?Send)]
 pub trait SenderKeyStore {
+    /// Store the sender key `record` corresponding to the user `sender` associated to the given
+    /// `distribution_id`.
     async fn store_sender_key(
         &mut self,
         sender: &ProtocolAddress,
@@ -104,6 +132,7 @@ pub trait SenderKeyStore {
         ctx: Context,
     ) -> Result<()>;
 
+    /// Read a sender key record stored for the user `sender` associated to `distribution_id`.
     async fn load_sender_key(
         &mut self,
         sender: &ProtocolAddress,
@@ -112,4 +141,5 @@ pub trait SenderKeyStore {
     ) -> Result<Option<SenderKeyRecord>>;
 }
 
+/// Mixes in all the store interfaces defined in this module.
 pub trait ProtocolStore: SessionStore + PreKeyStore + SignedPreKeyStore + IdentityKeyStore {}

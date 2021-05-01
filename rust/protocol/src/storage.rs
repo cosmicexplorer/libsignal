@@ -1,10 +1,12 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020-2021 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-mod inmem;
-mod traits;
+//! Interfaces in [traits] and reference implementations in [inmem] for various mutable stores.
+
+pub mod inmem;
+pub mod traits;
 
 pub use {
     inmem::{

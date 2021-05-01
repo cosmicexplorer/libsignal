@@ -1,22 +1,25 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020-2021 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-use crate::{
-    IdentityKey, IdentityKeyPair, PreKeyRecord, ProtocolAddress, Result, SenderKeyRecord,
-    SessionRecord, SignalProtocolError, SignedPreKeyRecord,
-};
+//! Implementations for stores defined in [super::traits].
 
-use crate::state::{PreKeyId, SignedPreKeyId};
-use crate::storage::traits;
-use crate::storage::Context;
+use crate::{
+    address::ProtocolAddress,
+    error::{Result, SignalProtocolError},
+    sender_keys::SenderKeyRecord,
+    state::{PreKeyId, PreKeyRecord, SessionRecord, SignedPreKeyId, SignedPreKeyRecord},
+    storage::traits::{self, Context},
+    IdentityKey, IdentityKeyPair,
+};
 
 use async_trait::async_trait;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use uuid::Uuid;
 
+/// Reference implementation of [traits::IdentityKeyStore].
 #[derive(Clone)]
 pub struct InMemIdentityKeyStore {
     key_pair: IdentityKeyPair,
@@ -25,6 +28,10 @@ pub struct InMemIdentityKeyStore {
 }
 
 impl InMemIdentityKeyStore {
+    /// Create a new instance.
+    ///
+    /// `key_pair` corresponds to [traits::IdentityKeyStore::get_identity_key_pair], and `id`
+    /// corresponds to [traits::IdentityKeyStore::get_local_registration_id].
     pub fn new(key_pair: IdentityKeyPair, id: u32) -> Self {
         Self {
             key_pair,
@@ -92,12 +99,14 @@ impl traits::IdentityKeyStore for InMemIdentityKeyStore {
     }
 }
 
+/// Reference implementation of [traits::PreKeyStore].
 #[derive(Clone)]
 pub struct InMemPreKeyStore {
     pre_keys: HashMap<PreKeyId, PreKeyRecord>,
 }
 
 impl InMemPreKeyStore {
+    /// Create a new instance.
     pub fn new() -> Self {
         Self {
             pre_keys: HashMap::new(),
@@ -139,12 +148,14 @@ impl traits::PreKeyStore for InMemPreKeyStore {
     }
 }
 
+/// Reference implementation of [traits::SignedPreKeyStore].
 #[derive(Clone)]
 pub struct InMemSignedPreKeyStore {
     signed_pre_keys: HashMap<SignedPreKeyId, SignedPreKeyRecord>,
 }
 
 impl InMemSignedPreKeyStore {
+    /// Create a new instance.
     pub fn new() -> Self {
         Self {
             signed_pre_keys: HashMap::new(),
@@ -184,12 +195,14 @@ impl traits::SignedPreKeyStore for InMemSignedPreKeyStore {
     }
 }
 
+/// Reference implementation of [traits::SessionStore].
 #[derive(Clone)]
 pub struct InMemSessionStore {
     sessions: HashMap<ProtocolAddress, SessionRecord>,
 }
 
 impl InMemSessionStore {
+    /// Create a new instance.
     pub fn new() -> Self {
         Self {
             sessions: HashMap::new(),
@@ -227,6 +240,7 @@ impl traits::SessionStore for InMemSessionStore {
     }
 }
 
+/// Reference implementation of [traits::SenderKeyStore].
 #[derive(Clone)]
 pub struct InMemSenderKeyStore {
     // We use Cow keys in order to store owned values but compare to referenced ones.
@@ -235,6 +249,7 @@ pub struct InMemSenderKeyStore {
 }
 
 impl InMemSenderKeyStore {
+    /// Create a new instance.
     pub fn new() -> Self {
         Self {
             keys: HashMap::new(),
@@ -277,6 +292,7 @@ impl traits::SenderKeyStore for InMemSenderKeyStore {
     }
 }
 
+/// Reference implementation of [traits::ProtocolStore].
 #[derive(Clone)]
 pub struct InMemSignalProtocolStore {
     pub session_store: InMemSessionStore,
@@ -287,6 +303,7 @@ pub struct InMemSignalProtocolStore {
 }
 
 impl InMemSignalProtocolStore {
+    /// Create a new instance.
     pub fn new(key_pair: IdentityKeyPair, registration_id: u32) -> Result<Self> {
         Ok(Self {
             session_store: InMemSessionStore::new(),

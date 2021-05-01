@@ -36,7 +36,7 @@ pub mod sender_keys;
 pub mod session;
 pub mod session_cipher;
 pub mod state;
-mod storage;
+pub mod storage;
 pub mod utils;
 
 use error::Result;
