@@ -116,7 +116,7 @@ impl ChainKey {
         )
     }
 
-    fn calculate_base_material(&self, seed: [u8; 1]) -> Result<[u8; 32]> {
+    fn calculate_base_material(&self, seed: [u8; 1]) -> Result<[u8; crypto::HMAC_OUTPUT_SIZE]> {
         crypto::hmac_sha256(&self.key, &seed)
     }
 }
