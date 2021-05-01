@@ -1,16 +1,21 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020-2021 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-use crate::curve::KeyType;
+//! Errors that may occur during various stages of the Signal Protocol.
+
+use crate::{consts::types::VersionType, curve::KeyType};
 
 use std::error::Error;
 use std::fmt;
+use std::num;
 use std::panic::UnwindSafe;
 
+/// Return type for all fallible operations in the Signal Protocol.
 pub type Result<T> = std::result::Result<T, SignalProtocolError>;
 
+/// Error states recognized by the Signal Protocol.
 #[derive(Debug)]
 pub enum SignalProtocolError {
     InvalidArgument(String),
@@ -21,8 +26,8 @@ pub enum SignalProtocolError {
     InvalidProtobufEncoding,
 
     CiphertextMessageTooShort(usize),
-    LegacyCiphertextVersion(u8),
-    UnrecognizedCiphertextVersion(u8),
+    LegacyCiphertextVersion(VersionType),
+    UnrecognizedCiphertextVersion(VersionType),
     UnrecognizedMessageVersion(u32),
 
     FingerprintIdentifierMismatch,
@@ -74,6 +79,12 @@ impl Error for SignalProtocolError {
             SignalProtocolError::ApplicationCallbackError(_, e) => Some(e.as_ref()),
             _ => None,
         }
+    }
+}
+
+impl From<num::TryFromIntError> for SignalProtocolError {
+    fn from(_value: num::TryFromIntError) -> SignalProtocolError {
+        SignalProtocolError::InvalidProtobufEncoding
     }
 }
 
