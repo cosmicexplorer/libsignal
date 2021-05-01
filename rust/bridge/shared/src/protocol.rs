@@ -4,8 +4,15 @@
 //
 
 use libsignal_bridge_macros::*;
-use libsignal_protocol::error::Result;
+use libsignal_protocol::conversions::serialize;
 use libsignal_protocol::*;
+use libsignal_protocol::{
+    consts::byte_lengths::SIGNATURE_LENGTH,
+    error::Result,
+    sealed_sender::{EncipheredMessage, ServerSignature},
+};
+
+use arrayref::array_ref;
 use static_assertions::const_assert_eq;
 use std::convert::{TryFrom, TryInto};
 use uuid::Uuid;
@@ -69,13 +76,13 @@ fn ProtocolAddress_New(name: String, device_id: u32) -> ProtocolAddress {
     ProtocolAddress::new(name, device_id.into())
 }
 
-bridge_deserialize!(PublicKey::deserialize, ffi = publickey, jni = false);
+bridge_deserialize!(PublicKey::try_from, ffi = publickey, jni = false);
 
 // Alternate implementation to deserialize from an offset.
 #[bridge_fn(ffi = false, node = false)]
 fn ECPublicKey_Deserialize(data: &[u8], offset: u32) -> Result<PublicKey> {
     let offset = offset as usize;
-    PublicKey::deserialize(&data[offset..])
+    PublicKey::try_from(&data[offset..])
 }
 
 bridge_get_bytearray!(
@@ -84,7 +91,7 @@ bridge_get_bytearray!(
     jni = "ECPublicKey_1Serialize"
 );
 bridge_get_bytearray!(
-    PublicKey::public_key_bytes,
+    PublicKey::wrapped_bytes_for_ffi,
     ffi = "publickey_get_public_key_bytes",
     jni = "ECPublicKey_1GetPublicKeyBytes"
 );
@@ -102,14 +109,16 @@ fn ECPublicKey_Compare(key1: &PublicKey, key2: &PublicKey) -> i32 {
 
 #[bridge_fn(ffi = "publickey_verify", node = "PublicKey_Verify")]
 fn ECPublicKey_Verify(key: &PublicKey, message: &[u8], signature: &[u8]) -> Result<bool> {
-    key.verify_signature(&message, &signature)
+    key.signature_checker()
+        .verify_signature(PublicKeySignature {
+            message,
+            signature: array_ref![signature, 0, SIGNATURE_LENGTH],
+        })
+        .map_err(|e| e.into())
+        .map(|()| true)
 }
 
-bridge_deserialize!(
-    PrivateKey::deserialize,
-    ffi = privatekey,
-    jni = ECPrivateKey
-);
+bridge_deserialize!(PrivateKey::try_from, ffi = privatekey, jni = ECPrivateKey);
 bridge_get_bytearray!(
     PrivateKey::serialize as Serialize,
     ffi = "privatekey_serialize",
@@ -131,8 +140,8 @@ fn ECPrivateKey_GetPublicKey(k: &PrivateKey) -> Result<PublicKey> {
 #[bridge_fn_buffer(ffi = "privatekey_sign", node = "PrivateKey_Sign")]
 fn ECPrivateKey_Sign<T: Env>(env: T, key: &PrivateKey, message: &[u8]) -> Result<T::Buffer> {
     let mut rng = rand::rngs::OsRng;
-    let sig = key.calculate_signature(&message, &mut rng)?;
-    Ok(env.buffer(sig.into_vec()))
+    let sig = key.calculate_signature(&message, &mut rng);
+    Ok(env.buffer(sig.to_vec()))
 }
 
 #[bridge_fn_buffer(ffi = "privatekey_agree", node = "PrivateKey_Agree")]
@@ -141,8 +150,8 @@ fn ECPrivateKey_Agree<T: Env>(
     private_key: &PrivateKey,
     public_key: &PublicKey,
 ) -> Result<T::Buffer> {
-    let dh_secret = private_key.calculate_agreement(&public_key)?;
-    Ok(env.buffer(dh_secret.into_vec()))
+    let dh_secret = private_key.calculate_agreement(&public_key);
+    Ok(env.buffer(dh_secret.to_vec()))
 }
 
 #[bridge_fn_buffer(ffi = "identitykeypair_serialize")]
@@ -152,7 +161,7 @@ fn IdentityKeyPair_Serialize<T: Env>(
     private_key: &PrivateKey,
 ) -> Result<T::Buffer> {
     let identity_key_pair = IdentityKeyPair::new(IdentityKey::new(*public_key), *private_key);
-    Ok(env.buffer(identity_key_pair.serialize().into_vec()))
+    Ok(env.buffer(serialize::<Box<[u8]>, _>(&identity_key_pair).into_vec()))
 }
 
 #[bridge_fn(jni = false)]
@@ -184,8 +193,8 @@ fn NumericFingerprintGenerator_New(
     remote_identifier: &[u8],
     remote_key: &[u8],
 ) -> Result<Fingerprint> {
-    let local_key = IdentityKey::decode(local_key)?;
-    let remote_key = IdentityKey::decode(remote_key)?;
+    let local_key = IdentityKey::try_from(local_key)?;
+    let remote_key = IdentityKey::try_from(remote_key)?;
 
     Fingerprint::new(
         version,
@@ -199,7 +208,7 @@ fn NumericFingerprintGenerator_New(
 
 #[bridge_fn_buffer(jni = "NumericFingerprintGenerator_1GetScannableEncoding")]
 fn Fingerprint_ScannableEncoding<E: Env>(env: E, obj: &Fingerprint) -> Result<E::Buffer> {
-    Ok(env.buffer(obj.scannable.serialize()?))
+    Ok(env.buffer(serialize::<Box<[u8]>, _>(&obj.scannable).as_ref()))
 }
 
 bridge_get!(
@@ -209,14 +218,14 @@ bridge_get!(
 
 #[bridge_fn(ffi = "fingerprint_compare")]
 fn ScannableFingerprint_Compare(fprint1: &[u8], fprint2: &[u8]) -> Result<bool> {
-    ScannableFingerprint::deserialize(&fprint1)?.compare(fprint2)
+    ScannableFingerprint::try_from(fprint1)?.compare(fprint2)
 }
 
 bridge_deserialize!(SignalMessage::try_from, ffi = message);
 
 #[bridge_fn_buffer(ffi = false, node = false)]
 fn SignalMessage_GetSenderRatchetKey<E: Env>(env: E, m: &SignalMessage) -> E::Buffer {
-    env.buffer(m.sender_ratchet_key().serialize().into_vec())
+    env.buffer(serialize::<Box<[u8]>, _>(m.sender_ratchet_key()).into_vec())
 }
 
 bridge_get_bytearray!(SignalMessage::body, ffi = "message_get_body");
@@ -310,7 +319,7 @@ bridge_get_bytearray!(
 
 #[bridge_fn_buffer(ffi = false, jni = "PreKeySignalMessage_1GetBaseKey", node = false)]
 fn PreKeySignalMessage_GetBaseKeySerialized<E: Env>(env: E, m: &PreKeySignalMessage) -> E::Buffer {
-    env.buffer(m.base_key().serialize().into_vec())
+    env.buffer(serialize::<Box<[u8]>, _>(m.base_key()).into_vec())
 }
 
 #[bridge_fn_buffer(ffi = false, jni = "PreKeySignalMessage_1GetIdentityKey", node = false)]
@@ -318,7 +327,7 @@ fn PreKeySignalMessage_GetIdentityKeySerialized<E: Env>(
     env: E,
     m: &PreKeySignalMessage,
 ) -> E::Buffer {
-    env.buffer(m.identity_key().serialize().into_vec())
+    env.buffer(serialize::<Box<[u8]>, _>(m.identity_key()).into_vec())
 }
 
 #[bridge_fn_buffer(
@@ -351,7 +360,7 @@ bridge_get!(SenderKeyMessage::iteration -> u32);
 // Alternate form that copies into an existing buffer.
 #[bridge_fn_void(jni = false, node = false)]
 fn SenderKeyMessageGetDistributionId(out: &mut [u8; 16], obj: &SenderKeyMessage) -> Result<()> {
-    *out = *obj.distribution_id().as_bytes();
+    *out = *obj.distribution_id()?.as_bytes();
     Ok(())
 }
 
@@ -376,7 +385,8 @@ fn SenderKeyMessage_New(
 
 #[bridge_fn]
 fn SenderKeyMessage_VerifySignature(skm: &SenderKeyMessage, pubkey: &PublicKey) -> Result<bool> {
-    skm.verify_signature(pubkey)
+    skm.verify_signature(*pubkey)
+        .map(|()| true)
 }
 
 bridge_deserialize!(SenderKeyDistributionMessage::try_from);
@@ -391,7 +401,7 @@ fn SenderKeyDistributionMessage_GetSignatureKeySerialized<E: Env>(
     env: E,
     m: &SenderKeyDistributionMessage,
 ) -> Result<E::Buffer> {
-    Ok(env.buffer(m.signing_key()?.serialize().into_vec()))
+    Ok(env.buffer(serialize::<Box<[u8]>, _>(m.signing_key()?).into_vec()))
 }
 
 bridge_get_bytearray!(
@@ -477,7 +487,7 @@ bridge_get!(PreKeyBundle::pre_key_id -> Option<u32>);
 bridge_get!(PreKeyBundle::pre_key_public -> Option<PublicKey>);
 bridge_get!(PreKeyBundle::signed_pre_key_public -> PublicKey);
 
-bridge_deserialize!(SignedPreKeyRecord::deserialize);
+bridge_deserialize!(SignedPreKeyRecord::try_from);
 bridge_get_bytearray!(SignedPreKeyRecord::signature);
 bridge_get_bytearray!(
     SignedPreKeyRecord::serialize as Serialize,
@@ -500,7 +510,7 @@ fn SignedPreKeyRecord_New(
     SignedPreKeyRecord::new(id.into(), timestamp, &keypair, &signature)
 }
 
-bridge_deserialize!(PreKeyRecord::deserialize);
+bridge_deserialize!(PreKeyRecord::try_from);
 bridge_get_bytearray!(
     PreKeyRecord::serialize as Serialize,
     jni = "PreKeyRecord_1GetSerialized"
@@ -515,7 +525,7 @@ fn PreKeyRecord_New(id: u32, pub_key: &PublicKey, priv_key: &PrivateKey) -> PreK
     PreKeyRecord::new(id.into(), &keypair)
 }
 
-bridge_deserialize!(SenderKeyRecord::deserialize);
+bridge_deserialize!(SenderKeyRecord::try_from);
 bridge_get_bytearray!(
     SenderKeyRecord::serialize as Serialize,
     jni = "SenderKeyRecord_1GetSerialized"
@@ -526,8 +536,8 @@ fn SenderKeyRecord_New() -> SenderKeyRecord {
     SenderKeyRecord::new_empty()
 }
 
-bridge_deserialize!(ServerCertificate::deserialize);
-bridge_get_bytearray!(ServerCertificate::serialized);
+bridge_deserialize!(ServerCertificate::try_from);
+bridge_get_bytearray!(ServerCertificate::serialize);
 bridge_get_bytearray!(ServerCertificate::certificate);
 bridge_get_bytearray!(ServerCertificate::signature);
 bridge_get!(ServerCertificate::key_id -> u32);
@@ -543,8 +553,8 @@ fn ServerCertificate_New(
     ServerCertificate::new(key_id, *server_key, trust_root, &mut rng)
 }
 
-bridge_deserialize!(SenderCertificate::deserialize);
-bridge_get_bytearray!(SenderCertificate::serialized);
+bridge_deserialize!(SenderCertificate::try_from);
+bridge_get_bytearray!(SenderCertificate::serialize);
 bridge_get_bytearray!(SenderCertificate::certificate);
 bridge_get_bytearray!(SenderCertificate::signature);
 bridge_get!(SenderCertificate::sender_uuid -> &str);
@@ -559,7 +569,9 @@ fn SenderCertificate_Validate(
     key: &PublicKey,
     time: u64,
 ) -> Result<bool> {
-    cert.validate(key, time)
+    cert.verify_signature(ServerSignature::new(*key, time))
+        .map_err(|e| e.into())
+        .map(|()| true)
 }
 
 #[bridge_fn]
@@ -579,7 +591,7 @@ fn SenderCertificate_New(
 ) -> Result<SenderCertificate> {
     let mut rng = rand::rngs::OsRng;
 
-    SenderCertificate::new(
+    Ok(SenderCertificate::new(
         sender_uuid,
         sender_e164,
         *sender_key,
@@ -588,12 +600,12 @@ fn SenderCertificate_New(
         signer_cert.clone(),
         signer_key,
         &mut rng,
-    )
+    ))
 }
 
-bridge_deserialize!(UnidentifiedSenderMessageContent::deserialize);
+bridge_deserialize!(UnidentifiedSenderMessageContent::try_from);
 bridge_get_bytearray!(
-    UnidentifiedSenderMessageContent::serialized as Serialize,
+    UnidentifiedSenderMessageContent::serialize as Serialize,
     jni = "UnidentifiedSenderMessageContent_1GetSerialized"
 );
 bridge_get_bytearray!(UnidentifiedSenderMessageContent::contents);
@@ -615,7 +627,7 @@ fn UnidentifiedSenderMessageContent_GetGroupId<E: Env>(
 
 #[bridge_fn]
 fn UnidentifiedSenderMessageContent_GetMsgType(m: &UnidentifiedSenderMessageContent) -> Result<u8> {
-    Ok(m.msg_type()? as u8)
+    Ok(m.message_type() as u8)
 }
 
 #[derive(Debug)]
@@ -650,13 +662,13 @@ fn UnidentifiedSenderMessageContent_New(
     content_hint: u32,
     group_id: Option<&[u8]>,
 ) -> Result<UnidentifiedSenderMessageContent> {
-    UnidentifiedSenderMessageContent::new(
+    Ok(UnidentifiedSenderMessageContent::new(
         message.message_type(),
         sender.clone(),
-        message.serialize().to_owned(),
+        message.as_ref().to_owned(),
         ContentHint::from(content_hint),
         group_id.map(|g| g.to_owned()),
-    )
+    ))
 }
 
 // Alternate version for FFI because FFI can't support optional slices.
@@ -667,17 +679,17 @@ fn UnidentifiedSenderMessageContentNew(
     content_hint: u32,
     group_id: &[u8],
 ) -> Result<UnidentifiedSenderMessageContent> {
-    UnidentifiedSenderMessageContent::new(
+    Ok(UnidentifiedSenderMessageContent::new(
         message.message_type(),
         sender.clone(),
-        message.serialize().to_owned(),
+        message.as_ref().to_owned(),
         ContentHint::from(content_hint),
         if group_id.is_empty() {
             None
         } else {
             Some(group_id.to_owned())
         },
-    )
+    ))
 }
 
 // Alternate version for Java since CiphertextMessage isn't opaque in Java.
@@ -692,13 +704,13 @@ fn UnidentifiedSenderMessageContent_New_Java(
     content_hint: u32,
     group_id: Option<&[u8]>,
 ) -> Result<UnidentifiedSenderMessageContent> {
-    UnidentifiedSenderMessageContent::new(
+    Ok(UnidentifiedSenderMessageContent::new(
         message.message_type(),
         sender.clone(),
         message.serialize().to_owned(),
         ContentHint::from(content_hint),
         group_id.map(|g| g.to_owned()),
-    )
+    ))
 }
 
 #[derive(Debug)]
@@ -727,7 +739,7 @@ fn CiphertextMessage_Type(msg: &CiphertextMessage) -> u8 {
     msg.message_type() as u8
 }
 
-bridge_get_bytearray!(CiphertextMessage::serialize as Serialize, jni = false);
+bridge_get_bytearray!(CiphertextMessage::serialized as Serialize, jni = false);
 
 #[bridge_fn(ffi = false, node = false)]
 fn SessionRecord_NewFresh() -> SessionRecord {
@@ -756,7 +768,7 @@ fn SessionRecord_ArchiveCurrentState(session_record: &mut SessionRecord) -> Resu
 
 bridge_get!(SessionRecord::has_current_session_state as HasCurrentState -> bool, jni = false);
 
-bridge_deserialize!(SessionRecord::deserialize);
+bridge_deserialize!(SessionRecord::try_from);
 bridge_get_bytearray!(SessionRecord::serialize as Serialize);
 bridge_get_bytearray!(SessionRecord::alice_base_key, ffi = false, node = false);
 bridge_get_bytearray!(

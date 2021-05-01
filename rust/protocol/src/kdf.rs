@@ -3,13 +3,19 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-use crate::{MessageVersion, Result};
+//! Key derivation functions.
+use crate::{MessageVersion, Result, SignalProtocolError};
+use crate::consts::CIPHERTEXT_MESSAGE_CURRENT_VERSION;
+use crate::utils::unwrap::no_hmac_varkey_error;
 
 use std::default::Default;
 
 use hmac::{Hmac, Mac, NewMac};
 use sha2::Sha256;
 
+/// The KDF used in the [Double Ratchet] algorithm.
+///
+/// [Double Ratchet]: https://signal.org/docs/specifications/doubleratchet/#diffie-hellman-ratchet
 #[derive(Clone, Copy, Debug)]
 pub struct HKDF {
     iteration_start_offset: u8,
@@ -22,6 +28,7 @@ impl HKDF {
         Self::new_for_version(MessageVersion::default())
     }
 
+    /// Create a new instance for a particular `message_version`.
     pub fn new_for_version(message_version: MessageVersion) -> Result<Self> {
         match message_version {
             MessageVersion::Version2 => Ok(HKDF {
@@ -74,8 +81,7 @@ impl HKDF {
     ) -> Result<Box<[u8]>> {
         let iterations = (output_length + Self::HASH_OUTPUT_SIZE - 1) / Self::HASH_OUTPUT_SIZE;
         let mut result = Vec::<u8>::with_capacity(iterations * Self::HASH_OUTPUT_SIZE);
-        let mut mac =
-            Hmac::<Sha256>::new_varkey(prk).expect("HMAC-SHA256 should accept any size key");
+        let mut mac = no_hmac_varkey_error(Hmac::<Sha256>::new_varkey(prk));
 
         for i in 0..iterations {
             if result.len() >= Self::HASH_OUTPUT_SIZE {

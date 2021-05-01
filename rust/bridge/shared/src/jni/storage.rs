@@ -7,6 +7,10 @@ use super::*;
 use async_trait::async_trait;
 use uuid::Uuid;
 
+use libsignal_protocol::conversions::serialize;
+
+use std::convert::TryFrom;
+
 pub type JavaIdentityKeyStore<'a> = JObject<'a>;
 pub type JavaPreKeyStore<'a> = JObject<'a>;
 pub type JavaSignedPreKeyStore<'a> = JObject<'a>;
@@ -85,7 +89,7 @@ impl<'a> JniIdentityKeyStore<'a> {
         let key_jobject = jobject_from_serialized(
             self.env,
             "org/whispersystems/libsignal/IdentityKey",
-            identity.serialize().as_ref(),
+            serialize::<Box<[u8]>, _>(identity).as_ref(),
         )?;
         let callback_sig = jni_signature!((
             org.whispersystems.libsignal.SignalProtocolAddress,
@@ -112,7 +116,7 @@ impl<'a> JniIdentityKeyStore<'a> {
         let key_jobject = jobject_from_serialized(
             self.env,
             "org/whispersystems/libsignal/IdentityKey",
-            identity.serialize().as_ref(),
+            serialize::<Box<[u8]>, _>(identity).as_ref(),
         )?;
 
         let direction_class = self
@@ -166,7 +170,7 @@ impl<'a> JniIdentityKeyStore<'a> {
 
         match bits {
             None => Ok(None),
-            Some(k) => Ok(Some(IdentityKey::decode(&k)?)),
+            Some(k) => Ok(Some(IdentityKey::try_from(k.as_ref())?)),
         }
     }
 }
@@ -256,7 +260,7 @@ impl<'a> JniPreKeyStore<'a> {
         let jobject_record = jobject_from_serialized(
             self.env,
             "org/whispersystems/libsignal/state/PreKeyRecord",
-            &record.serialize()?,
+            serialize::<Box<[u8]>, _>(record).as_ref(),
         )?;
         let callback_sig = jni_signature!((
             int,
@@ -363,7 +367,7 @@ impl<'a> JniSignedPreKeyStore<'a> {
         let jobject_record = jobject_from_serialized(
             self.env,
             "org/whispersystems/libsignal/state/SignedPreKeyRecord",
-            &record.serialize()?,
+            serialize::<Box<[u8]>, _>(record).as_ref(),
         )?;
         let callback_sig = jni_signature!((
             int,
@@ -449,7 +453,7 @@ impl<'a> JniSessionStore<'a> {
         let session_jobject = jobject_from_serialized(
             self.env,
             "org/whispersystems/libsignal/state/SessionRecord",
-            &record.serialize()?,
+            serialize::<Box<[u8]>, _>(record).as_ref(),
         )?;
 
         let callback_sig = jni_signature!((

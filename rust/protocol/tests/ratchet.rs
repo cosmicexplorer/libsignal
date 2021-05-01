@@ -1,9 +1,11 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020-2021 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
 use libsignal_protocol::*;
+
+use std::convert::TryFrom;
 
 #[test]
 fn test_ratcheting_session_as_bob() -> Result<(), SignalProtocolError> {
@@ -41,9 +43,9 @@ fn test_ratcheting_session_as_bob() -> Result<(), SignalProtocolError> {
 
     let expected_sender_chain = "9797caca53c989bbe229a40ca7727010eb2604fc14945d77958a0aeda088b44d";
 
-    let bob_identity_key_public = IdentityKey::decode(&bob_identity_public)?;
+    let bob_identity_key_public = IdentityKey::try_from(bob_identity_public.as_ref())?;
 
-    let bob_identity_key_private = PrivateKey::deserialize(&bob_identity_private)?;
+    let bob_identity_key_private = PrivateKey::try_from(bob_identity_private.as_ref())?;
 
     let bob_identity_key_pair =
         IdentityKeyPair::new(bob_identity_key_public, bob_identity_key_private);
@@ -54,14 +56,14 @@ fn test_ratcheting_session_as_bob() -> Result<(), SignalProtocolError> {
     let bob_signed_prekey_pair =
         KeyPair::from_public_and_private(&bob_signed_prekey_public, &bob_signed_prekey_private)?;
 
-    let alice_base_public_key = PublicKey::deserialize(&alice_base_public)?;
+    let alice_base_public_key = PublicKey::try_from(alice_base_public.as_ref())?;
 
     let bob_parameters = BobSignalProtocolParameters::new(
         bob_identity_key_pair,
         bob_signed_prekey_pair,
         None, // one time pre key pair
         bob_ephemeral_pair,
-        IdentityKey::decode(&alice_identity_public)?,
+        IdentityKey::try_from(alice_identity_public.as_ref())?,
         alice_base_public_key,
     );
 
@@ -121,13 +123,13 @@ fn test_ratcheting_session_as_alice() -> Result<(), SignalProtocolError> {
     let expected_receiver_chain =
         "ab9be50e5cb22a925446ab90ee5670545f4fd32902459ec274b6ad0ae5d6031a";
 
-    let alice_identity_key_public = IdentityKey::decode(&alice_identity_public)?;
+    let alice_identity_key_public = IdentityKey::try_from(alice_identity_public.as_ref())?;
 
-    let bob_ephemeral_public = PublicKey::deserialize(&bob_ephemeral_public)?;
+    let bob_ephemeral_public = PublicKey::try_from(bob_ephemeral_public.as_ref())?;
 
-    let alice_identity_key_private = PrivateKey::deserialize(&alice_identity_private)?;
+    let alice_identity_key_private = PrivateKey::try_from(alice_identity_private.as_ref())?;
 
-    let bob_signed_prekey_public = PublicKey::deserialize(&bob_signed_prekey_public)?;
+    let bob_signed_prekey_public = PublicKey::try_from(bob_signed_prekey_public.as_ref())?;
 
     let alice_identity_key_pair =
         IdentityKeyPair::new(alice_identity_key_public, alice_identity_key_private);
@@ -137,7 +139,7 @@ fn test_ratcheting_session_as_alice() -> Result<(), SignalProtocolError> {
     let alice_parameters = AliceSignalProtocolParameters::new(
         alice_identity_key_pair,
         alice_base_key,
-        IdentityKey::decode(&bob_identity_public)?,
+        IdentityKey::try_from(bob_identity_public.as_ref())?,
         bob_signed_prekey_public,
         None, // one-time prekey
         bob_ephemeral_public,

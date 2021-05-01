@@ -3,18 +3,22 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-use crate::ratchet::{ChainKey, MessageKeys, RootKey};
-use crate::{IdentityKey, KeyPair, PrivateKey, PublicKey, Result, SignalProtocolError, HKDF};
-
 use crate::consts::limits::{ARCHIVED_STATES_MAX_LENGTH, MAX_MESSAGE_KEYS, MAX_RECEIVER_CHAINS};
 use crate::proto::storage::session_structure;
 use crate::proto::storage::{RecordStructure, SessionStructure};
-use crate::state::{PreKeyId, SignedPreKeyId};
+use crate::ratchet::{ChainKey, MessageKeys, RootKey};
+use crate::utils::unwrap::no_encoding_error;
+use crate::{
+    DeviceId, IdentityKey, KeyPair, PrivateKey, PublicKey, Result, SignalProtocolError, HKDF,
+};
 
+use internal::conversions::serialize;
+
+use arrayref::array_ref;
 use prost::Message;
 
 use std::collections::VecDeque;
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 
 #[derive(Debug, Clone)]
 pub(crate) struct UnacknowledgedPreKeyMessageItems {
@@ -80,22 +84,24 @@ impl SessionState {
     pub(crate) fn remote_identity_key(&self) -> Result<Option<IdentityKey>> {
         match self.session.remote_identity_public.len() {
             0 => Ok(None),
-            _ => Ok(Some(IdentityKey::decode(
-                &self.session.remote_identity_public,
+            _ => Ok(Some(IdentityKey::try_from(
+                self.session.remote_identity_public.as_ref(),
             )?)),
         }
     }
 
     pub(crate) fn remote_identity_key_bytes(&self) -> Result<Option<Vec<u8>>> {
-        Ok(self.remote_identity_key()?.map(|k| k.serialize().to_vec()))
+        Ok(self
+            .remote_identity_key()?
+            .map(|k| serialize::<Box<[u8]>, _>(&k).into_vec()))
     }
 
     pub(crate) fn local_identity_key(&self) -> Result<IdentityKey> {
-        IdentityKey::decode(&self.session.local_identity_public)
+        IdentityKey::try_from(self.session.local_identity_public.as_ref())
     }
 
     pub(crate) fn local_identity_key_bytes(&self) -> Result<Vec<u8>> {
-        Ok(self.local_identity_key()?.serialize().to_vec())
+        Ok(serialize::<Box<[u8]>, _>(&self.local_identity_key()?).into_vec())
     }
 
     pub(crate) fn session_with_self(&self) -> Result<bool> {
@@ -122,7 +128,10 @@ impl SessionState {
             return Err(SignalProtocolError::InvalidProtobufEncoding);
         }
         let hkdf = HKDF::new_for_version(self.session_version()?.try_into()?)?;
-        RootKey::new(hkdf, &self.session.root_key)
+        Ok(RootKey::new(
+            hkdf,
+            array_ref![&self.session.root_key, 0, 32],
+        )?)
     }
 
     pub(crate) fn set_root_key(&mut self, root_key: &RootKey) -> Result<()> {
@@ -133,20 +142,18 @@ impl SessionState {
     pub(crate) fn sender_ratchet_key(&self) -> Result<PublicKey> {
         match self.session.sender_chain {
             None => Err(SignalProtocolError::InvalidProtobufEncoding),
-            Some(ref c) => PublicKey::deserialize(&c.sender_ratchet_key),
+            Some(ref c) => PublicKey::try_from(c.sender_ratchet_key.as_ref()),
         }
     }
 
     pub(crate) fn sender_ratchet_key_for_logging(&self) -> Result<String> {
-        self.sender_ratchet_key()?
-            .public_key_bytes()
-            .map(hex::encode)
+        Ok(hex::encode(self.sender_ratchet_key()?.public_key_bytes()))
     }
 
     pub(crate) fn sender_ratchet_private_key(&self) -> Result<PrivateKey> {
         match self.session.sender_chain {
             None => Err(SignalProtocolError::InvalidProtobufEncoding),
-            Some(ref c) => PrivateKey::deserialize(&c.sender_ratchet_key_private),
+            Some(ref c) => PrivateKey::try_from(c.sender_ratchet_key_private.as_ref()),
         }
     }
 
@@ -173,7 +180,7 @@ impl SessionState {
         &self,
         sender: &PublicKey,
     ) -> Result<Option<(session_structure::Chain, usize)>> {
-        let sender_bytes = sender.serialize();
+        let sender_bytes: Box<[u8]> = serialize(sender);
 
         for (idx, chain) in self.session.receiver_chains.iter().enumerate() {
             /*
@@ -181,7 +188,8 @@ impl SessionState {
             be faster, but may miss non-canonical points. It's unclear if supporting such
             points is desirable.
             */
-            let this_point = PublicKey::deserialize(&chain.sender_ratchet_key)?.serialize();
+            let this_point: Box<[u8]> =
+                serialize(&PublicKey::try_from(chain.sender_ratchet_key.as_ref())?);
 
             if this_point == sender_bytes {
                 return Ok(Some((chain.clone(), idx)));
@@ -218,7 +226,7 @@ impl SessionState {
         };
 
         let chain = session_structure::Chain {
-            sender_ratchet_key: sender.serialize().to_vec(),
+            sender_ratchet_key: serialize::<Box<[u8]>, _>(sender).into_vec(),
             sender_ratchet_key_private: vec![],
             chain_key: Some(chain_key),
             message_keys: vec![],
@@ -250,8 +258,8 @@ impl SessionState {
         };
 
         let new_chain = session_structure::Chain {
-            sender_ratchet_key: sender.public_key.serialize().to_vec(),
-            sender_ratchet_key_private: sender.private_key.serialize().to_vec(),
+            sender_ratchet_key: serialize::<Box<[u8]>, _>(&sender.public_key).into_vec(),
+            sender_ratchet_key_private: serialize::<Box<[u8]>, _>(&sender.private_key).into_vec(),
             chain_key: Some(chain_key),
             message_keys: vec![],
         };
@@ -269,9 +277,15 @@ impl SessionState {
         let chain_key = sender_chain.chain_key.as_ref().ok_or_else(|| {
             SignalProtocolError::InvalidState("get_sender_chain_key", "No chain key".to_owned())
         })?;
-
+        if chain_key.key.len() != 32 {
+            return Err(SignalProtocolError::InvalidProtobufEncoding);
+        }
         let hkdf = HKDF::new_for_version(self.session_version()?.try_into()?)?;
-        ChainKey::new(hkdf, &chain_key.key, chain_key.index)
+        Ok(ChainKey::new(
+            hkdf,
+            array_ref![&chain_key.key, 0, 32],
+            chain_key.index,
+        )?)
     }
 
     pub(crate) fn get_sender_chain_key_bytes(&self) -> Result<Vec<u8>> {
@@ -340,10 +354,10 @@ impl SessionState {
         message_keys: &MessageKeys,
     ) -> Result<()> {
         let new_keys = session_structure::chain::MessageKey {
-            cipher_key: message_keys.cipher_key().to_vec(),
-            mac_key: message_keys.mac_key().to_vec(),
-            iv: message_keys.iv().to_vec(),
-            index: message_keys.counter(),
+            cipher_key: message_keys.cipher_key()?.to_vec(),
+            mac_key: message_keys.mac_key()?.to_vec(),
+            iv: message_keys.iv()?.to_vec(),
+            index: message_keys.counter()?,
         };
 
         if let Some(chain_and_index) = self.get_receiver_chain(sender)? {
@@ -412,7 +426,7 @@ impl SessionState {
                     v => Some(v.into()),
                 },
                 (pending_pre_key.signed_pre_key_id as u32).into(),
-                PublicKey::deserialize(&pending_pre_key.base_key)?,
+                PublicKey::try_from(pending_pre_key.base_key.as_ref())?,
             )))
         } else {
             Ok(None)
@@ -480,20 +494,6 @@ impl SessionRecord {
             current_session: Some(state),
             previous_sessions: VecDeque::new(),
         }
-    }
-
-    pub fn deserialize(bytes: &[u8]) -> Result<Self> {
-        let record = RecordStructure::decode(bytes)?;
-
-        let mut previous = VecDeque::with_capacity(record.previous_sessions.len());
-        for s in record.previous_sessions {
-            previous.push_back(s.into());
-        }
-
-        Ok(Self {
-            current_session: record.current_session.map(|s| s.into()),
-            previous_sessions: previous,
-        })
     }
 
     pub fn from_single_session_state(bytes: &[u8]) -> Result<Self> {
@@ -590,17 +590,6 @@ impl SessionRecord {
         Ok(())
     }
 
-    pub fn serialize(&self) -> Result<Vec<u8>> {
-        let mut buf = vec![];
-
-        let record = RecordStructure {
-            current_session: self.current_session.as_ref().map(|s| s.into()),
-            previous_sessions: self.previous_sessions.iter().map(|s| s.into()).collect(),
-        };
-        record.encode(&mut buf)?;
-        Ok(buf)
-    }
-
     pub fn remote_registration_id(&self) -> Result<u32> {
         self.session_state()?.remote_registration_id()
     }
@@ -638,5 +627,46 @@ impl SessionRecord {
 
     pub fn get_sender_chain_key_bytes(&self) -> Result<Vec<u8>> {
         self.session_state()?.get_sender_chain_key_bytes()
+    }
+}
+
+#[cfg(feature = "bridge")]
+impl SessionRecord {
+    pub fn serialize(k: &SessionRecord) -> Box<[u8]> {
+        serialize::<Box<[u8]>, _>(k)
+    }
+}
+
+impl TryFrom<&[u8]> for SessionRecord {
+    type Error = SignalProtocolError;
+    fn try_from(bytes: &[u8]) -> Result<Self> {
+        let record = RecordStructure::decode(bytes)?;
+
+        let mut previous = VecDeque::with_capacity(record.previous_sessions.len());
+        for s in record.previous_sessions {
+            previous.push_back(s.into());
+        }
+
+        Ok(Self {
+            current_session: record.current_session.map(|s| s.into()),
+            previous_sessions: previous,
+        })
+    }
+}
+
+impl From<&SessionRecord> for Box<[u8]> {
+    fn from(sr: &SessionRecord) -> Box<[u8]> {
+        let mut buf = vec![];
+
+        let SessionRecord {
+            current_session,
+            previous_sessions,
+        } = sr;
+        let record = RecordStructure {
+            current_session: current_session.as_ref().map(|s| s.into()),
+            previous_sessions: previous_sessions.iter().map(|s| s.into()).collect(),
+        };
+        no_encoding_error(record.encode(&mut buf));
+        buf.into_boxed_slice()
     }
 }

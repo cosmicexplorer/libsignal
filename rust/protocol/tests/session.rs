@@ -6,6 +6,8 @@
 mod support;
 
 use futures::executor::block_on;
+use libsignal_protocol::conversions::serialize;
+use libsignal_protocol::sealed_sender::EncipheredMessage;
 use libsignal_protocol::*;
 use rand::rngs::OsRng;
 use std::convert::TryFrom;
@@ -26,12 +28,13 @@ fn test_basic_prekey_v3() -> Result<(), SignalProtocolError> {
         let bob_pre_key_pair = KeyPair::generate(&mut csprng);
         let bob_signed_pre_key_pair = KeyPair::generate(&mut csprng);
 
-        let bob_signed_pre_key_public = bob_signed_pre_key_pair.public_key.serialize();
+        let bob_signed_pre_key_public =
+            serialize::<Box<[u8]>, _>(&bob_signed_pre_key_pair.public_key);
         let bob_signed_pre_key_signature = bob_store
             .get_identity_key_pair(None)
             .await?
             .private_key()
-            .calculate_signature(&bob_signed_pre_key_public, &mut csprng)?;
+            .calculate_signature(&bob_signed_pre_key_public, &mut csprng);
 
         let pre_key_id = 31337;
         let signed_pre_key_id = 22;
@@ -79,7 +82,7 @@ fn test_basic_prekey_v3() -> Result<(), SignalProtocolError> {
         );
 
         let incoming_message = CiphertextMessage::PreKeySignalMessage(
-            PreKeySignalMessage::try_from(outgoing_message.serialize())?,
+            PreKeySignalMessage::try_from(outgoing_message.as_ref())?,
         );
 
         bob_store
@@ -146,12 +149,13 @@ fn test_basic_prekey_v3() -> Result<(), SignalProtocolError> {
         let bob_pre_key_pair = KeyPair::generate(&mut csprng);
         let bob_signed_pre_key_pair = KeyPair::generate(&mut csprng);
 
-        let bob_signed_pre_key_public = bob_signed_pre_key_pair.public_key.serialize();
+        let bob_signed_pre_key_public =
+            serialize::<Box<[u8]>, _>(&bob_signed_pre_key_pair.public_key);
         let bob_signed_pre_key_signature = bob_store
             .get_identity_key_pair(None)
             .await?
             .private_key()
-            .calculate_signature(&bob_signed_pre_key_public, &mut csprng)?;
+            .calculate_signature(&bob_signed_pre_key_public, &mut csprng);
 
         let pre_key_id: u32 = 31337;
         let signed_pre_key_id: u32 = 22;
@@ -270,12 +274,13 @@ fn chain_jump_over_limit() -> Result<(), SignalProtocolError> {
         let bob_pre_key_pair = KeyPair::generate(&mut csprng);
         let bob_signed_pre_key_pair = KeyPair::generate(&mut csprng);
 
-        let bob_signed_pre_key_public = bob_signed_pre_key_pair.public_key.serialize();
+        let bob_signed_pre_key_public =
+            serialize::<Box<[u8]>, _>(&bob_signed_pre_key_pair.public_key);
         let bob_signed_pre_key_signature = bob_store
             .get_identity_key_pair(None)
             .await?
             .private_key()
-            .calculate_signature(&bob_signed_pre_key_public, &mut csprng)?;
+            .calculate_signature(&bob_signed_pre_key_public, &mut csprng);
 
         let pre_key_id = 31337;
         let signed_pre_key_id = 22;
@@ -359,12 +364,13 @@ fn chain_jump_over_limit_with_self() -> Result<(), SignalProtocolError> {
         let a2_pre_key_pair = KeyPair::generate(&mut csprng);
         let a2_signed_pre_key_pair = KeyPair::generate(&mut csprng);
 
-        let a2_signed_pre_key_public = a2_signed_pre_key_pair.public_key.serialize();
+        let a2_signed_pre_key_public =
+            serialize::<Box<[u8]>, _>(&a2_signed_pre_key_pair.public_key);
         let a2_signed_pre_key_signature = a2_store
             .get_identity_key_pair(None)
             .await?
             .private_key()
-            .calculate_signature(&a2_signed_pre_key_public, &mut csprng)?;
+            .calculate_signature(&a2_signed_pre_key_public, &mut csprng);
 
         let pre_key_id = 31337;
         let signed_pre_key_id = 22;
@@ -451,12 +457,13 @@ fn test_bad_signed_pre_key_signature() -> Result<(), SignalProtocolError> {
         let bob_pre_key_pair = KeyPair::generate(&mut csprng);
         let bob_signed_pre_key_pair = KeyPair::generate(&mut csprng);
 
-        let bob_signed_pre_key_public = bob_signed_pre_key_pair.public_key.serialize();
+        let bob_signed_pre_key_public =
+            serialize::<Box<[u8]>, _>(&bob_signed_pre_key_pair.public_key);
         let bob_signed_pre_key_signature = bob_store
             .get_identity_key_pair(None)
             .await?
             .private_key()
-            .calculate_signature(&bob_signed_pre_key_public, &mut csprng)?
+            .calculate_signature(&bob_signed_pre_key_public, &mut csprng)
             .to_vec();
 
         let pre_key_id = 31337;
@@ -531,12 +538,13 @@ fn repeat_bundle_message_v3() -> Result<(), SignalProtocolError> {
         let bob_pre_key_pair = KeyPair::generate(&mut csprng);
         let bob_signed_pre_key_pair = KeyPair::generate(&mut csprng);
 
-        let bob_signed_pre_key_public = bob_signed_pre_key_pair.public_key.serialize();
+        let bob_signed_pre_key_public =
+            serialize::<Box<[u8]>, _>(&bob_signed_pre_key_pair.public_key);
         let bob_signed_pre_key_signature = bob_store
             .get_identity_key_pair(None)
             .await?
             .private_key()
-            .calculate_signature(&bob_signed_pre_key_public, &mut csprng)?;
+            .calculate_signature(&bob_signed_pre_key_public, &mut csprng);
 
         let pre_key_id = 31337;
         let signed_pre_key_id = 22;
@@ -589,7 +597,7 @@ fn repeat_bundle_message_v3() -> Result<(), SignalProtocolError> {
         );
 
         let incoming_message = CiphertextMessage::PreKeySignalMessage(
-            PreKeySignalMessage::try_from(outgoing_message1.serialize())?,
+            PreKeySignalMessage::try_from(outgoing_message1.as_ref())?,
         );
 
         bob_store
@@ -629,7 +637,7 @@ fn repeat_bundle_message_v3() -> Result<(), SignalProtocolError> {
         // The test
 
         let incoming_message2 = CiphertextMessage::PreKeySignalMessage(
-            PreKeySignalMessage::try_from(outgoing_message2.serialize())?,
+            PreKeySignalMessage::try_from(outgoing_message2.as_ref())?,
         );
 
         let ptext = decrypt(&mut bob_store, &alice_address, &incoming_message2).await?;
@@ -664,12 +672,13 @@ fn bad_message_bundle() -> Result<(), SignalProtocolError> {
         let bob_pre_key_pair = KeyPair::generate(&mut csprng);
         let bob_signed_pre_key_pair = KeyPair::generate(&mut csprng);
 
-        let bob_signed_pre_key_public = bob_signed_pre_key_pair.public_key.serialize();
+        let bob_signed_pre_key_public =
+            serialize::<Box<[u8]>, _>(&bob_signed_pre_key_pair.public_key);
         let bob_signed_pre_key_signature = bob_store
             .get_identity_key_pair(None)
             .await?
             .private_key()
-            .calculate_signature(&bob_signed_pre_key_public, &mut csprng)?;
+            .calculate_signature(&bob_signed_pre_key_public, &mut csprng);
 
         let pre_key_id = 31337;
         let signed_pre_key_id = 22;
@@ -737,7 +746,7 @@ fn bad_message_bundle() -> Result<(), SignalProtocolError> {
             CiphertextMessageType::PreKey
         );
 
-        let outgoing_message = outgoing_message.serialize().to_vec();
+        let outgoing_message = outgoing_message.as_ref().to_vec();
 
         let mut corrupted_message: Vec<u8> = outgoing_message.clone();
         corrupted_message[outgoing_message.len() - 10] ^= 1;
@@ -786,12 +795,13 @@ fn optional_one_time_prekey() -> Result<(), SignalProtocolError> {
         let mut csprng = OsRng;
         let bob_signed_pre_key_pair = KeyPair::generate(&mut csprng);
 
-        let bob_signed_pre_key_public = bob_signed_pre_key_pair.public_key.serialize();
+        let bob_signed_pre_key_public =
+            serialize::<Box<[u8]>, _>(&bob_signed_pre_key_pair.public_key);
         let bob_signed_pre_key_signature = bob_store
             .get_identity_key_pair(None)
             .await?
             .private_key()
-            .calculate_signature(&bob_signed_pre_key_public, &mut csprng)?;
+            .calculate_signature(&bob_signed_pre_key_public, &mut csprng);
 
         let signed_pre_key_id = 22;
 
@@ -834,7 +844,7 @@ fn optional_one_time_prekey() -> Result<(), SignalProtocolError> {
         );
 
         let incoming_message = CiphertextMessage::PreKeySignalMessage(
-            PreKeySignalMessage::try_from(outgoing_message.serialize())?,
+            PreKeySignalMessage::try_from(outgoing_message.as_ref())?,
         );
 
         bob_store
@@ -1187,7 +1197,7 @@ fn basic_simultaneous_initiate() -> Result<(), SignalProtocolError> {
             &mut alice_store,
             &bob_address,
             &CiphertextMessage::PreKeySignalMessage(PreKeySignalMessage::try_from(
-                message_for_alice.serialize(),
+                message_for_alice.as_ref(),
             )?),
         )
         .await?;
@@ -1200,7 +1210,7 @@ fn basic_simultaneous_initiate() -> Result<(), SignalProtocolError> {
             &mut bob_store,
             &alice_address,
             &CiphertextMessage::PreKeySignalMessage(PreKeySignalMessage::try_from(
-                message_for_bob.serialize(),
+                message_for_bob.as_ref(),
             )?),
         )
         .await?;
@@ -1241,7 +1251,7 @@ fn basic_simultaneous_initiate() -> Result<(), SignalProtocolError> {
         let response_plaintext = decrypt(
             &mut bob_store,
             &alice_address,
-            &CiphertextMessage::SignalMessage(SignalMessage::try_from(alice_response.serialize())?),
+            &CiphertextMessage::SignalMessage(SignalMessage::try_from(alice_response.as_ref())?),
         )
         .await?;
         assert_eq!(
@@ -1261,7 +1271,7 @@ fn basic_simultaneous_initiate() -> Result<(), SignalProtocolError> {
         let response_plaintext = decrypt(
             &mut alice_store,
             &bob_address,
-            &CiphertextMessage::SignalMessage(SignalMessage::try_from(bob_response.serialize())?),
+            &CiphertextMessage::SignalMessage(SignalMessage::try_from(bob_response.as_ref())?),
         )
         .await?;
         assert_eq!(
@@ -1333,7 +1343,7 @@ fn simultaneous_initiate_with_lossage() -> Result<(), SignalProtocolError> {
             &mut bob_store,
             &alice_address,
             &CiphertextMessage::PreKeySignalMessage(PreKeySignalMessage::try_from(
-                message_for_bob.serialize(),
+                message_for_bob.as_ref(),
             )?),
         )
         .await?;
@@ -1367,7 +1377,7 @@ fn simultaneous_initiate_with_lossage() -> Result<(), SignalProtocolError> {
             &mut bob_store,
             &alice_address,
             &CiphertextMessage::PreKeySignalMessage(PreKeySignalMessage::try_from(
-                alice_response.serialize(),
+                alice_response.as_ref(),
             )?),
         )
         .await?;
@@ -1388,7 +1398,7 @@ fn simultaneous_initiate_with_lossage() -> Result<(), SignalProtocolError> {
         let response_plaintext = decrypt(
             &mut alice_store,
             &bob_address,
-            &CiphertextMessage::SignalMessage(SignalMessage::try_from(bob_response.serialize())?),
+            &CiphertextMessage::SignalMessage(SignalMessage::try_from(bob_response.as_ref())?),
         )
         .await?;
         assert_eq!(
@@ -1460,7 +1470,7 @@ fn simultaneous_initiate_lost_message() -> Result<(), SignalProtocolError> {
             &mut alice_store,
             &bob_address,
             &CiphertextMessage::PreKeySignalMessage(PreKeySignalMessage::try_from(
-                message_for_alice.serialize(),
+                message_for_alice.as_ref(),
             )?),
         )
         .await?;
@@ -1473,7 +1483,7 @@ fn simultaneous_initiate_lost_message() -> Result<(), SignalProtocolError> {
             &mut bob_store,
             &alice_address,
             &CiphertextMessage::PreKeySignalMessage(PreKeySignalMessage::try_from(
-                message_for_bob.serialize(),
+                message_for_bob.as_ref(),
             )?),
         )
         .await?;
@@ -1523,7 +1533,7 @@ fn simultaneous_initiate_lost_message() -> Result<(), SignalProtocolError> {
         let response_plaintext = decrypt(
             &mut alice_store,
             &bob_address,
-            &CiphertextMessage::SignalMessage(SignalMessage::try_from(bob_response.serialize())?),
+            &CiphertextMessage::SignalMessage(SignalMessage::try_from(bob_response.as_ref())?),
         )
         .await?;
         assert_eq!(
@@ -1596,7 +1606,7 @@ fn simultaneous_initiate_repeated_messages() -> Result<(), SignalProtocolError> 
                 &mut alice_store,
                 &bob_address,
                 &CiphertextMessage::PreKeySignalMessage(PreKeySignalMessage::try_from(
-                    message_for_alice.serialize(),
+                    message_for_alice.as_ref(),
                 )?),
             )
             .await?;
@@ -1609,7 +1619,7 @@ fn simultaneous_initiate_repeated_messages() -> Result<(), SignalProtocolError> 
                 &mut bob_store,
                 &alice_address,
                 &CiphertextMessage::PreKeySignalMessage(PreKeySignalMessage::try_from(
-                    message_for_bob.serialize(),
+                    message_for_bob.as_ref(),
                 )?),
             )
             .await?;
@@ -1663,7 +1673,7 @@ fn simultaneous_initiate_repeated_messages() -> Result<(), SignalProtocolError> 
                 &mut alice_store,
                 &bob_address,
                 &CiphertextMessage::SignalMessage(SignalMessage::try_from(
-                    message_for_alice.serialize(),
+                    message_for_alice.as_ref(),
                 )?),
             )
             .await?;
@@ -1676,7 +1686,7 @@ fn simultaneous_initiate_repeated_messages() -> Result<(), SignalProtocolError> 
                 &mut bob_store,
                 &alice_address,
                 &CiphertextMessage::SignalMessage(SignalMessage::try_from(
-                    message_for_bob.serialize(),
+                    message_for_bob.as_ref(),
                 )?),
             )
             .await?;
@@ -1727,7 +1737,7 @@ fn simultaneous_initiate_repeated_messages() -> Result<(), SignalProtocolError> 
         let response_plaintext = decrypt(
             &mut alice_store,
             &bob_address,
-            &CiphertextMessage::SignalMessage(SignalMessage::try_from(bob_response.serialize())?),
+            &CiphertextMessage::SignalMessage(SignalMessage::try_from(bob_response.as_ref())?),
         )
         .await?;
         assert_eq!(
@@ -1814,7 +1824,7 @@ fn simultaneous_initiate_lost_message_repeated_messages() -> Result<(), SignalPr
                 &mut alice_store,
                 &bob_address,
                 &CiphertextMessage::PreKeySignalMessage(PreKeySignalMessage::try_from(
-                    message_for_alice.serialize(),
+                    message_for_alice.as_ref(),
                 )?),
             )
             .await?;
@@ -1827,7 +1837,7 @@ fn simultaneous_initiate_lost_message_repeated_messages() -> Result<(), SignalPr
                 &mut bob_store,
                 &alice_address,
                 &CiphertextMessage::PreKeySignalMessage(PreKeySignalMessage::try_from(
-                    message_for_bob.serialize(),
+                    message_for_bob.as_ref(),
                 )?),
             )
             .await?;
@@ -1881,7 +1891,7 @@ fn simultaneous_initiate_lost_message_repeated_messages() -> Result<(), SignalPr
                 &mut alice_store,
                 &bob_address,
                 &CiphertextMessage::SignalMessage(SignalMessage::try_from(
-                    message_for_alice.serialize(),
+                    message_for_alice.as_ref(),
                 )?),
             )
             .await?;
@@ -1894,7 +1904,7 @@ fn simultaneous_initiate_lost_message_repeated_messages() -> Result<(), SignalPr
                 &mut bob_store,
                 &alice_address,
                 &CiphertextMessage::SignalMessage(SignalMessage::try_from(
-                    message_for_bob.serialize(),
+                    message_for_bob.as_ref(),
                 )?),
             )
             .await?;
@@ -1945,7 +1955,7 @@ fn simultaneous_initiate_lost_message_repeated_messages() -> Result<(), SignalPr
         let response_plaintext = decrypt(
             &mut alice_store,
             &bob_address,
-            &CiphertextMessage::SignalMessage(SignalMessage::try_from(bob_response.serialize())?),
+            &CiphertextMessage::SignalMessage(SignalMessage::try_from(bob_response.as_ref())?),
         )
         .await?;
         assert_eq!(
@@ -1962,7 +1972,7 @@ fn simultaneous_initiate_lost_message_repeated_messages() -> Result<(), SignalPr
             &mut bob_store,
             &alice_address,
             &CiphertextMessage::PreKeySignalMessage(PreKeySignalMessage::try_from(
-                lost_message_for_bob.serialize(),
+                lost_message_for_bob.as_ref(),
             )?),
         )
         .await?;
@@ -1983,7 +1993,7 @@ fn simultaneous_initiate_lost_message_repeated_messages() -> Result<(), SignalPr
         let response_plaintext = decrypt(
             &mut alice_store,
             &bob_address,
-            &CiphertextMessage::SignalMessage(SignalMessage::try_from(bob_response.serialize())?),
+            &CiphertextMessage::SignalMessage(SignalMessage::try_from(bob_response.as_ref())?),
         )
         .await?;
         assert_eq!(

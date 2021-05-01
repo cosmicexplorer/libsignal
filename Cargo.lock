@@ -670,6 +670,7 @@ name = "internal"
 version = "0.1.0"
 dependencies = [
  "rand 0.7.3",
+ "subtle",
 ]
 
 [[package]]
@@ -766,6 +767,7 @@ checksum = "c7d73b3f436185384286bd8098d17ec07c9a7d2388a6599f824d8502b529702a"
 name = "libsignal-bridge"
 version = "0.1.0"
 dependencies = [
+ "arrayref",
  "async-trait",
  "device-transfer",
  "futures",

@@ -1,16 +1,20 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020-2021 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
+use crate::ratchet;
 use crate::{
-    Context, Direction, IdentityKeyStore, KeyPair, PreKeyBundle, PreKeyId, PreKeySignalMessage,
+    curve::SIGNATURE_LENGTH,
+    ratchet::{AliceSignalProtocolParameters, BobSignalProtocolParameters},
+    Context, DeviceId, Direction, IdentityKeyStore, KeyPair, PreKeyBundle, PreKeySignalMessage,
     PreKeyStore, ProtocolAddress, Result, SessionRecord, SessionStore, SignalProtocolError,
     SignedPreKeyStore,
 };
 
-use crate::ratchet;
-use crate::ratchet::{AliceSignalProtocolParameters, BobSignalProtocolParameters};
+use internal::{conversions::serialize, traits::SignatureVerifiable};
+
+use arrayref::array_ref;
 use rand::{CryptoRng, Rng};
 
 /*
@@ -74,7 +78,7 @@ async fn process_prekey_v3(
 ) -> Result<Option<PreKeyId>> {
     if session_record.has_session_state(
         message.message_version() as u32,
-        &message.base_key().serialize(),
+        serialize::<Box<[u8]>, _>(message.base_key()).as_ref(),
     )? {
         // We've already setup a session for this V3 message, letting bundled message fall through
         return Ok(None);
@@ -110,10 +114,9 @@ async fn process_prekey_v3(
 
     let mut new_session = ratchet::initialize_bob_session(&parameters)?;
 
-    new_session
-        .set_local_registration_id(identity_store.get_local_registration_id(ctx).await?.into())?;
-    new_session.set_remote_registration_id(message.registration_id().into())?;
-    new_session.set_alice_base_key(&message.base_key().serialize())?;
+    new_session.set_local_registration_id(identity_store.get_local_registration_id(ctx).await?)?;
+    new_session.set_remote_registration_id(message.registration_id())?;
+    new_session.set_alice_base_key(serialize::<Box<[u8]>, _>(message.base_key()).as_ref())?;
 
     session_record.promote_state(new_session)?;
 
@@ -139,12 +142,14 @@ pub async fn process_prekey_bundle<R: Rng + CryptoRng>(
         ));
     }
 
-    if !their_identity_key.public_key().verify_signature(
-        &bundle.signed_pre_key_public()?.serialize(),
-        bundle.signed_pre_key_signature()?,
-    )? {
-        return Err(SignalProtocolError::SignatureValidationFailed);
-    }
+    their_identity_key
+        .public_key()
+        .signature_checker()
+        .verify_signature(PublicKeySignature {
+            message: serialize::<Box<[u8]>, _>(&bundle.signed_pre_key_public()?).as_ref(),
+            signature: array_ref![bundle.signed_pre_key_signature()?, 0, SIGNATURE_LENGTH],
+        })
+        .map_err(|_| SignalProtocolError::SignatureValidationFailed)?;
 
     let mut session_record = session_store
         .load_session(&remote_address, ctx)
@@ -185,7 +190,8 @@ pub async fn process_prekey_bundle<R: Rng + CryptoRng>(
     session
         .set_local_registration_id(identity_store.get_local_registration_id(ctx).await?.into())?;
     session.set_remote_registration_id(bundle.registration_id()?)?;
-    session.set_alice_base_key(&our_base_key_pair.public_key.serialize())?;
+    session
+        .set_alice_base_key(serialize::<Box<[u8]>, _>(&our_base_key_pair.public_key).as_ref())?;
 
     identity_store
         .save_identity(&remote_address, their_identity_key, ctx)

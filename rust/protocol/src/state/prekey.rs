@@ -4,7 +4,13 @@
 //
 
 use crate::proto::storage::PreKeyRecordStructure;
-use crate::{KeyPair, PrivateKey, PublicKey, Result};
+use crate::utils::unwrap::no_encoding_error;
+use crate::{DeviceId, KeyPair, PrivateKey, PublicKey, Result, SignalProtocolError};
+
+use internal::conversions::serialize;
+
+use std::convert::TryFrom;
+
 use prost::Message;
 
 /// A unique identifier selecting among this client's known pre-keys.
@@ -41,12 +47,6 @@ impl PreKeyRecord {
         }
     }
 
-    pub fn deserialize(data: &[u8]) -> Result<Self> {
-        Ok(Self {
-            pre_key: PreKeyRecordStructure::decode(data)?,
-        })
-    }
-
     pub fn id(&self) -> Result<PreKeyId> {
         Ok(self.pre_key.id.into())
     }
@@ -56,16 +56,34 @@ impl PreKeyRecord {
     }
 
     pub fn public_key(&self) -> Result<PublicKey> {
-        PublicKey::deserialize(&self.pre_key.public_key)
+        PublicKey::try_from(self.pre_key.public_key.as_ref())
     }
 
     pub fn private_key(&self) -> Result<PrivateKey> {
-        PrivateKey::deserialize(&self.pre_key.private_key)
+        PrivateKey::try_from(self.pre_key.private_key.as_ref())
     }
+}
 
-    pub fn serialize(&self) -> Result<Vec<u8>> {
+#[cfg(feature = "bridge")]
+impl PreKeyRecord {
+    pub fn serialize(k: &PreKeyRecord) -> Box<[u8]> {
+        serialize::<Box<[u8]>, _>(k)
+    }
+}
+
+impl From<&PreKeyRecord> for Box<[u8]> {
+    fn from(pkr: &PreKeyRecord) -> Box<[u8]> {
         let mut buf = vec![];
-        self.pre_key.encode(&mut buf)?;
-        Ok(buf)
+        no_encoding_error(pkr.pre_key.encode(&mut buf));
+        buf.into_boxed_slice()
+    }
+}
+
+impl TryFrom<&[u8]> for PreKeyRecord {
+    type Error = SignalProtocolError;
+    fn try_from(data: &[u8]) -> Result<Self> {
+        Ok(Self {
+            pre_key: PreKeyRecordStructure::decode(data)?,
+        })
     }
 }

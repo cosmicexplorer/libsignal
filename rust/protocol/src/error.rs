@@ -63,6 +63,7 @@ pub enum SignalProtocolError {
     InvalidMessage(&'static str),
     InternalError(&'static str),
     FfiBindingError(String),
+
     ApplicationCallbackError(
         &'static str,
         Box<dyn Error + Send + Sync + UnwindSafe + 'static>,

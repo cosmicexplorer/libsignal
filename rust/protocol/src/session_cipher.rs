@@ -44,7 +44,7 @@ pub async fn message_encrypt(
         .remote_identity_key()?
         .ok_or(SignalProtocolError::InvalidSessionStructure)?;
 
-    let ctext = crypto::aes_256_cbc_encrypt(ptext, message_keys.cipher_key(), message_keys.iv())?;
+    let ctext = crypto::aes_256_cbc_encrypt(ptext, message_keys.cipher_key()?, message_keys.iv()?)?;
 
     let message = if let Some(items) = session_state.unacknowledged_pre_key_message_items()? {
         let local_registration_id = session_state.local_registration_id()?;
@@ -59,7 +59,7 @@ pub async fn message_encrypt(
 
         let message = SignalMessage::new(
             session_version.try_into()?,
-            message_keys.mac_key(),
+            message_keys.mac_key()?,
             sender_ephemeral,
             chain_key.index(),
             previous_counter,
@@ -80,7 +80,7 @@ pub async fn message_encrypt(
     } else {
         CiphertextMessage::SignalMessage(SignalMessage::new(
             session_version.try_into()?,
-            message_keys.mac_key(),
+            message_keys.mac_key()?,
             sender_ephemeral,
             chain_key.index(),
             previous_counter,
@@ -104,10 +104,7 @@ pub async fn message_encrypt(
     {
         log::warn!(
             "Identity key {} is not trusted for remote address {}",
-            their_identity_key
-                .public_key()
-                .public_key_bytes()
-                .map_or_else(|e| format!("<error: {}>", e), hex::encode),
+            hex::encode(their_identity_key.public_key().public_key_bytes()),
             remote_address,
         );
         return Err(SignalProtocolError::UntrustedIdentity(
@@ -263,10 +260,7 @@ pub async fn message_decrypt_signal<R: Rng + CryptoRng>(
     {
         log::warn!(
             "Identity key {} is not trusted for remote address {}",
-            their_identity_key
-                .public_key()
-                .public_key_bytes()
-                .map_or_else(|e| format!("<error: {}>", e), hex::encode),
+            hex::encode(their_identity_key.public_key().public_key_bytes()),
             remote_address,
         );
         return Err(SignalProtocolError::UntrustedIdentity(
@@ -296,7 +290,7 @@ fn create_decryption_failure_log(
     lines.push(format!(
         "Message from {} failed to decrypt; sender ratchet public key {} message counter {}",
         remote_address,
-        hex::encode(ciphertext.sender_ratchet_key().public_key_bytes()?),
+        hex::encode(ciphertext.sender_ratchet_key().public_key_bytes()),
         ciphertext.counter()
     ));
 
@@ -351,12 +345,9 @@ fn decrypt_message_with_record<R: Rng + CryptoRng>(
 ) -> Result<Vec<u8>> {
     let log_decryption_failure = |state: &SessionState, error: &SignalProtocolError| {
         log::error!(
-            "Failed to decrypt whisper message with ratchet key: {} and counter: {}. \
+            "Failed to decrypt whisper message with ratchet key: {:?} and counter: {}. \
              Session loaded for {}. Local session has base key: {} and counter: {}. {}",
-            ciphertext
-                .sender_ratchet_key()
-                .public_key_bytes()
-                .map_or_else(|e| format!("<error: {}>", e), hex::encode),
+            ciphertext.sender_ratchet_key().public_key_bytes(),
             ciphertext.counter(),
             remote_address,
             state
@@ -496,7 +487,7 @@ fn decrypt_message_with_state<R: Rng + CryptoRng>(
     let mac_valid = ciphertext.verify_mac(
         &their_identity_key,
         &state.local_identity_key()?,
-        message_keys.mac_key(),
+        message_keys.mac_key()?,
     )?;
 
     if !mac_valid {
@@ -505,8 +496,8 @@ fn decrypt_message_with_state<R: Rng + CryptoRng>(
 
     let ptext = crypto::aes_256_cbc_decrypt(
         ciphertext.body(),
-        message_keys.cipher_key(),
-        message_keys.iv(),
+        message_keys.cipher_key()?,
+        message_keys.iv()?,
     )?;
 
     state.clear_unacknowledged_pre_key_message()?;

@@ -7,6 +7,7 @@ mod support;
 use support::*;
 
 use futures::executor::block_on;
+use libsignal_protocol::sealed_sender::{EncipheredMessage, ServerSignature};
 use libsignal_protocol::*;
 use rand::rngs::OsRng;
 use std::convert::TryFrom;
@@ -21,23 +22,23 @@ fn test_server_cert() -> Result<(), SignalProtocolError> {
     let server_cert =
         ServerCertificate::new(1, server_key.public_key, &trust_root.private_key, &mut rng)?;
 
-    let serialized = server_cert.serialized()?.to_vec();
+    let serialized = server_cert.as_ref().to_vec();
 
-    let recovered = ServerCertificate::deserialize(&serialized)?;
+    let recovered = ServerCertificate::try_from(serialized.as_ref())?;
 
-    assert_eq!(recovered.validate(&trust_root.public_key)?, true);
+    assert!(recovered.verify_signature(trust_root.public_key).is_ok());
 
     let mut cert_data = serialized;
     let cert_bits = cert_data.len() * 8;
 
     for b in 0..cert_bits {
         cert_data[b / 8] ^= 1u8 << (b % 8); // flip a bit
-        let cert = ServerCertificate::deserialize(&cert_data);
+        let cert = ServerCertificate::try_from(cert_data.as_ref());
         cert_data[b / 8] ^= 1u8 << (b % 8); // flip the bit back
 
         match cert {
             Ok(cert) => {
-                assert_eq!(cert.validate(&trust_root.public_key)?, false);
+                assert!(cert.verify_signature(trust_root.public_key).is_err());
             }
             Err(e) => match e {
                 SignalProtocolError::InvalidProtobufEncoding
@@ -70,11 +71,11 @@ fn test_revoked_server_cert() -> Result<(), SignalProtocolError> {
         &mut rng,
     )?;
 
-    let serialized = server_cert.serialized()?.to_vec();
+    let serialized = server_cert.as_ref().to_vec();
 
-    let recovered = ServerCertificate::deserialize(&serialized)?;
+    let recovered = ServerCertificate::try_from(serialized.as_ref())?;
 
-    assert_eq!(recovered.validate(&trust_root.public_key)?, false);
+    assert!(recovered.verify_signature(trust_root.public_key).is_err());
 
     Ok(())
 }
@@ -101,25 +102,29 @@ fn test_sender_cert() -> Result<(), SignalProtocolError> {
         server_cert,
         &server_key.private_key,
         &mut rng,
-    )?;
+    );
 
-    assert_eq!(sender_cert.validate(&trust_root.public_key, expires)?, true);
-    assert_eq!(
-        sender_cert.validate(&trust_root.public_key, expires + 1)?,
-        false
-    ); // expired
+    assert!(sender_cert
+        .verify_signature(ServerSignature::new(trust_root.public_key, expires))
+        .is_ok());
+    // expired
+    assert!(sender_cert
+        .verify_signature(ServerSignature::new(trust_root.public_key, expires + 1))
+        .is_err());
 
-    let mut sender_cert_data = sender_cert.serialized()?.to_vec();
+    let mut sender_cert_data = sender_cert.as_ref().to_vec();
     let sender_cert_bits = sender_cert_data.len() * 8;
 
     for b in 0..sender_cert_bits {
         sender_cert_data[b / 8] ^= 1u8 << (b % 8); // flip a bit
-        let cert = SenderCertificate::deserialize(&sender_cert_data);
+        let cert = SenderCertificate::try_from(sender_cert_data.as_ref());
         sender_cert_data[b / 8] ^= 1u8 << (b % 8); // flip the bit back
 
         match cert {
             Ok(cert) => {
-                assert_eq!(cert.validate(&trust_root.public_key, expires)?, false);
+                assert!(cert
+                    .verify_signature(ServerSignature::new(trust_root.public_key, expires))
+                    .is_err());
             }
             Err(e) => match e {
                 SignalProtocolError::InvalidProtobufEncoding
@@ -187,7 +192,7 @@ fn test_sealed_sender() -> Result<(), SignalProtocolError> {
             server_cert,
             &server_key.private_key,
             &mut rng,
-        )?;
+        );
 
         let alice_ptext = vec![1, 2, 3, 23, 99];
         let alice_ctext = sealed_sender_encrypt(
@@ -356,7 +361,7 @@ fn test_sender_key_in_sealed_sender() -> Result<(), SignalProtocolError> {
             server_cert,
             &server_key.private_key,
             &mut rng,
-        )?;
+        );
 
         let distribution_message = create_sender_key_distribution_message(
             &alice_uuid_address,
@@ -390,7 +395,7 @@ fn test_sender_key_in_sealed_sender() -> Result<(), SignalProtocolError> {
             alice_message.serialized().to_vec(),
             ContentHint::Default,
             None,
-        )?;
+        );
 
         let alice_ctext = sealed_sender_encrypt_from_usmc(
             &bob_uuid_address,
@@ -406,7 +411,7 @@ fn test_sender_key_in_sealed_sender() -> Result<(), SignalProtocolError> {
                 .await?;
 
         assert!(matches!(
-            bob_usmc.msg_type()?,
+            bob_usmc.message_type(),
             CiphertextMessageType::SenderKey,
         ));
 
@@ -477,7 +482,7 @@ fn test_sealed_sender_multi_recipient() -> Result<(), SignalProtocolError> {
             server_cert,
             &server_key.private_key,
             &mut rng,
-        )?;
+        );
 
         let alice_ptext = vec![1, 2, 3, 23, 99];
         let alice_message = message_encrypt(
@@ -492,10 +497,10 @@ fn test_sealed_sender_multi_recipient() -> Result<(), SignalProtocolError> {
         let alice_usmc = UnidentifiedSenderMessageContent::new(
             alice_message.message_type(),
             sender_cert.clone(),
-            alice_message.serialize().to_vec(),
+            alice_message.as_ref().to_vec(),
             ContentHint::Default,
             None,
-        )?;
+        );
 
         let alice_ctext = sealed_sender_multi_recipient_encrypt(
             &[&bob_uuid_address],
@@ -542,10 +547,10 @@ fn test_sealed_sender_multi_recipient() -> Result<(), SignalProtocolError> {
         let alice_usmc = UnidentifiedSenderMessageContent::new(
             alice_message.message_type(),
             sender_cert.clone(),
-            alice_message.serialize().to_vec(),
+            alice_message.as_ref().to_vec(),
             ContentHint::Default,
             None,
-        )?;
+        );
 
         let alice_ctext = sealed_sender_multi_recipient_encrypt(
             &[&bob_uuid_address],
@@ -598,10 +603,10 @@ fn test_sealed_sender_multi_recipient() -> Result<(), SignalProtocolError> {
         let alice_usmc = UnidentifiedSenderMessageContent::new(
             alice_message.message_type(),
             sender_cert.clone(),
-            alice_message.serialize().to_vec(),
+            alice_message.as_ref().to_vec(),
             ContentHint::Default,
             None,
-        )?;
+        );
 
         let alice_ctext = sealed_sender_multi_recipient_encrypt(
             &[&bob_uuid_address],

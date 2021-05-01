@@ -11,6 +11,9 @@ use crate::{
     SenderKeyRecord, SenderKeyStore, SignalProtocolError,
 };
 
+use internal::traits::SignatureVerifiable;
+
+use arrayref::array_ref;
 use rand::{CryptoRng, Rng};
 use uuid::Uuid;
 
@@ -96,18 +99,16 @@ pub async fn group_decrypt(
 ) -> Result<Vec<u8>> {
     let skm = SenderKeyMessage::try_from(skm_bytes)?;
     let mut record = sender_key_store
-        .load_sender_key(sender, skm.distribution_id(), ctx)
+        .load_sender_key(sender, skm.distribution_id()?, ctx)
         .await?
         .ok_or(SignalProtocolError::NoSenderKeyState)?;
 
-    let mut sender_key_state = record.sender_key_state_for_chain_id(skm.chain_id())?;
+    let mut sender_key_state = record.sender_key_state_for_chain_id(skm.chain_id()?)?;
 
     let signing_key = sender_key_state.signing_key_public()?;
-    if !skm.verify_signature(&signing_key)? {
-        return Err(SignalProtocolError::SignatureValidationFailed);
-    }
+    skm.verify_signature(signing_key)?;
 
-    let sender_key = get_sender_key(&mut sender_key_state, skm.iteration())?;
+    let sender_key = get_sender_key(&mut sender_key_state, skm.iteration()?)?;
 
     let plaintext = crypto::aes_256_cbc_decrypt(
         skm.ciphertext(),
@@ -116,7 +117,7 @@ pub async fn group_decrypt(
     )?;
 
     sender_key_store
-        .store_sender_key(sender, skm.distribution_id(), &record, ctx)
+        .store_sender_key(sender, skm.distribution_id()?, &record, ctx)
         .await?;
 
     Ok(plaintext)
@@ -137,7 +138,7 @@ pub async fn process_sender_key_distribution_message(
     sender_key_record.add_sender_key_state(
         skdm.chain_id()?,
         skdm.iteration()?,
-        skdm.chain_key()?,
+        array_ref![&skdm.chain_key()?, 0, 32],
         *skdm.signing_key()?,
         None,
     )?;
@@ -184,7 +185,7 @@ pub async fn create_sender_key_distribution_message<R: Rng + CryptoRng>(
         distribution_id,
         state.chain_id()?,
         sender_chain_key.iteration()?,
-        sender_chain_key.seed()?,
+        sender_chain_key.seed()?.to_vec(),
         state.signing_key_public()?,
     )
 }

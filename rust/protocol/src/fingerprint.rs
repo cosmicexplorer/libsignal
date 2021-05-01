@@ -1,14 +1,20 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020, 2021 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
 use crate::proto;
+use crate::utils::unwrap::no_encoding_error;
 use crate::{IdentityKey, Result, SignalProtocolError};
+
+use internal::conversions::serialize;
+
 use prost::Message;
 use sha2::{digest::Digest, Sha512};
-use std::fmt;
 use subtle::ConstantTimeEq;
+
+use std::convert::TryFrom;
+use std::fmt;
 
 #[derive(Debug, Clone)]
 pub struct DisplayableFingerprint {
@@ -78,43 +84,6 @@ impl ScannableFingerprint {
         }
     }
 
-    pub fn deserialize(protobuf: &[u8]) -> Result<Self> {
-        let fingerprint = proto::fingerprint::CombinedFingerprints::decode(protobuf)
-            .map_err(|_| SignalProtocolError::FingerprintParsingError)?;
-
-        Ok(Self {
-            version: fingerprint
-                .version
-                .ok_or(SignalProtocolError::FingerprintParsingError)?,
-            local_fingerprint: fingerprint
-                .local_fingerprint
-                .ok_or(SignalProtocolError::FingerprintParsingError)?
-                .content
-                .ok_or(SignalProtocolError::FingerprintParsingError)?,
-            remote_fingerprint: fingerprint
-                .remote_fingerprint
-                .ok_or(SignalProtocolError::FingerprintParsingError)?
-                .content
-                .ok_or(SignalProtocolError::FingerprintParsingError)?,
-        })
-    }
-
-    pub fn serialize(&self) -> Result<Vec<u8>> {
-        let combined_fingerprints = proto::fingerprint::CombinedFingerprints {
-            version: Some(self.version),
-            local_fingerprint: Some(proto::fingerprint::LogicalFingerprint {
-                content: Some(self.local_fingerprint.to_owned()),
-            }),
-            remote_fingerprint: Some(proto::fingerprint::LogicalFingerprint {
-                content: Some(self.remote_fingerprint.to_owned()),
-            }),
-        };
-
-        let mut buf = Vec::new();
-        combined_fingerprints.encode(&mut buf)?;
-        Ok(buf)
-    }
-
     pub fn compare(&self, combined: &[u8]) -> Result<bool> {
         let combined = proto::fingerprint::CombinedFingerprints::decode(combined)
             .map_err(|_| SignalProtocolError::FingerprintParsingError)?;
@@ -149,6 +118,47 @@ impl ScannableFingerprint {
     }
 }
 
+impl From<&ScannableFingerprint> for Box<[u8]> {
+    fn from(sf: &ScannableFingerprint) -> Box<[u8]> {
+        let combined_fingerprints = proto::fingerprint::CombinedFingerprints {
+            version: Some(sf.version),
+            local_fingerprint: Some(proto::fingerprint::LogicalFingerprint {
+                content: Some(sf.local_fingerprint.to_owned()),
+            }),
+            remote_fingerprint: Some(proto::fingerprint::LogicalFingerprint {
+                content: Some(sf.remote_fingerprint.to_owned()),
+            }),
+        };
+        let mut buf = Vec::new();
+        no_encoding_error(combined_fingerprints.encode(&mut buf));
+        buf.into_boxed_slice()
+    }
+}
+
+impl TryFrom<&[u8]> for ScannableFingerprint {
+    type Error = SignalProtocolError;
+    fn try_from(protobuf: &[u8]) -> Result<Self> {
+        let fingerprint = proto::fingerprint::CombinedFingerprints::decode(protobuf)
+            .map_err(|_| SignalProtocolError::FingerprintParsingError)?;
+
+        Ok(Self {
+            version: fingerprint
+                .version
+                .ok_or(SignalProtocolError::FingerprintParsingError)?,
+            local_fingerprint: fingerprint
+                .local_fingerprint
+                .ok_or(SignalProtocolError::FingerprintParsingError)?
+                .content
+                .ok_or(SignalProtocolError::FingerprintParsingError)?,
+            remote_fingerprint: fingerprint
+                .remote_fingerprint
+                .ok_or(SignalProtocolError::FingerprintParsingError)?
+                .content
+                .ok_or(SignalProtocolError::FingerprintParsingError)?,
+        })
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Fingerprint {
     pub display: DisplayableFingerprint,
@@ -169,21 +179,21 @@ impl Fingerprint {
         }
 
         let fingerprint_version = [0u8, 0u8]; // 0x0000
-        let key_bytes = local_key.serialize();
+        let key_bytes = serialize::<Box<[u8]>, _>(local_key);
 
         let mut sha512 = Sha512::new();
 
         // iteration=0
         sha512.update(&fingerprint_version);
-        sha512.update(&key_bytes);
+        sha512.update(key_bytes.as_ref());
         sha512.update(local_id);
-        sha512.update(&key_bytes);
+        sha512.update(key_bytes.as_ref());
         let mut buf = sha512.finalize();
 
         for _i in 1..iterations {
             let mut sha512 = Sha512::new();
             sha512.update(&buf);
-            sha512.update(&key_bytes);
+            sha512.update(key_bytes.as_ref());
             buf = sha512.finalize();
         }
 
@@ -215,6 +225,7 @@ impl Fingerprint {
 #[cfg(test)]
 mod test {
     use super::*;
+    use std::convert::TryFrom;
 
     const ALICE_IDENTITY: &str =
         "0506863bc66d02b40d27b8d49ca7c09e9239236f9d7d25d6fcca5ce13c7064d868";
@@ -237,7 +248,7 @@ mod test {
         let r = vec![0xBA; 32];
 
         let fprint2 = ScannableFingerprint::new(2, &l, &r);
-        let proto2 = fprint2.serialize()?;
+        let proto2 = serialize::<Box<[u8]>, _>(&fprint2);
 
         let expected2_encoding =
             "080212220a20".to_owned() + &"12".repeat(32) + "1a220a20" + &"ba".repeat(32);
@@ -250,8 +261,9 @@ mod test {
     fn fingerprint_test_v1() -> Result<()> {
         // testVectorsVersion1 in Java
 
-        let a_key = IdentityKey::decode(&hex::decode(ALICE_IDENTITY).expect("valid hex"))?;
-        let b_key = IdentityKey::decode(&hex::decode(BOB_IDENTITY).expect("valid hex"))?;
+        let a_key =
+            IdentityKey::try_from(hex::decode(ALICE_IDENTITY).expect("valid hex").as_ref())?;
+        let b_key = IdentityKey::try_from(hex::decode(BOB_IDENTITY).expect("valid hex").as_ref())?;
 
         let version = 1;
         let iterations = 5200;
@@ -274,12 +286,14 @@ mod test {
             &a_key,
         )?;
 
+        let bytes_of_a: Box<[u8]> = (&a_fprint.scannable).into();
         assert_eq!(
-            hex::encode(a_fprint.scannable.serialize()?),
+            hex::encode(bytes_of_a.as_ref()),
             ALICE_SCANNABLE_FINGERPRINT_V1
         );
+        let bytes_of_b: Box<[u8]> = (&b_fprint.scannable).into();
         assert_eq!(
-            hex::encode(b_fprint.scannable.serialize()?),
+            hex::encode(bytes_of_b.as_ref()),
             BOB_SCANNABLE_FINGERPRINT_V1
         );
 
@@ -287,11 +301,11 @@ mod test {
         assert_eq!(format!("{}", b_fprint.display), DISPLAYABLE_FINGERPRINT_V1);
 
         assert_eq!(
-            hex::encode(a_fprint.scannable.serialize()?),
+            hex::encode(bytes_of_a.as_ref()),
             ALICE_SCANNABLE_FINGERPRINT_V1
         );
         assert_eq!(
-            hex::encode(b_fprint.scannable.serialize()?),
+            hex::encode(bytes_of_b.as_ref()),
             BOB_SCANNABLE_FINGERPRINT_V1
         );
 
@@ -302,8 +316,9 @@ mod test {
     fn fingerprint_test_v2() -> Result<()> {
         // testVectorsVersion2 in Java
 
-        let a_key = IdentityKey::decode(&hex::decode(ALICE_IDENTITY).expect("valid hex"))?;
-        let b_key = IdentityKey::decode(&hex::decode(BOB_IDENTITY).expect("valid hex"))?;
+        let a_key =
+            IdentityKey::try_from(hex::decode(ALICE_IDENTITY).expect("valid hex").as_ref())?;
+        let b_key = IdentityKey::try_from(hex::decode(BOB_IDENTITY).expect("valid hex").as_ref())?;
 
         let version = 2;
         let iterations = 5200;
@@ -326,12 +341,14 @@ mod test {
             &a_key,
         )?;
 
+        let bytes_of_a: Box<[u8]> = (&a_fprint.scannable).into();
         assert_eq!(
-            hex::encode(a_fprint.scannable.serialize()?),
+            hex::encode(bytes_of_a.as_ref()),
             ALICE_SCANNABLE_FINGERPRINT_V2
         );
+        let bytes_of_b: Box<[u8]> = (&b_fprint.scannable).into();
         assert_eq!(
-            hex::encode(b_fprint.scannable.serialize()?),
+            hex::encode(bytes_of_b.as_ref()),
             BOB_SCANNABLE_FINGERPRINT_V2
         );
 
@@ -340,11 +357,11 @@ mod test {
         assert_eq!(format!("{}", b_fprint.display), DISPLAYABLE_FINGERPRINT_V1);
 
         assert_eq!(
-            hex::encode(a_fprint.scannable.serialize()?),
+            hex::encode(bytes_of_a.as_ref()),
             ALICE_SCANNABLE_FINGERPRINT_V2
         );
         assert_eq!(
-            hex::encode(b_fprint.scannable.serialize()?),
+            hex::encode(bytes_of_b.as_ref()),
             BOB_SCANNABLE_FINGERPRINT_V2
         );
 
@@ -394,13 +411,13 @@ mod test {
         assert_eq!(
             a_fprint
                 .scannable
-                .compare(&b_fprint.scannable.serialize()?)?,
+                .compare(serialize::<Box<[u8]>, _>(&b_fprint.scannable).as_ref())?,
             true
         );
         assert_eq!(
             b_fprint
                 .scannable
-                .compare(&a_fprint.scannable.serialize()?)?,
+                .compare(serialize::<Box<[u8]>, _>(&a_fprint.scannable).as_ref())?,
             true
         );
 
@@ -408,13 +425,13 @@ mod test {
         assert_eq!(
             a_fprint
                 .scannable
-                .compare(&a_fprint.scannable.serialize()?)?,
+                .compare(serialize::<Box<[u8]>, _>(&a_fprint.scannable).as_ref())?,
             false
         );
         assert_eq!(
             b_fprint
                 .scannable
-                .compare(&b_fprint.scannable.serialize()?)?,
+                .compare(serialize::<Box<[u8]>, _>(&b_fprint.scannable).as_ref())?,
             false
         );
 
@@ -463,13 +480,13 @@ mod test {
         assert_eq!(
             a_fprint
                 .scannable
-                .compare(&b_fprint.scannable.serialize()?)?,
+                .compare(serialize::<Box<[u8]>, _>(&b_fprint.scannable).as_ref())?,
             false
         );
         assert_eq!(
             b_fprint
                 .scannable
-                .compare(&a_fprint.scannable.serialize()?)?,
+                .compare(serialize::<Box<[u8]>, _>(&a_fprint.scannable).as_ref())?,
             false
         );
 
@@ -516,13 +533,13 @@ mod test {
         assert_eq!(
             a_fprint
                 .scannable
-                .compare(&b_fprint.scannable.serialize()?)?,
+                .compare(serialize::<Box<[u8]>, _>(&b_fprint.scannable).as_ref())?,
             false
         );
         assert_eq!(
             b_fprint
                 .scannable
-                .compare(&a_fprint.scannable.serialize()?)?,
+                .compare(serialize::<Box<[u8]>, _>(&a_fprint.scannable).as_ref())?,
             false
         );
 
@@ -531,8 +548,9 @@ mod test {
 
     #[test]
     fn fingerprint_mismatching_versions() -> Result<()> {
-        let a_key = IdentityKey::decode(&hex::decode(ALICE_IDENTITY).expect("valid hex"))?;
-        let b_key = IdentityKey::decode(&hex::decode(BOB_IDENTITY).expect("valid hex"))?;
+        let a_key =
+            IdentityKey::try_from(hex::decode(ALICE_IDENTITY).expect("valid hex").as_ref())?;
+        let b_key = IdentityKey::try_from(hex::decode(BOB_IDENTITY).expect("valid hex").as_ref())?;
 
         let iterations = 5200;
 
@@ -562,8 +580,8 @@ mod test {
 
         // Scannable fingerprint does
         assert_ne!(
-            hex::encode(a_fprint_v1.scannable.serialize()?),
-            hex::encode(a_fprint_v2.scannable.serialize()?)
+            hex::encode(serialize::<Box<[u8]>, _>(&a_fprint_v1.scannable).as_ref()),
+            hex::encode(serialize::<Box<[u8]>, _>(&a_fprint_v2.scannable).as_ref())
         );
 
         Ok(())

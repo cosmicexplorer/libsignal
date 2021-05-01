@@ -149,6 +149,8 @@ pub mod constant_time_ops {
         b ^ (mask & (a ^ b))
     }
 
+    #[cfg(doc)]
+    use subtle;
     /// Compare the byte slices `x` and `y` with an execution pattern that does not leak details
     /// about the value of the two keys as it performs comparisons.
     ///
@@ -186,8 +188,8 @@ pub mod constant_time_ops {
     ///
     /// ### Future Work
     /// If `x` and `y` were different lengths, this would leak information about their relative
-    /// sizes, if we exited early when processing them. However, we currently avoid this by
-    /// immediately panicking if the inputs are not the same size.
+    /// sizes, if we exited early when processing them. We currently short-circuit if `x` and `y`
+    /// are at all different in length, following the approach of [subtle::ConstantTimeEq::ct_eq].
     ///
     /// In addition, by branching at the end, this method will leak the final comparison result,
     /// when the integer is translated to the [Ordering] enum. This seems unavoidable for now.
@@ -197,7 +199,12 @@ pub mod constant_time_ops {
     /// way. We avoid modifying our approach at the moment since it is not clear if applications
     /// will rely on public key ordering being defined in some particular way or not.
     pub fn constant_time_cmp(x: &[u8], y: &[u8]) -> Ordering {
-        debug_assert!(x.len() == y.len());
+        if x.len() < y.len() {
+            return Ordering::Less;
+        }
+        if x.len() > y.len() {
+            return Ordering::Greater;
+        }
         let mut result: u8 = 0;
 
         for i in 0..x.len() {
@@ -219,6 +226,57 @@ pub mod constant_time_ops {
         } else {
             Ordering::Greater
         }
+    }
+}
+
+/// Convert between objects in a recognizable, explicit, and canonical way.
+pub mod conversions {
+    use core::convert::AsRef;
+
+    /// Call [Into::into] on `arg`, allowing the caller to then use [AsRef::as_ref] to access a byte
+    /// string.
+    ///
+    /// This method allows [From] impls to be converted into bytes inline, without
+    /// a separate statement. For example:
+    /// ```
+    /// # use internal::conversions::serialize;
+    /// # #[derive(Clone)]
+    /// struct S([u8; 2]);
+    /// impl From<&S> for Box<[u8]> {
+    ///     fn from(s: &S) -> Box<[u8]> { Box::from(s.0.as_ref()) }
+    /// }
+    /// let s = S([1, 2]);
+    /// // Requiring this extra statement is annoying boilerplate and breaks control flow.
+    /// let s_box: Box<[u8]> = (&s).into();
+    /// let s_bytes: &[u8] = s_box.as_ref();
+    /// assert!(s_bytes == serialize::<Box<[u8]>, &S>(&s).as_ref()); // Instead, we can do it inline.
+    /// ```
+    /// Note that one or both type parameters can often be omitted:
+    /// ```
+    /// # use internal::conversions::serialize;
+    /// # struct S([u8; 2]);
+    /// # impl From<&S> for Box<[u8]> {
+    /// #     fn from(s: &S) -> Box<[u8]> { Box::from(s.0.as_ref()) }
+    /// # }
+    /// assert!(
+    ///     &[1, 2] == serialize::<Box<[u8]>, _>(
+    ///         &S([1, 2])
+    ///     ).as_ref()
+    /// );
+    /// let b: Box<[u8]> = serialize(&S([1, 2]));
+    /// assert!(b.as_ref() == &[1, 2]);
+    /// ```
+    /// Finally, note that this method can likely be removed when type ascription is stable:
+    /// ```compile_fail
+    /// # use internal::conversions::serialize;
+    /// # struct S([u8; 2]);
+    /// # impl From<&S> for Box<[u8]> {
+    /// #     fn from(s: &S) -> Box<[u8]> { Box::from(s.0.as_ref()) }
+    /// # }
+    /// assert!(&[1, 2] == ((&S([1, 2])).into(): Box<[u8]>).as_ref());
+    /// ```
+    pub fn serialize<Bytes: AsRef<[u8]>, IntoBytes: Into<Bytes>>(arg: IntoBytes) -> Bytes {
+        arg.into()
     }
 }
 
@@ -248,7 +306,7 @@ pub mod traits {
     /// assert!(s.verify_signature(5).is_ok());
     /// ```
     pub trait SignatureVerifiable {
-        /// The information necessaru to *validate* some *signature* against a *message*.
+        /// The information necessary to *validate* some *signature* against a *message*.
         ///
         /// Usually the "message" struct would implement [SignatureVerifiable].
         type Sig;
@@ -260,3 +318,4 @@ pub mod traits {
         fn verify_signature(&self, signature: Self::Sig) -> Result<(), Self::Error>;
     }
 }
+pub use Result;

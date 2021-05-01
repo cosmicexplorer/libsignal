@@ -4,7 +4,13 @@
 //
 
 use crate::proto::storage::SignedPreKeyRecordStructure;
-use crate::{KeyPair, PrivateKey, PublicKey, Result};
+use crate::utils::unwrap::no_encoding_error;
+use crate::{DeviceId, KeyPair, PrivateKey, PublicKey, Result, SignalProtocolError};
+
+use internal::conversions::serialize;
+
+use std::convert::TryFrom;
+
 use prost::Message;
 
 /// A unique identifier selecting among this client's known signed pre-keys.
@@ -44,14 +50,8 @@ impl SignedPreKeyRecord {
         }
     }
 
-    pub fn deserialize(data: &[u8]) -> Result<Self> {
-        Ok(Self {
-            signed_pre_key: SignedPreKeyRecordStructure::decode(data)?,
-        })
-    }
-
-    pub fn id(&self) -> Result<SignedPreKeyId> {
-        Ok(self.signed_pre_key.id.into())
+    pub fn id(&self) -> Result<DeviceId> {
+        Ok(self.signed_pre_key.id)
     }
 
     pub fn timestamp(&self) -> Result<u64> {
@@ -63,11 +63,11 @@ impl SignedPreKeyRecord {
     }
 
     pub fn public_key(&self) -> Result<PublicKey> {
-        PublicKey::deserialize(&self.signed_pre_key.public_key)
+        PublicKey::try_from(self.signed_pre_key.public_key.as_ref())
     }
 
     pub fn private_key(&self) -> Result<PrivateKey> {
-        PrivateKey::deserialize(&self.signed_pre_key.private_key)
+        PrivateKey::try_from(self.signed_pre_key.private_key.as_ref())
     }
 
     pub fn key_pair(&self) -> Result<KeyPair> {
@@ -76,10 +76,28 @@ impl SignedPreKeyRecord {
             &self.signed_pre_key.private_key,
         )
     }
+}
 
-    pub fn serialize(&self) -> Result<Vec<u8>> {
+#[cfg(feature = "bridge")]
+impl SignedPreKeyRecord {
+    pub fn serialize(k: &SignedPreKeyRecord) -> Box<[u8]> {
+        serialize::<Box<[u8]>, _>(k)
+    }
+}
+
+impl TryFrom<&[u8]> for SignedPreKeyRecord {
+    type Error = SignalProtocolError;
+    fn try_from(data: &[u8]) -> Result<Self> {
+        Ok(Self {
+            signed_pre_key: SignedPreKeyRecordStructure::decode(data)?,
+        })
+    }
+}
+
+impl From<&SignedPreKeyRecord> for Box<[u8]> {
+    fn from(spkr: &SignedPreKeyRecord) -> Box<[u8]> {
         let mut buf = vec![];
-        self.signed_pre_key.encode(&mut buf)?;
-        Ok(buf)
+        no_encoding_error(spkr.signed_pre_key.encode(&mut buf));
+        buf.into_boxed_slice()
     }
 }

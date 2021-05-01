@@ -4,16 +4,18 @@
 //
 
 mod support;
+use support::*;
+
+use libsignal_protocol::*;
 
 use async_trait::async_trait;
 use futures::executor::block_on;
-use libsignal_protocol::*;
 use rand::rngs::OsRng;
 use rand::seq::SliceRandom;
 use rand::Rng;
-use std::convert::TryFrom;
-use support::*;
 use uuid::Uuid;
+
+use std::convert::TryFrom;
 
 #[test]
 fn group_no_send_session() -> Result<(), SignalProtocolError> {
@@ -309,7 +311,7 @@ fn group_sealed_sender() -> Result<(), SignalProtocolError> {
             server_cert,
             &server_key.private_key,
             &mut csprng,
-        )?;
+        );
 
         let alice_message = group_encrypt(
             &mut alice_store,
@@ -327,7 +329,7 @@ fn group_sealed_sender() -> Result<(), SignalProtocolError> {
             alice_message.serialized().to_vec(),
             ContentHint::Supplementary,
             Some([42].to_vec()),
-        )?;
+        );
 
         let alice_ctext = sealed_sender_multi_recipient_encrypt(
             &[&bob_uuid_address, &carol_uuid_address],
@@ -367,7 +369,7 @@ fn group_sealed_sender() -> Result<(), SignalProtocolError> {
             sealed_sender_decrypt_to_usmc(&carol_ctext, &mut carol_store.identity_store, None)
                 .await?;
 
-        assert_eq!(carol_usmc.serialized()?, bob_usmc.serialized()?);
+        assert_eq!(carol_usmc.as_ref(), bob_usmc.as_ref());
 
         let carol_plaintext = group_decrypt(
             carol_usmc.contents()?,

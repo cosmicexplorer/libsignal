@@ -5,15 +5,17 @@
 
 use arrayref::array_ref;
 
+use crate::consts::types::Counter;
 use crate::crypto;
 use crate::{PrivateKey, PublicKey, Result, SignalProtocolError, HKDF};
+
 use std::fmt;
 
 pub struct MessageKeys {
     cipher_key: [u8; 32],
     mac_key: [u8; 32],
     iv: [u8; 16],
-    counter: u32,
+    counter: Counter,
 }
 
 impl MessageKeys {
@@ -47,23 +49,23 @@ impl MessageKeys {
     }
 
     #[inline]
-    pub fn cipher_key(&self) -> &[u8; 32] {
-        &self.cipher_key
+    pub fn cipher_key(&self) -> Result<&[u8; 32]> {
+        Ok(&self.cipher_key)
     }
 
     #[inline]
-    pub fn mac_key(&self) -> &[u8; 32] {
-        &self.mac_key
+    pub fn mac_key(&self) -> Result<&[u8; 32]> {
+        Ok(&self.mac_key)
     }
 
     #[inline]
-    pub fn iv(&self) -> &[u8; 16] {
-        &self.iv
+    pub fn iv(&self) -> Result<&[u8; 16]> {
+        Ok(&self.iv)
     }
 
     #[inline]
-    pub fn counter(&self) -> u32 {
-        self.counter
+    pub fn counter(&self) -> Result<Counter> {
+        Ok(self.counter)
     }
 }
 
@@ -71,7 +73,7 @@ impl MessageKeys {
 pub struct ChainKey {
     kdf: HKDF,
     key: [u8; 32],
-    index: u32,
+    index: Counter,
 }
 
 impl ChainKey {
@@ -96,7 +98,7 @@ impl ChainKey {
     }
 
     #[inline]
-    pub fn index(&self) -> u32 {
+    pub fn index(&self) -> Counter {
         self.index
     }
 
@@ -147,7 +149,7 @@ impl RootKey {
         their_ratchet_key: &PublicKey,
         our_ratchet_key: &PrivateKey,
     ) -> Result<(RootKey, ChainKey)> {
-        let shared_secret = our_ratchet_key.calculate_agreement(their_ratchet_key)?;
+        let shared_secret = our_ratchet_key.calculate_agreement(their_ratchet_key);
         let derived_secret_bytes = self.kdf.derive_salted_secrets(
             shared_secret.as_ref(),
             &self.key,
@@ -177,7 +179,8 @@ impl fmt::Display for RootKey {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{MessageVersion, PrivateKey, PublicKey};
+    use crate::{MessageVersion, PrivateKey, PublicKey, Result};
+    use std::convert::TryFrom;
 
     #[test]
     fn test_chain_key_derivation_v2() -> Result<()> {
@@ -204,13 +207,13 @@ mod tests {
 
         let chain_key = ChainKey::new(HKDF::new_for_version(MessageVersion::Version2)?, &seed, 0)?;
         assert_eq!(&seed, chain_key.key());
-        assert_eq!(&message_key, chain_key.message_keys()?.cipher_key());
-        assert_eq!(&mac_key, chain_key.message_keys()?.mac_key());
+        assert_eq!(&message_key, chain_key.message_keys()?.cipher_key()?);
+        assert_eq!(&mac_key, chain_key.message_keys()?.mac_key()?);
         assert_eq!(&next_chain_key, chain_key.next_chain_key()?.key());
         assert_eq!(0, chain_key.index());
-        assert_eq!(0, chain_key.message_keys()?.counter());
+        assert_eq!(0, chain_key.message_keys()?.counter()?);
         assert_eq!(1, chain_key.next_chain_key()?.index());
-        assert_eq!(1, chain_key.next_chain_key()?.message_keys()?.counter());
+        assert_eq!(1, chain_key.next_chain_key()?.message_keys()?.counter()?);
         Ok(())
     }
 
@@ -239,13 +242,13 @@ mod tests {
 
         let chain_key = ChainKey::new(HKDF::new()?, &seed, 0)?;
         assert_eq!(&seed, chain_key.key());
-        assert_eq!(&message_key, chain_key.message_keys()?.cipher_key());
-        assert_eq!(&mac_key, chain_key.message_keys()?.mac_key());
+        assert_eq!(&message_key, chain_key.message_keys()?.cipher_key()?);
+        assert_eq!(&mac_key, chain_key.message_keys()?.mac_key()?);
         assert_eq!(&next_chain_key, chain_key.next_chain_key()?.key());
         assert_eq!(0, chain_key.index());
-        assert_eq!(0, chain_key.message_keys()?.counter());
+        assert_eq!(0, chain_key.message_keys()?.counter()?);
         assert_eq!(1, chain_key.next_chain_key()?.index());
-        assert_eq!(1, chain_key.next_chain_key()?.message_keys()?.counter());
+        assert_eq!(1, chain_key.next_chain_key()?.message_keys()?.counter()?);
         Ok(())
     }
 
@@ -284,8 +287,8 @@ mod tests {
             0xa7, 0xe3, 0x35, 0xd1,
         ];
 
-        let alice_private_key = PrivateKey::deserialize(&alice_private)?;
-        let bob_public_key = PublicKey::deserialize(&bob_public)?;
+        let alice_private_key = PrivateKey::try_from(alice_private.as_ref())?;
+        let bob_public_key = PublicKey::try_from(bob_public.as_ref())?;
         let root_key = RootKey::new(
             HKDF::new_for_version(MessageVersion::Version2)?,
             &root_key_seed,

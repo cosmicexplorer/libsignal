@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2020 Signal Messenger, LLC.
+# Copyright (C) 2020-2021 Signal Messenger, LLC.
 # SPDX-License-Identifier: AGPL-3.0-only
 #
 
@@ -11,7 +11,7 @@ edition = "2018"
 license = "AGPL-3.0-only"
 
 [dependencies]
-libsignal-protocol = { path = "../../protocol" }
+libsignal-protocol = { path = "../../protocol", features = ["bridge"] }
 signal-crypto = { path = "../../crypto" }
 device-transfer = { path = "../../device-transfer" }
 libsignal-bridge-macros = { path = "macros" }
@@ -23,7 +23,7 @@ static_assertions = "1.1"
 scopeguard = "1.0"
 async-trait = "0.1.41"
 uuid = "0.8"
-
+arrayref = "0.3.6"
 libc = { version = "0.2", optional = true }
 jni_crate = { version = "0.19", package = "jni", optional = true }
 neon = { version = "0.8", optional = true, default-features = false, features = ["napi-4"] }

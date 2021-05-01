@@ -157,7 +157,9 @@ macro_rules! bridge_get_bytearray {
             #[bridge_fn_buffer($($param = $val),*)]
             fn [<$typ _ $name>]<E: Env>(env: E, obj: &$typ) -> Result<E::Buffer> {
                 let result = TransformHelper($typ::$method(obj));
-                Ok(env.buffer(result.ok_if_needed()?.into_vec_if_needed().0))
+                let tmp = result.ok_if_needed()?.into_vec_if_needed();
+                let buf: &[u8] = tmp.0.as_ref();
+                Ok(env.buffer(buf))
             }
         }
     };
@@ -244,7 +246,7 @@ macro_rules! bridge_get_optional_bytearray {
 ///
 /// #[bridge_fn]
 /// fn Foo_GetBar(obj: &Foo) -> Result<&str> {
-///   Foo::bar(obj)   
+///   Foo::bar(obj)
 /// }
 /// ```
 ///

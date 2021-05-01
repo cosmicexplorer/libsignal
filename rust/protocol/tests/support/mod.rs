@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
+use libsignal_protocol::conversions::serialize;
 use libsignal_protocol::*;
 use rand::{rngs::OsRng, CryptoRng, Rng};
 
@@ -58,12 +59,12 @@ pub async fn create_pre_key_bundle<R: Rng + CryptoRng>(
     let pre_key_pair = KeyPair::generate(&mut csprng);
     let signed_pre_key_pair = KeyPair::generate(&mut csprng);
 
-    let signed_pre_key_public = signed_pre_key_pair.public_key.serialize();
+    let signed_pre_key_public = serialize::<Box<[u8]>, _>(&signed_pre_key_pair.public_key);
     let signed_pre_key_signature = store
         .get_identity_key_pair(None)
         .await?
         .private_key()
-        .calculate_signature(&signed_pre_key_public, &mut csprng)?;
+        .calculate_signature(&signed_pre_key_public, &mut csprng);
 
     let device_id: u32 = csprng.gen();
     let pre_key_id: u32 = csprng.gen();
