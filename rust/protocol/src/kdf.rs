@@ -3,11 +3,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-use crate::{Result, SignalProtocolError};
+//! Key derivation functions.
+
+use crate::{consts::CIPHERTEXT_MESSAGE_CURRENT_VERSION, Result, SignalProtocolError};
 
 use hmac::{Hmac, Mac, NewMac};
 use sha2::Sha256;
 
+/// The KDF used in the [Double Ratchet] algorithm.
+///
+/// [Double Ratchet]: https://signal.org/docs/specifications/doubleratchet/#diffie-hellman-ratchet
 #[derive(Clone, Copy, Debug)]
 pub struct HKDF {
     iteration_start_offset: u8,
@@ -16,10 +21,15 @@ pub struct HKDF {
 impl HKDF {
     const HASH_OUTPUT_SIZE: usize = crate::crypto::HMAC_OUTPUT_SIZE;
 
+    /// Create a new instance, using the most recent message version
+    /// [CIPHERTEXT_MESSAGE_CURRENT_VERSION].
     pub fn new_current() -> Self {
-        Self::new(crate::consts::CIPHERTEXT_MESSAGE_CURRENT_VERSION.into()).unwrap()
+        Self::new(CIPHERTEXT_MESSAGE_CURRENT_VERSION.into()).unwrap()
     }
 
+    /// Create a new instance for a particular `message_version`.
+    ///
+    /// Will error if an unrecognized version is provided.
     pub fn new(message_version: u32) -> Result<Self> {
         match message_version {
             2 => Ok(HKDF {

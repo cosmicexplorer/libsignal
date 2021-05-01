@@ -27,7 +27,7 @@ pub mod error;
 mod fingerprint;
 mod group_cipher;
 pub mod identity_key;
-mod kdf;
+pub mod kdf;
 pub mod proto;
 mod protocol;
 pub mod ratchet;
