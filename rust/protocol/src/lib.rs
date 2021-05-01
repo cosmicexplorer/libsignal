@@ -19,7 +19,7 @@
 #![warn(clippy::unwrap_used)]
 #![deny(unsafe_code)]
 
-mod address;
+pub mod address;
 mod consts;
 mod crypto;
 mod curve;
