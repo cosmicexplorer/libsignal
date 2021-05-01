@@ -16,7 +16,10 @@ use crate::{
     curve::{KeyPair, PublicKeySignature},
     ratchet::{self, AliceSignalProtocolParameters, BobSignalProtocolParameters},
     state::{PreKeyBundle, PreKeyId, SessionRecord},
-    utils::traits::{message::SignatureVerifiable, serde::Serializable},
+    utils::traits::{
+        message::{SignalProtocolMessage, SignatureVerifiable},
+        serde::Serializable,
+    },
     Context, Direction, IdentityKeyStore, PreKeySignalMessage, PreKeyStore, ProtocolAddress,
     Result, SessionStore, SignalProtocolError, SignedPreKeyStore,
 };

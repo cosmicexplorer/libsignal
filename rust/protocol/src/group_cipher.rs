@@ -6,12 +6,12 @@
 use crate::consts::limits;
 use crate::crypto;
 
+use crate::sender_keys::{SenderKeyState, SenderMessageKey};
+use crate::utils::traits::message::SignatureVerifiable;
 use crate::{
     Context, KeyPair, ProtocolAddress, Result, SenderKeyDistributionMessage, SenderKeyMessage,
     SenderKeyRecord, SenderKeyStore, SignalProtocolError,
 };
-
-use crate::sender_keys::{SenderKeyState, SenderMessageKey};
 
 use rand::{CryptoRng, Rng};
 use std::convert::TryFrom;
@@ -104,7 +104,7 @@ pub async fn group_decrypt(
     let mut sender_key_state = record.sender_key_state_for_chain_id(skm.chain_id())?;
 
     let signing_key = sender_key_state.signing_key_public()?;
-    if !skm.verify_signature(&signing_key)? {
+    if !skm.verify_signature(signing_key)? {
         return Err(SignalProtocolError::SignatureValidationFailed);
     }
 
@@ -178,11 +178,11 @@ pub async fn create_sender_key_distribution_message<R: Rng + CryptoRng>(
     let state = sender_key_record.sender_key_state()?;
     let sender_chain_key = state.sender_chain_key()?;
 
-    SenderKeyDistributionMessage::new(
+    Ok(SenderKeyDistributionMessage::new(
         distribution_id,
         state.chain_id(),
         sender_chain_key.iteration(),
         sender_chain_key.seed(),
         state.signing_key_public()?,
-    )
+    ))
 }

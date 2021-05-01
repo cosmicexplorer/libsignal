@@ -128,7 +128,7 @@ fn group_no_recv_session() -> Result<(), SignalProtocolError> {
         .await?;
 
         let _recv_distribution_message =
-            SenderKeyDistributionMessage::try_from(sent_distribution_message.serialized())?;
+            SenderKeyDistributionMessage::try_from(sent_distribution_message.serialize())?;
 
         let alice_ciphertext = group_encrypt(
             &mut alice_store,
@@ -141,7 +141,7 @@ fn group_no_recv_session() -> Result<(), SignalProtocolError> {
         .await?;
 
         let bob_plaintext = group_decrypt(
-            alice_ciphertext.serialized(),
+            alice_ciphertext.serialize(),
             &mut bob_store,
             &sender_address,
             None,
@@ -175,7 +175,7 @@ fn group_basic_encrypt_decrypt() -> Result<(), SignalProtocolError> {
         .await?;
 
         let recv_distribution_message =
-            SenderKeyDistributionMessage::try_from(sent_distribution_message.serialized())?;
+            SenderKeyDistributionMessage::try_from(sent_distribution_message.serialize())?;
 
         let alice_ciphertext = group_encrypt(
             &mut alice_store,
@@ -196,7 +196,7 @@ fn group_basic_encrypt_decrypt() -> Result<(), SignalProtocolError> {
         .await?;
 
         let bob_plaintext = group_decrypt(
-            alice_ciphertext.serialized(),
+            alice_ciphertext.serialize(),
             &mut bob_store,
             &sender_address,
             None,
@@ -271,7 +271,7 @@ fn group_sealed_sender() -> Result<(), SignalProtocolError> {
         .await?;
 
         let recv_distribution_message =
-            SenderKeyDistributionMessage::try_from(sent_distribution_message.serialized())?;
+            SenderKeyDistributionMessage::try_from(sent_distribution_message.serialize())?;
 
         process_sender_key_distribution_message(
             &alice_uuid_address,
@@ -324,7 +324,7 @@ fn group_sealed_sender() -> Result<(), SignalProtocolError> {
         let alice_usmc = UnidentifiedSenderMessageContent::new(
             CiphertextMessageType::SenderKey,
             sender_cert.clone(),
-            alice_message.serialized().to_vec(),
+            alice_message.serialize().to_vec(),
             ContentHint::Supplementary,
             Some([42].to_vec()),
         );
@@ -407,7 +407,7 @@ fn group_large_messages() -> Result<(), SignalProtocolError> {
         .await?;
 
         let recv_distribution_message =
-            SenderKeyDistributionMessage::try_from(sent_distribution_message.serialized())?;
+            SenderKeyDistributionMessage::try_from(sent_distribution_message.serialize())?;
 
         let mut large_message: Vec<u8> = Vec::with_capacity(1024);
         for _ in 0..large_message.capacity() {
@@ -433,7 +433,7 @@ fn group_large_messages() -> Result<(), SignalProtocolError> {
         .await?;
 
         let bob_plaintext = group_decrypt(
-            alice_ciphertext.serialized(),
+            alice_ciphertext.serialize(),
             &mut bob_store,
             &sender_address,
             None,
@@ -467,7 +467,7 @@ fn group_basic_ratchet() -> Result<(), SignalProtocolError> {
         .await?;
 
         let recv_distribution_message =
-            SenderKeyDistributionMessage::try_from(sent_distribution_message.serialized())?;
+            SenderKeyDistributionMessage::try_from(sent_distribution_message.serialize())?;
 
         process_sender_key_distribution_message(
             &sender_address,
@@ -506,7 +506,7 @@ fn group_basic_ratchet() -> Result<(), SignalProtocolError> {
         .await?;
 
         let bob_plaintext1 = group_decrypt(
-            alice_ciphertext1.serialized(),
+            alice_ciphertext1.serialize(),
             &mut bob_store,
             &sender_address,
             None,
@@ -519,7 +519,7 @@ fn group_basic_ratchet() -> Result<(), SignalProtocolError> {
 
         assert!(matches!(
             group_decrypt(
-                alice_ciphertext1.serialized(),
+                alice_ciphertext1.serialize(),
                 &mut bob_store,
                 &sender_address,
                 None
@@ -529,7 +529,7 @@ fn group_basic_ratchet() -> Result<(), SignalProtocolError> {
         ));
 
         let bob_plaintext3 = group_decrypt(
-            alice_ciphertext3.serialized(),
+            alice_ciphertext3.serialize(),
             &mut bob_store,
             &sender_address,
             None,
@@ -541,7 +541,7 @@ fn group_basic_ratchet() -> Result<(), SignalProtocolError> {
         );
 
         let bob_plaintext2 = group_decrypt(
-            alice_ciphertext2.serialized(),
+            alice_ciphertext2.serialize(),
             &mut bob_store,
             &sender_address,
             None,
@@ -577,7 +577,7 @@ fn group_late_join() -> Result<(), SignalProtocolError> {
         .await?;
 
         let recv_distribution_message =
-            SenderKeyDistributionMessage::try_from(sent_distribution_message.serialized())?;
+            SenderKeyDistributionMessage::try_from(sent_distribution_message.serialize())?;
 
         for i in 0..100 {
             group_encrypt(
@@ -611,7 +611,7 @@ fn group_late_join() -> Result<(), SignalProtocolError> {
         .await?;
 
         let bob_plaintext = group_decrypt(
-            alice_ciphertext.serialized(),
+            alice_ciphertext.serialize(),
             &mut bob_store,
             &sender_address,
             None,
@@ -647,7 +647,7 @@ fn group_out_of_order() -> Result<(), SignalProtocolError> {
         .await?;
 
         let recv_distribution_message =
-            SenderKeyDistributionMessage::try_from(sent_distribution_message.serialized())?;
+            SenderKeyDistributionMessage::try_from(sent_distribution_message.serialize())?;
 
         process_sender_key_distribution_message(
             &sender_address,
@@ -680,7 +680,7 @@ fn group_out_of_order() -> Result<(), SignalProtocolError> {
         for ciphertext in ciphertexts {
             plaintexts.push(
                 group_decrypt(
-                    &ciphertext.serialized(),
+                    &ciphertext.serialize(),
                     &mut bob_store,
                     &sender_address,
                     None,
@@ -724,7 +724,7 @@ fn group_too_far_in_the_future() -> Result<(), SignalProtocolError> {
         .await?;
 
         let recv_distribution_message =
-            SenderKeyDistributionMessage::try_from(sent_distribution_message.serialized())?;
+            SenderKeyDistributionMessage::try_from(sent_distribution_message.serialize())?;
 
         process_sender_key_distribution_message(
             &sender_address,
@@ -757,7 +757,7 @@ fn group_too_far_in_the_future() -> Result<(), SignalProtocolError> {
         .await?;
 
         assert!(group_decrypt(
-            alice_ciphertext.serialized(),
+            alice_ciphertext.serialize(),
             &mut bob_store,
             &sender_address,
             None
@@ -790,7 +790,7 @@ fn group_message_key_limit() -> Result<(), SignalProtocolError> {
         .await?;
 
         let recv_distribution_message =
-            SenderKeyDistributionMessage::try_from(sent_distribution_message.serialized())?;
+            SenderKeyDistributionMessage::try_from(sent_distribution_message.serialize())?;
 
         process_sender_key_distribution_message(
             &sender_address,
@@ -813,7 +813,7 @@ fn group_message_key_limit() -> Result<(), SignalProtocolError> {
                     None,
                 )
                 .await?
-                .serialized()
+                .serialize()
                 .to_vec(),
             );
         }

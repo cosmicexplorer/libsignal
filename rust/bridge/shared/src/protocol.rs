@@ -8,8 +8,9 @@ use libsignal_protocol::*;
 use libsignal_protocol::{
     consts::byte_lengths::SIGNATURE_LENGTH,
     error::Result,
+    protocol::chain_message::{MACPair, MACSignature, SignalIncrementingCounters},
     utils::traits::{
-        message::SignatureVerifiable,
+        message::{SequencedMessage, SignalProtocolMessage, SignatureVerifiable},
         serde::{Deserializable, RefSerializable, Serializable},
     },
 };
@@ -232,7 +233,7 @@ fn SignalMessage_GetSenderRatchetKey<E: Env>(env: E, m: &SignalMessage) -> E::Bu
 }
 
 bridge_get_bytearray!(SignalMessage::body, ffi = "message_get_body");
-bridge_get_bytearray!(SignalMessage::serialized, ffi = "message_get_serialized");
+bridge_get_bytearray!(SignalMessage::serialize, ffi = "message_get_serialized");
 bridge_get!(SignalMessage::counter -> u32, ffi = "message_get_counter");
 bridge_get!(SignalMessage::message_version -> u32, ffi = "message_get_message_version");
 
@@ -247,16 +248,22 @@ fn SignalMessage_New(
     sender_identity_key: &PublicKey,
     receiver_identity_key: &PublicKey,
 ) -> Result<SignalMessage> {
-    SignalMessage::new(
+    Ok(SignalMessage::new(
         message_version,
-        mac_key,
         *sender_ratchet_key,
-        counter,
-        previous_counter,
-        ciphertext,
-        &IdentityKey::new(*sender_identity_key),
-        &IdentityKey::new(*receiver_identity_key),
-    )
+        SignalIncrementingCounters {
+            counter,
+            previous_counter,
+        },
+        ciphertext.to_vec(),
+        MACSignature::new(
+            MACPair {
+                sender: IdentityKey::new(*sender_identity_key),
+                receiver: IdentityKey::new(*receiver_identity_key),
+            },
+            mac_key,
+        ),
+    ))
 }
 
 #[bridge_fn(ffi = "message_verify_mac")]
@@ -266,11 +273,13 @@ fn SignalMessage_VerifyMac(
     receiver_identity_key: &PublicKey,
     mac_key: &[u8],
 ) -> Result<bool> {
-    msg.verify_mac(
-        &IdentityKey::new(*sender_identity_key),
-        &IdentityKey::new(*receiver_identity_key),
+    msg.verify_signature(MACSignature::new(
+        MACPair {
+            sender: IdentityKey::new(*sender_identity_key),
+            receiver: IdentityKey::new(*receiver_identity_key),
+        },
         &mac_key,
-    )
+    ))
 }
 
 #[bridge_fn(ffi = "message_get_sender_ratchet_key", jni = false, node = false)]
@@ -288,7 +297,7 @@ fn PreKeySignalMessage_New(
     identity_key: &PublicKey,
     signal_message: &SignalMessage,
 ) -> Result<PreKeySignalMessage> {
-    PreKeySignalMessage::new(
+    Ok(PreKeySignalMessage::new(
         message_version,
         registration_id,
         pre_key_id,
@@ -296,7 +305,7 @@ fn PreKeySignalMessage_New(
         *base_key,
         IdentityKey::new(*identity_key),
         signal_message.clone(),
-    )
+    ))
 }
 
 #[bridge_fn(jni = false, node = false)]
@@ -316,7 +325,7 @@ fn PreKeySignalMessage_GetSignalMessage(m: &PreKeySignalMessage) -> SignalMessag
 
 bridge_deserialize!(PreKeySignalMessage::try_from);
 bridge_get_bytearray!(
-    PreKeySignalMessage::serialized as Serialize,
+    PreKeySignalMessage::serialize as Serialize,
     jni = "PreKeySignalMessage_1GetSerialized"
 );
 
@@ -342,7 +351,7 @@ fn PreKeySignalMessage_GetSignalMessageSerialized<E: Env>(
     env: E,
     m: &PreKeySignalMessage,
 ) -> E::Buffer {
-    env.buffer(m.message().serialized())
+    env.buffer(m.message().serialize())
 }
 
 bridge_get!(PreKeySignalMessage::registration_id -> u32);
@@ -353,7 +362,7 @@ bridge_get!(PreKeySignalMessage::message_version as GetVersion -> u32);
 bridge_deserialize!(SenderKeyMessage::try_from);
 bridge_get_bytearray!(SenderKeyMessage::ciphertext as GetCipherText);
 bridge_get_bytearray!(
-    SenderKeyMessage::serialized as Serialize,
+    SenderKeyMessage::serialize as Serialize,
     jni = "SenderKeyMessage_1GetSerialized"
 );
 bridge_get!(SenderKeyMessage::distribution_id -> Uuid, ffi = false);
@@ -388,7 +397,7 @@ fn SenderKeyMessage_New(
 
 #[bridge_fn]
 fn SenderKeyMessage_VerifySignature(skm: &SenderKeyMessage, pubkey: &PublicKey) -> Result<bool> {
-    skm.verify_signature(pubkey)
+    skm.verify_signature(*pubkey)
 }
 
 bridge_deserialize!(SenderKeyDistributionMessage::try_from);
@@ -407,7 +416,7 @@ fn SenderKeyDistributionMessage_GetSignatureKeySerialized<E: Env>(
 }
 
 bridge_get_bytearray!(
-    SenderKeyDistributionMessage::serialized as Serialize,
+    SenderKeyDistributionMessage::serialize as Serialize,
     jni = "SenderKeyDistributionMessage_1GetSerialized"
 );
 bridge_get!(SenderKeyDistributionMessage::distribution_id -> Uuid, ffi = false);
@@ -432,13 +441,13 @@ fn SenderKeyDistributionMessage_New(
     chainkey: &[u8],
     pk: &PublicKey,
 ) -> Result<SenderKeyDistributionMessage> {
-    SenderKeyDistributionMessage::new(
+    Ok(SenderKeyDistributionMessage::new(
         distribution_id,
         chain_id,
         iteration,
         *array_ref![chainkey, 0, 32],
         *pk,
-    )
+    ))
 }
 
 #[bridge_fn(jni = false, node = false)]

@@ -3,20 +3,29 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-use crate::{
-    CiphertextMessage, Context, Direction, IdentityKeyStore, KeyPair, PreKeySignalMessage,
-    PreKeyStore, ProtocolAddress, PublicKey, Result, SessionRecord, SessionStore, SignalMessage,
-    SignalProtocolError, SignedPreKeyStore,
-};
+//! Methods to drive a specific [Double Ratchet] message chain forward.
+//!
+//! [Double Ratchet]: https://signal.org/docs/specifications/doubleratchet/
 
-use crate::consts::limits::MAX_FORWARD_JUMPS;
-use crate::crypto;
-use crate::ratchet::{ChainKey, MessageKeys};
-use crate::session;
-use crate::state::SessionState;
+use crate::{
+    consts::limits::MAX_FORWARD_JUMPS,
+    crypto,
+    curve::{KeyPair, PublicKey},
+    protocol::chain_message::{MACPair, MACSignature, SignalIncrementingCounters},
+    ratchet::{ChainKey, MessageKeys},
+    sealed_sender::CiphertextMessage,
+    session,
+    state::{SessionRecord, SessionState},
+    utils::traits::message::{SequencedMessage, SignalProtocolMessage, SignatureVerifiable},
+    Context, Direction, IdentityKeyStore, PreKeySignalMessage, PreKeyStore, ProtocolAddress,
+    Result, SessionStore, SignalMessage, SignalProtocolError, SignedPreKeyStore,
+};
 
 use rand::{CryptoRng, Rng};
 
+use std::convert::TryInto;
+
+/// Encrypt `ptext` to send to `remote_address`.
 pub async fn message_encrypt(
     ptext: &[u8],
     remote_address: &ProtocolAddress,
@@ -58,14 +67,20 @@ pub async fn message_encrypt(
 
         let message = SignalMessage::new(
             session_version,
-            message_keys.mac_key(),
             sender_ephemeral,
-            chain_key.index(),
-            previous_counter,
-            &ctext,
-            &local_identity_key,
-            &their_identity_key,
-        )?;
+            SignalIncrementingCounters {
+                counter: chain_key.index(),
+                previous_counter,
+            },
+            ctext,
+            MACSignature::new(
+                MACPair {
+                    sender: local_identity_key,
+                    receiver: their_identity_key,
+                },
+                message_keys.mac_key(),
+            ),
+        );
 
         CiphertextMessage::PreKeySignalMessage(PreKeySignalMessage::new(
             session_version,
@@ -75,18 +90,24 @@ pub async fn message_encrypt(
             *items.base_key()?,
             local_identity_key,
             message,
-        )?)
+        ))
     } else {
         CiphertextMessage::SignalMessage(SignalMessage::new(
             session_version,
-            message_keys.mac_key(),
             sender_ephemeral,
-            chain_key.index(),
-            previous_counter,
-            &ctext,
-            &local_identity_key,
-            &their_identity_key,
-        )?)
+            SignalIncrementingCounters {
+                counter: chain_key.index(),
+                previous_counter,
+            },
+            ctext,
+            MACSignature::new(
+                MACPair {
+                    sender: local_identity_key,
+                    receiver: their_identity_key,
+                },
+                message_keys.mac_key(),
+            ),
+        ))
     };
 
     session_state.set_sender_chain_key(&chain_key.next_chain_key())?;
@@ -125,6 +146,7 @@ pub async fn message_encrypt(
     Ok(message)
 }
 
+/// Decrypt `ciphertext` sent from `remote_address`.
 pub async fn message_decrypt<R: Rng + CryptoRng>(
     ciphertext: &CiphertextMessage,
     remote_address: &ProtocolAddress,
@@ -166,6 +188,7 @@ pub async fn message_decrypt<R: Rng + CryptoRng>(
     }
 }
 
+/// Decrypt the pre-key initial message `ciphertext` sent from `remote_address`.
 pub async fn message_decrypt_prekey<R: Rng + CryptoRng>(
     ciphertext: &PreKeySignalMessage,
     remote_address: &ProtocolAddress,
@@ -229,6 +252,7 @@ pub async fn message_decrypt_prekey<R: Rng + CryptoRng>(
     Ok(ptext)
 }
 
+/// Decrypt `ciphertext` sent from `remote_address`.
 pub async fn message_decrypt_signal<R: Rng + CryptoRng>(
     ciphertext: &SignalMessage,
     remote_address: &ProtocolAddress,
@@ -475,10 +499,10 @@ fn decrypt_message_with_state<R: Rng + CryptoRng>(
         ));
     }
 
-    let ciphertext_version = ciphertext.message_version() as u32;
-    if ciphertext_version != state.session_version()? {
+    let ciphertext_version = ciphertext.message_version();
+    if ciphertext_version != state.session_version()?.try_into()? {
         return Err(SignalProtocolError::UnrecognizedMessageVersion(
-            ciphertext_version,
+            ciphertext_version.into(),
         ));
     }
 
@@ -492,11 +516,13 @@ fn decrypt_message_with_state<R: Rng + CryptoRng>(
         .remote_identity_key()?
         .ok_or(SignalProtocolError::InvalidSessionStructure)?;
 
-    let mac_valid = ciphertext.verify_mac(
-        &their_identity_key,
-        &state.local_identity_key()?,
+    let mac_valid = ciphertext.verify_signature(MACSignature::new(
+        MACPair {
+            sender: their_identity_key,
+            receiver: state.local_identity_key()?,
+        },
         message_keys.mac_key(),
-    )?;
+    ))?;
 
     if !mac_valid {
         return Err(SignalProtocolError::InvalidCiphertext);

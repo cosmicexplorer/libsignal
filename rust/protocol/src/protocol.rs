@@ -3,22 +3,29 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-use crate::consts::{
-    byte_lengths::SIGNATURE_LENGTH,
-    types::{Counter, VersionType},
-    CIPHERTEXT_MESSAGE_CURRENT_VERSION,
-};
-use crate::proto;
-use crate::utils::{
-    traits::{
-        message::SignatureVerifiable,
-        serde::{Deserializable, Serializable},
-    },
-    unwrap::no_encoding_error,
-};
-use crate::{IdentityKey, PrivateKey, PublicKey, PublicKeySignature, Result, SignalProtocolError};
+//! Structs which are sent over the wire. See [proto::wire].
 
-use std::convert::TryFrom;
+use crate::{
+    consts::{
+        types::{Counter, VersionType},
+        CIPHERTEXT_MESSAGE_CURRENT_VERSION,
+    },
+    curve::{PrivateKey, PublicKey, PublicKeySignature, SIGNATURE_LENGTH},
+    proto,
+    sender_keys::ChainId,
+    state::PreKeyId,
+    utils::{
+        traits::{
+            message::{SequencedMessage, SignalProtocolMessage, SignatureVerifiable},
+            serde::{Deserializable, RefSerializable, Serializable},
+        },
+        unwrap::{no_encoding_error, no_hmac_varkey_error},
+    },
+    IdentityKey, Result, SignalProtocolError,
+};
+
+use std::convert::{AsRef, TryFrom};
+use std::fmt::Debug;
 
 use arrayref::array_ref;
 use hmac::{Hmac, Mac, NewMac};
@@ -28,61 +35,93 @@ use sha2::Sha256;
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
 
+/// Sub-objects required to create a message in a Double Ratchet chain.
+pub mod chain_message {
+    use crate::{consts::types::Counter, IdentityKey};
+    use arrayref::array_ref;
+
+    /// Pair used to disambiguate sender and receiver keys for MAC validation.
+    #[derive(Debug, Copy, Clone)]
+    pub struct MACPair {
+        pub sender: IdentityKey,
+        pub receiver: IdentityKey,
+    }
+
+    /// The size in bytes of the MAC key used to validate each [super::SignalMessage].
+    pub const MAC_KEY_LENGTH: usize = 32;
+
+    /// All the information necessary to validate a MAC against a particular message contents.
+    #[derive(Debug, Copy, Clone)]
+    pub struct MACSignature<'a> {
+        pub mac_pair: MACPair,
+        pub mac_key: &'a [u8; MAC_KEY_LENGTH],
+    }
+
+    impl<'a> MACSignature<'a> {
+        pub fn new(mac_pair: MACPair, mac_key: &'a [u8]) -> Self {
+            Self {
+                mac_pair,
+                mac_key: array_ref![mac_key, 0, MAC_KEY_LENGTH],
+            }
+        }
+    }
+
+    /// Pair used to disambiguate current and previous [Counter] values in a Double Ratchet
+    /// message chain.
+    #[derive(Debug, Copy, Clone)]
+    pub struct SignalIncrementingCounters {
+        pub counter: Counter,
+        pub previous_counter: Counter,
+    }
+}
+use chain_message::{MACPair, MACSignature, SignalIncrementingCounters};
+
+/// A serializable object which can be decrypted by the other participant in a Signal Protocol
+/// double ratchet session. This type of message contains encrypted plaintext.
 #[derive(Debug, Clone)]
 pub struct SignalMessage {
     message_version: VersionType,
     sender_ratchet_key: PublicKey,
-    counter: Counter,
-    #[allow(dead_code)]
-    previous_counter: Counter,
+    counters: SignalIncrementingCounters,
     ciphertext: Box<[u8]>,
     serialized: Box<[u8]>,
 }
 
 impl SignalMessage {
+    // TODO: Where does this come from?
     const MAC_LENGTH: usize = 8;
 
     pub fn new(
         message_version: VersionType,
-        mac_key: &[u8],
         sender_ratchet_key: PublicKey,
-        counter: Counter,
-        previous_counter: Counter,
-        ciphertext: &[u8],
-        sender_identity_key: &IdentityKey,
-        receiver_identity_key: &IdentityKey,
-    ) -> Result<Self> {
+        counters: SignalIncrementingCounters,
+        ciphertext: Vec<u8>,
+        mac_signature: MACSignature<'_>,
+    ) -> Self {
+        let SignalIncrementingCounters {
+            counter,
+            previous_counter,
+        } = counters;
         let message = proto::wire::SignalMessage {
             ratchet_key: Some(sender_ratchet_key.serialize().into_vec()),
             counter: Some(counter),
             previous_counter: Some(previous_counter),
-            ciphertext: Some(Vec::<u8>::from(&ciphertext[..])),
+            ciphertext: Some(ciphertext.clone()),
         };
         let mut serialized = vec![0u8; 1 + message.encoded_len() + Self::MAC_LENGTH];
         serialized[0] = ((message_version & 0xF) << 4) | CIPHERTEXT_MESSAGE_CURRENT_VERSION;
-        message.encode(&mut &mut serialized[1..message.encoded_len() + 1])?;
+        no_encoding_error(message.encode(&mut &mut serialized[1..message.encoded_len() + 1]));
         let msg_len_for_mac = serialized.len() - Self::MAC_LENGTH;
-        let mac = Self::compute_mac(
-            sender_identity_key,
-            receiver_identity_key,
-            mac_key,
-            &serialized[..msg_len_for_mac],
-        )?;
+        let mac = Self::compute_mac(mac_signature, &serialized[..msg_len_for_mac]);
         serialized[msg_len_for_mac..].copy_from_slice(&mac);
         let serialized = serialized.into_boxed_slice();
-        Ok(Self {
+        Self {
             message_version,
             sender_ratchet_key,
-            counter,
-            previous_counter,
+            counters,
             ciphertext: ciphertext.into(),
             serialized,
-        })
-    }
-
-    #[inline]
-    pub fn message_version(&self) -> VersionType {
-        self.message_version
+        }
     }
 
     #[inline]
@@ -91,32 +130,56 @@ impl SignalMessage {
     }
 
     #[inline]
-    pub fn counter(&self) -> Counter {
-        self.counter
-    }
-
-    #[inline]
-    pub fn serialized(&self) -> &[u8] {
-        &*self.serialized
-    }
-
-    #[inline]
     pub fn body(&self) -> &[u8] {
         &*self.ciphertext
     }
 
-    pub fn verify_mac(
-        &self,
-        sender_identity_key: &IdentityKey,
-        receiver_identity_key: &IdentityKey,
-        mac_key: &[u8],
-    ) -> Result<bool> {
+    fn compute_mac(mac_signature: MACSignature<'_>, message: &[u8]) -> [u8; Self::MAC_LENGTH] {
+        let MACSignature { mac_pair, mac_key } = mac_signature;
+        let MACPair {
+            sender: sender_identity_key,
+            receiver: receiver_identity_key,
+        } = mac_pair;
+        let mut mac = no_hmac_varkey_error(Hmac::<Sha256>::new_varkey(mac_key));
+
+        mac.update(sender_identity_key.public_key().serialize().as_ref());
+        mac.update(receiver_identity_key.public_key().serialize().as_ref());
+        mac.update(message);
+        let mut result = [0u8; Self::MAC_LENGTH];
+        result.copy_from_slice(&mac.finalize().into_bytes()[..Self::MAC_LENGTH]);
+        result
+    }
+}
+
+impl<'a> RefSerializable<'a> for SignalMessage {
+    #[inline]
+    fn serialize(&'a self) -> &'a [u8] {
+        &*self.serialized
+    }
+}
+
+impl<'a> SignalProtocolMessage<'a> for SignalMessage {
+    #[inline]
+    fn message_version(&self) -> VersionType {
+        self.message_version
+    }
+}
+
+impl SequencedMessage for SignalMessage {
+    type Count = crate::consts::types::Counter;
+
+    #[inline]
+    fn counter(&self) -> Self::Count {
+        self.counters.counter
+    }
+}
+
+impl<'a> SignatureVerifiable<MACSignature<'a>> for SignalMessage {
+    fn verify_signature(&self, signature: MACSignature<'a>) -> Result<bool> {
         let our_mac = &Self::compute_mac(
-            sender_identity_key,
-            receiver_identity_key,
-            mac_key,
+            signature,
             &self.serialized[..self.serialized.len() - Self::MAC_LENGTH],
-        )?;
+        );
         let their_mac = &self.serialized[self.serialized.len() - Self::MAC_LENGTH..];
         let result: bool = our_mac.ct_eq(their_mac).into();
         if !result {
@@ -128,32 +191,11 @@ impl SignalMessage {
         }
         Ok(result)
     }
-
-    fn compute_mac(
-        sender_identity_key: &IdentityKey,
-        receiver_identity_key: &IdentityKey,
-        mac_key: &[u8],
-        message: &[u8],
-    ) -> Result<[u8; Self::MAC_LENGTH]> {
-        let mut mac = Hmac::<Sha256>::new_varkey(mac_key).map_err(|_| {
-            SignalProtocolError::InvalidArgument(format!(
-                "Invalid HMAC key length <{}>",
-                mac_key.len()
-            ))
-        })?;
-
-        mac.update(sender_identity_key.public_key().serialize().as_ref());
-        mac.update(receiver_identity_key.public_key().serialize().as_ref());
-        mac.update(message);
-        let mut result = [0u8; Self::MAC_LENGTH];
-        result.copy_from_slice(&mac.finalize().into_bytes()[..Self::MAC_LENGTH]);
-        Ok(result)
-    }
 }
 
 impl AsRef<[u8]> for SignalMessage {
     fn as_ref(&self) -> &[u8] {
-        &*self.serialized
+        self.serialize()
     }
 }
 
@@ -161,7 +203,7 @@ impl TryFrom<&[u8]> for SignalMessage {
     type Error = SignalProtocolError;
 
     fn try_from(value: &[u8]) -> Result<Self> {
-        if value.len() < SignalMessage::MAC_LENGTH + 1 {
+        if value.len() < Self::MAC_LENGTH + 1 {
             return Err(SignalProtocolError::CiphertextMessageTooShort(value.len()));
         }
         let message_version = value[0] >> 4;
@@ -177,7 +219,7 @@ impl TryFrom<&[u8]> for SignalMessage {
         }
 
         let proto_structure =
-            proto::wire::SignalMessage::decode(&value[1..value.len() - SignalMessage::MAC_LENGTH])?;
+            proto::wire::SignalMessage::decode(&value[1..value.len() - Self::MAC_LENGTH])?;
 
         let sender_ratchet_key = proto_structure
             .ratchet_key
@@ -195,36 +237,56 @@ impl TryFrom<&[u8]> for SignalMessage {
         Ok(SignalMessage {
             message_version,
             sender_ratchet_key,
-            counter,
-            previous_counter,
+            counters: SignalIncrementingCounters {
+                counter,
+                previous_counter,
+            },
             ciphertext,
             serialized: Box::from(value),
         })
     }
 }
 
+/// This is the [`prekey bundle`] of the X3DH specification.
+///
+/// [`prekey bundle`]: https://signal.org/docs/specifications/x3dh/#sending-the-initial-message
 #[derive(Debug, Clone)]
 pub struct PreKeySignalMessage {
     message_version: VersionType,
     registration_id: u32,
-    pre_key_id: Option<u32>,
-    signed_pre_key_id: u32,
+    pre_key_id: Option<PreKeyId>,
+    signed_pre_key_id: PreKeyId,
     base_key: PublicKey,
     identity_key: IdentityKey,
     message: SignalMessage,
     serialized: Box<[u8]>,
 }
 
+impl<'a> RefSerializable<'a> for PreKeySignalMessage {
+    #[inline]
+    fn serialize(&'a self) -> &'a [u8] {
+        &*self.serialized
+    }
+}
+
+impl<'a> SignalProtocolMessage<'a> for PreKeySignalMessage {
+    #[inline]
+    fn message_version(&self) -> VersionType {
+        self.message_version
+    }
+}
+
 impl PreKeySignalMessage {
     pub fn new(
         message_version: VersionType,
         registration_id: u32,
-        pre_key_id: Option<u32>,
-        signed_pre_key_id: u32,
+        pre_key_id: Option<PreKeyId>,
+        signed_pre_key_id: PreKeyId,
         base_key: PublicKey,
         identity_key: IdentityKey,
         message: SignalMessage,
-    ) -> Result<Self> {
+    ) -> Self {
+        // TODO: check that message.message_version() matches message_version?
         let proto_message = proto::wire::PreKeySignalMessage {
             registration_id: Some(registration_id),
             pre_key_id,
@@ -235,8 +297,8 @@ impl PreKeySignalMessage {
         };
         let mut serialized = vec![0u8; 1 + proto_message.encoded_len()];
         serialized[0] = ((message_version & 0xF) << 4) | CIPHERTEXT_MESSAGE_CURRENT_VERSION;
-        proto_message.encode(&mut &mut serialized[1..])?;
-        Ok(Self {
+        no_encoding_error(proto_message.encode(&mut &mut serialized[1..]));
+        Self {
             message_version,
             registration_id,
             pre_key_id,
@@ -245,12 +307,7 @@ impl PreKeySignalMessage {
             identity_key,
             message,
             serialized: serialized.into_boxed_slice(),
-        })
-    }
-
-    #[inline]
-    pub fn message_version(&self) -> VersionType {
-        self.message_version
+        }
     }
 
     #[inline]
@@ -259,12 +316,12 @@ impl PreKeySignalMessage {
     }
 
     #[inline]
-    pub fn pre_key_id(&self) -> Option<u32> {
+    pub fn pre_key_id(&self) -> Option<PreKeyId> {
         self.pre_key_id
     }
 
     #[inline]
-    pub fn signed_pre_key_id(&self) -> u32 {
+    pub fn signed_pre_key_id(&self) -> PreKeyId {
         self.signed_pre_key_id
     }
 
@@ -282,16 +339,11 @@ impl PreKeySignalMessage {
     pub fn message(&self) -> &SignalMessage {
         &self.message
     }
-
-    #[inline]
-    pub fn serialized(&self) -> &[u8] {
-        &*self.serialized
-    }
 }
 
 impl AsRef<[u8]> for PreKeySignalMessage {
     fn as_ref(&self) -> &[u8] {
-        &*self.serialized
+        self.serialize()
     }
 }
 
@@ -345,20 +397,50 @@ impl TryFrom<&[u8]> for PreKeySignalMessage {
     }
 }
 
+/// This is the initial [`post-X3DH message`] of the X3DH specification.
+///
+/// [`post-X3DH message`]: https://signal.org/docs/specifications/x3dh/#sending-the-initial-message
 #[derive(Debug, Clone)]
 pub struct SenderKeyMessage {
     message_version: VersionType,
     distribution_id: Uuid,
-    chain_id: u32,
+    chain_id: ChainId,
     iteration: Counter,
     ciphertext: Box<[u8]>,
     serialized: Box<[u8]>,
 }
 
+impl<'a> RefSerializable<'a> for SenderKeyMessage {
+    #[inline]
+    fn serialize(&'a self) -> &'a [u8] {
+        &*self.serialized
+    }
+}
+
+impl<'a> SignalProtocolMessage<'a> for SenderKeyMessage {
+    #[inline]
+    fn message_version(&self) -> VersionType {
+        self.message_version
+    }
+}
+
+impl SignatureVerifiable<PublicKey> for SenderKeyMessage {
+    fn verify_signature(&self, signature_key: PublicKey) -> Result<bool> {
+        assert!(self.serialized.len() > SIGNATURE_LENGTH);
+        let message_span: usize = self.serialized.len() - SIGNATURE_LENGTH;
+        let valid = signature_key.verify_signature(PublicKeySignature {
+            message: &self.serialized[..message_span],
+            signature: array_ref![&self.serialized, message_span, SIGNATURE_LENGTH],
+        })?;
+        Ok(valid)
+    }
+}
+
 impl SenderKeyMessage {
+    /// ???/Create a new instance.
     pub fn new<R: CryptoRng + Rng>(
         distribution_id: Uuid,
-        chain_id: u32,
+        chain_id: ChainId,
         iteration: Counter,
         ciphertext: Box<[u8]>,
         csprng: &mut R,
@@ -388,31 +470,13 @@ impl SenderKeyMessage {
         }
     }
 
-    pub fn verify_signature(&self, signature_key: &PublicKey) -> Result<bool> {
-        let valid = signature_key.verify_signature(PublicKeySignature {
-            message: &self.serialized[..self.serialized.len() - SIGNATURE_LENGTH],
-            signature: array_ref![
-                &self.serialized[self.serialized.len() - SIGNATURE_LENGTH..],
-                0,
-                SIGNATURE_LENGTH
-            ],
-        })?;
-
-        Ok(valid)
-    }
-
-    #[inline]
-    pub fn message_version(&self) -> VersionType {
-        self.message_version
-    }
-
     #[inline]
     pub fn distribution_id(&self) -> Uuid {
         self.distribution_id
     }
 
     #[inline]
-    pub fn chain_id(&self) -> u32 {
+    pub fn chain_id(&self) -> ChainId {
         self.chain_id
     }
 
@@ -424,11 +488,6 @@ impl SenderKeyMessage {
     #[inline]
     pub fn ciphertext(&self) -> &[u8] {
         &*self.ciphertext
-    }
-
-    #[inline]
-    pub fn serialized(&self) -> &[u8] {
-        &*self.serialized
     }
 }
 
@@ -485,25 +544,42 @@ impl TryFrom<&[u8]> for SenderKeyMessage {
     }
 }
 
+/// This is the calculation of [`SK`] from the X3DH specification.
+///
+/// [`SK`]: https://signal.org/docs/specifications/x3dh/#sending-the-initial-message
 #[derive(Debug, Clone)]
 pub struct SenderKeyDistributionMessage {
     message_version: VersionType,
     distribution_id: Uuid,
-    chain_id: u32,
+    chain_id: ChainId,
     iteration: Counter,
     chain_key: [u8; 32],
     signing_key: PublicKey,
     serialized: Box<[u8]>,
 }
 
+impl<'a> RefSerializable<'a> for SenderKeyDistributionMessage {
+    #[inline]
+    fn serialize(&'a self) -> &'a [u8] {
+        &*self.serialized
+    }
+}
+
+impl<'a> SignalProtocolMessage<'a> for SenderKeyDistributionMessage {
+    #[inline]
+    fn message_version(&self) -> VersionType {
+        self.message_version
+    }
+}
+
 impl SenderKeyDistributionMessage {
     pub fn new(
         distribution_id: Uuid,
-        chain_id: u32,
+        chain_id: ChainId,
         iteration: Counter,
         chain_key: [u8; 32],
         signing_key: PublicKey,
-    ) -> Result<Self> {
+    ) -> Self {
         let proto_message = proto::wire::SenderKeyDistributionMessage {
             distribution_uuid: Some(distribution_id.as_bytes().to_vec()),
             chain_id: Some(chain_id),
@@ -514,9 +590,8 @@ impl SenderKeyDistributionMessage {
         let message_version = CIPHERTEXT_MESSAGE_CURRENT_VERSION;
         let mut serialized = vec![0u8; 1 + proto_message.encoded_len()];
         serialized[0] = ((message_version & 0xF) << 4) | message_version;
-        proto_message.encode(&mut &mut serialized[1..])?;
-
-        Ok(Self {
+        no_encoding_error(proto_message.encode(&mut &mut serialized[1..]));
+        Self {
             message_version,
             distribution_id,
             chain_id,
@@ -524,12 +599,7 @@ impl SenderKeyDistributionMessage {
             chain_key,
             signing_key,
             serialized: serialized.into_boxed_slice(),
-        })
-    }
-
-    #[inline]
-    pub fn message_version(&self) -> VersionType {
-        self.message_version
+        }
     }
 
     #[inline]
@@ -538,7 +608,7 @@ impl SenderKeyDistributionMessage {
     }
 
     #[inline]
-    pub fn chain_id(&self) -> u32 {
+    pub fn chain_id(&self) -> ChainId {
         self.chain_id
     }
 
@@ -555,11 +625,6 @@ impl SenderKeyDistributionMessage {
     #[inline]
     pub fn signing_key(&self) -> &PublicKey {
         &self.signing_key
-    }
-
-    #[inline]
-    pub fn serialized(&self) -> &[u8] {
-        &*self.serialized
     }
 }
 
@@ -631,12 +696,12 @@ impl TryFrom<&[u8]> for SenderKeyDistributionMessage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::KeyPair;
+    use crate::curve::KeyPair;
 
     use rand::rngs::OsRng;
     use rand::{CryptoRng, Rng};
 
-    fn create_signal_message<T>(csprng: &mut T) -> Result<SignalMessage>
+    fn create_signal_message<T>(csprng: &mut T) -> SignalMessage
     where
         T: Rng + CryptoRng,
     {
@@ -653,22 +718,28 @@ mod tests {
         let receiver_identity_key_pair = KeyPair::generate(csprng);
 
         SignalMessage::new(
-            3,
-            &mac_key,
+            CIPHERTEXT_MESSAGE_CURRENT_VERSION,
             sender_ratchet_key_pair.public_key,
-            42,
-            41,
-            &ciphertext,
-            &sender_identity_key_pair.public_key.into(),
-            &receiver_identity_key_pair.public_key.into(),
+            SignalIncrementingCounters {
+                counter: 42,
+                previous_counter: 41,
+            },
+            ciphertext.to_vec(),
+            MACSignature::new(
+                MACPair {
+                    sender: sender_identity_key_pair.public_key.into(),
+                    receiver: receiver_identity_key_pair.public_key.into(),
+                },
+                mac_key.as_ref(),
+            ),
         )
     }
 
     fn assert_signal_message_equals(m1: &SignalMessage, m2: &SignalMessage) {
         assert_eq!(m1.message_version, m2.message_version);
         assert_eq!(m1.sender_ratchet_key, m2.sender_ratchet_key);
-        assert_eq!(m1.counter, m2.counter);
-        assert_eq!(m1.previous_counter, m2.previous_counter);
+        assert_eq!(m1.counters.counter, m2.counters.counter);
+        assert_eq!(m1.counters.previous_counter, m2.counters.previous_counter);
         assert_eq!(m1.ciphertext, m2.ciphertext);
         assert_eq!(m1.serialized, m2.serialized);
     }
@@ -676,7 +747,11 @@ mod tests {
     #[test]
     fn test_signal_message_serialize_deserialize() -> Result<()> {
         let mut csprng = OsRng;
-        let message = create_signal_message(&mut csprng)?;
+        let message = create_signal_message(&mut csprng);
+        assert_eq!(
+            message.message_version(),
+            CIPHERTEXT_MESSAGE_CURRENT_VERSION
+        );
         let deser_message =
             SignalMessage::try_from(message.as_ref()).expect("should deserialize without error");
         assert_signal_message_equals(&message, &deser_message);
@@ -688,7 +763,7 @@ mod tests {
         let mut csprng = OsRng;
         let identity_key_pair = KeyPair::generate(&mut csprng);
         let base_key_pair = KeyPair::generate(&mut csprng);
-        let message = create_signal_message(&mut csprng)?;
+        let message = create_signal_message(&mut csprng);
         let pre_key_signal_message = PreKeySignalMessage::new(
             3,
             365,
@@ -697,13 +772,13 @@ mod tests {
             base_key_pair.public_key,
             identity_key_pair.public_key.into(),
             message,
-        )?;
+        );
         let deser_pre_key_signal_message =
             PreKeySignalMessage::try_from(pre_key_signal_message.as_ref())
                 .expect("should deserialize without error");
         assert_eq!(
-            pre_key_signal_message.message_version,
-            deser_pre_key_signal_message.message_version
+            pre_key_signal_message.message_version(),
+            deser_pre_key_signal_message.message_version()
         );
         assert_eq!(
             pre_key_signal_message.registration_id,
@@ -738,7 +813,7 @@ mod tests {
 
     #[test]
     fn test_sender_key_message_serialize_deserialize() -> Result<()> {
-        let mut csprng = OsRng;
+        let mut csprng = rand::rngs::OsRng;
         let signature_key_pair = KeyPair::generate(&mut csprng);
         let sender_key_message = SenderKeyMessage::new(
             Uuid::from_u128(0xd1d1d1d1_7000_11eb_b32a_33b8a8a487a6),
@@ -751,24 +826,24 @@ mod tests {
         let deser_sender_key_message = SenderKeyMessage::try_from(sender_key_message.as_ref())
             .expect("should deserialize without error");
         assert_eq!(
-            sender_key_message.message_version,
-            deser_sender_key_message.message_version
+            sender_key_message.message_version(),
+            deser_sender_key_message.message_version()
         );
         assert_eq!(
-            sender_key_message.chain_id,
-            deser_sender_key_message.chain_id
+            sender_key_message.chain_id(),
+            deser_sender_key_message.chain_id()
         );
         assert_eq!(
-            sender_key_message.iteration,
-            deser_sender_key_message.iteration
+            sender_key_message.iteration(),
+            deser_sender_key_message.iteration()
         );
         assert_eq!(
-            sender_key_message.ciphertext,
-            deser_sender_key_message.ciphertext
+            sender_key_message.ciphertext(),
+            deser_sender_key_message.ciphertext()
         );
         assert_eq!(
-            sender_key_message.serialized,
-            deser_sender_key_message.serialized
+            sender_key_message.serialize(),
+            deser_sender_key_message.serialize()
         );
         Ok(())
     }

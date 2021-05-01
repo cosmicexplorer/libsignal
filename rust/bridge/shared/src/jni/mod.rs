@@ -9,6 +9,7 @@ use jni::objects::{JThrowable, JValue};
 use jni::sys::jobject;
 
 use device_transfer::Error as DeviceTransferError;
+use libsignal_protocol::utils::traits::serde::RefSerializable;
 use libsignal_protocol::*;
 use signal_crypto::Error as SignalCryptoError;
 use std::convert::{TryFrom, TryInto};
@@ -488,9 +489,9 @@ impl<'a> CiphertextMessageRef<'a> {
 
     pub fn serialize(self) -> &'a [u8] {
         match self {
-            CiphertextMessageRef::SignalMessage(x) => x.serialized(),
-            CiphertextMessageRef::PreKeySignalMessage(x) => x.serialized(),
-            CiphertextMessageRef::SenderKeyMessage(x) => x.serialized(),
+            CiphertextMessageRef::SignalMessage(x) => x.serialize(),
+            CiphertextMessageRef::PreKeySignalMessage(x) => x.serialize(),
+            CiphertextMessageRef::SenderKeyMessage(x) => x.serialize(),
         }
     }
 }

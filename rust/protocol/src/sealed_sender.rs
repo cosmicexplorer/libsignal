@@ -93,9 +93,9 @@ impl CiphertextMessage {
 impl<'a> RefSerializable<'a> for CiphertextMessage {
     fn serialize(&'a self) -> &'a [u8] {
         match self {
-            CiphertextMessage::SignalMessage(x) => x.serialized(),
-            CiphertextMessage::PreKeySignalMessage(x) => x.serialized(),
-            CiphertextMessage::SenderKeyMessage(x) => x.serialized(),
+            CiphertextMessage::SignalMessage(x) => x.serialize(),
+            CiphertextMessage::PreKeySignalMessage(x) => x.serialize(),
+            CiphertextMessage::SenderKeyMessage(x) => x.serialize(),
         }
     }
 }
