@@ -241,11 +241,11 @@ pub struct PrivateKey {
 
 impl PrivateKey {
     /// Derive a public key from the current private key's contents.
-    pub fn public_key(&self) -> Result<PublicKey> {
+    pub fn public_key(&self) -> PublicKey {
         match self.key {
             PrivateKeyData::DjbPrivateKey(private_key) => {
                 let public_key = curve25519::derive_public_key(&private_key);
-                Ok(PublicKey::new(PublicKeyData::DjbPublicKey(public_key)))
+                PublicKey::new(PublicKeyData::DjbPublicKey(public_key))
             }
         }
     }
@@ -255,21 +255,21 @@ impl PrivateKey {
         &self,
         message: &[u8],
         csprng: &mut R,
-    ) -> Result<Box<[u8]>> {
+    ) -> [u8; SIGNATURE_LENGTH] {
         match self.key {
             PrivateKeyData::DjbPrivateKey(k) => {
                 let kp = curve25519::KeyPair::from(k);
-                Ok(Box::new(kp.calculate_signature(csprng, message)))
+                kp.calculate_signature(csprng, message)
             }
         }
     }
 
     /// Calculate a new key agreed between this private key and the public key `their_key`.
-    pub fn calculate_agreement(&self, their_key: &PublicKey) -> Result<Box<[u8]>> {
+    pub fn calculate_agreement(&self, their_key: &PublicKey) -> [u8; AGREEMENT_LENGTH] {
         match (self.key, their_key.key) {
             (PrivateKeyData::DjbPrivateKey(priv_key), PublicKeyData::DjbPublicKey(pub_key)) => {
                 let kp = curve25519::KeyPair::from(priv_key);
-                Ok(Box::new(kp.calculate_agreement(&pub_key)))
+                kp.calculate_agreement(&pub_key)
             }
         }
     }
@@ -367,12 +367,12 @@ impl KeyPair {
         &self,
         message: &[u8],
         csprng: &mut R,
-    ) -> Result<Box<[u8]>> {
+    ) -> [u8; SIGNATURE_LENGTH] {
         self.private_key.calculate_signature(message, csprng)
     }
 
     /// Calculate a new key agreed between our private key and the public key `their_key`.
-    pub fn calculate_agreement(&self, their_key: &PublicKey) -> Result<Box<[u8]>> {
+    pub fn calculate_agreement(&self, their_key: &PublicKey) -> [u8; AGREEMENT_LENGTH] {
         self.private_key.calculate_agreement(their_key)
     }
 }
@@ -392,7 +392,7 @@ mod tests {
         let mut message = [0u8; 1024 * 1024];
         let signature = key_pair
             .private_key
-            .calculate_signature(&message, &mut csprng)?;
+            .calculate_signature(&message, &mut csprng);
 
         assert!(key_pair.public_key.verify_signature(PublicKeySignature {
             message: &message,
@@ -421,7 +421,7 @@ mod tests {
 
         assert_eq!(
             serialized_public,
-            key_pair.private_key.public_key()?.serialize()
+            key_pair.private_key.public_key().serialize()
         );
         let empty: [u8; 0] = [];
 

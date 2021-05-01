@@ -60,15 +60,10 @@ impl From<&SignalFfiError> for SignalErrorCode {
             | SignalFfiError::Signal(SignalProtocolError::InternalError(_))
             | SignalFfiError::DeviceTransfer(DeviceTransferError::InternalError(_))
             | SignalFfiError::Signal(SignalProtocolError::FfiBindingError(_))
-            | SignalFfiError::Signal(SignalProtocolError::InvalidChainKeyLength(_))
-            | SignalFfiError::Signal(SignalProtocolError::InvalidRootKeyLength(_))
             | SignalFfiError::Signal(SignalProtocolError::InvalidCipherCryptographicParameters(
                 _,
                 _,
             ))
-            | SignalFfiError::Signal(SignalProtocolError::InvalidMacKeyLength(_)) => {
-                SignalErrorCode::InternalError
-            }
 
             SignalFfiError::InvalidUtf8String => SignalErrorCode::InvalidUtf8String,
             SignalFfiError::InsufficientOutputSize(_, _) => SignalErrorCode::InsufficientOutputSize,

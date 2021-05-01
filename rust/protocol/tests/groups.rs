@@ -296,7 +296,7 @@ fn group_sealed_sender() -> Result<(), SignalProtocolError> {
             server_key.public_key,
             &trust_root.private_key,
             &mut csprng,
-        )?;
+        );
 
         let expires = 1605722925;
 
@@ -309,7 +309,7 @@ fn group_sealed_sender() -> Result<(), SignalProtocolError> {
             server_cert,
             &server_key.private_key,
             &mut csprng,
-        )?;
+        );
 
         let alice_message = group_encrypt(
             &mut alice_store,
@@ -327,7 +327,7 @@ fn group_sealed_sender() -> Result<(), SignalProtocolError> {
             alice_message.serialized().to_vec(),
             ContentHint::Supplementary,
             Some([42].to_vec()),
-        )?;
+        );
 
         let alice_ctext = sealed_sender_multi_recipient_encrypt(
             &[&bob_uuid_address, &carol_uuid_address],

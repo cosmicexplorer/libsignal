@@ -6,7 +6,10 @@
 //! Wrappers over identity primitives from [crate::curve].
 
 use crate::proto;
-use crate::{KeyPair, PrivateKey, PublicKey, Result, SignalProtocolError};
+use crate::{
+    utils::traits::serde::{Deserializable, Serializable},
+    KeyPair, PrivateKey, PublicKey, Result, SignalProtocolError,
+};
 
 use rand::{CryptoRng, Rng};
 use std::convert::TryFrom;
@@ -122,12 +125,10 @@ impl TryFrom<&[u8]> for IdentityKeyPair {
     }
 }
 
-impl TryFrom<PrivateKey> for IdentityKeyPair {
-    type Error = SignalProtocolError;
-
-    fn try_from(private_key: PrivateKey) -> Result<Self> {
-        let identity_key = IdentityKey::new(private_key.public_key()?);
-        Ok(Self::new(identity_key, private_key))
+impl From<PrivateKey> for IdentityKeyPair {
+    fn from(private_key: PrivateKey) -> Self {
+        let identity_key = IdentityKey::new(private_key.public_key());
+        Self::new(identity_key, private_key)
     }
 }
 
@@ -143,6 +144,7 @@ impl From<KeyPair> for IdentityKeyPair {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::curve::Keyed;
 
     use rand::rngs::OsRng;
 

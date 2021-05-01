@@ -52,8 +52,8 @@ fn HKDF_DeriveSecrets<E: Env>(
 ) -> Result<E::Buffer> {
     let kdf = HKDF::new(version)?;
     let buffer = match salt {
-        Some(salt) => kdf.derive_salted_secrets(ikm, salt, label, output_length as usize)?,
-        None => kdf.derive_secrets(ikm, label, output_length as usize)?,
+        Some(salt) => kdf.derive_salted_secrets(ikm, salt, label, output_length as usize),
+        None => kdf.derive_secrets(ikm, label, output_length as usize),
     };
     Ok(env.buffer(buffer.into_vec()))
 }
@@ -68,7 +68,7 @@ fn HKDF_Derive(
     salt: &[u8],
 ) -> Result<()> {
     let kdf = HKDF::new(version)?;
-    let kdf_output = kdf.derive_salted_secrets(ikm, salt, label, output.len())?;
+    let kdf_output = kdf.derive_salted_secrets(ikm, salt, label, output.len());
     output.copy_from_slice(&kdf_output);
     Ok(())
 }
@@ -137,14 +137,14 @@ fn ECPrivateKey_Generate() -> PrivateKey {
 
 #[bridge_fn(ffi = "privatekey_get_public_key", node = "PrivateKey_GetPublicKey")]
 fn ECPrivateKey_GetPublicKey(k: &PrivateKey) -> Result<PublicKey> {
-    k.public_key()
+    Ok(k.public_key())
 }
 
 #[bridge_fn_buffer(ffi = "privatekey_sign", node = "PrivateKey_Sign")]
 fn ECPrivateKey_Sign<T: Env>(env: T, key: &PrivateKey, message: &[u8]) -> Result<T::Buffer> {
     let mut rng = rand::rngs::OsRng;
-    let sig = key.calculate_signature(&message, &mut rng)?;
-    Ok(env.buffer(sig.into_vec()))
+    let sig = key.calculate_signature(&message, &mut rng);
+    Ok(env.buffer(sig.to_vec()))
 }
 
 #[bridge_fn_buffer(ffi = "privatekey_agree", node = "PrivateKey_Agree")]
@@ -153,8 +153,8 @@ fn ECPrivateKey_Agree<T: Env>(
     private_key: &PrivateKey,
     public_key: &PublicKey,
 ) -> Result<T::Buffer> {
-    let dh_secret = private_key.calculate_agreement(&public_key)?;
-    Ok(env.buffer(dh_secret.into_vec()))
+    let dh_secret = private_key.calculate_agreement(&public_key);
+    Ok(env.buffer(dh_secret.to_vec()))
 }
 
 #[bridge_fn_buffer(ffi = "identitykeypair_serialize")]
@@ -539,7 +539,7 @@ fn SenderKeyRecord_New() -> SenderKeyRecord {
 }
 
 bridge_deserialize!(ServerCertificate::deserialize);
-bridge_get_bytearray!(ServerCertificate::serialized);
+bridge_get_bytearray!(ServerCertificate::serialize);
 bridge_get_bytearray!(ServerCertificate::certificate);
 bridge_get_bytearray!(ServerCertificate::signature);
 bridge_get!(ServerCertificate::key_id -> u32);
@@ -552,11 +552,16 @@ fn ServerCertificate_New(
     trust_root: &PrivateKey,
 ) -> Result<ServerCertificate> {
     let mut rng = rand::rngs::OsRng;
-    ServerCertificate::new(key_id, *server_key, trust_root, &mut rng)
+    Ok(ServerCertificate::new(
+        key_id,
+        *server_key,
+        trust_root,
+        &mut rng,
+    ))
 }
 
 bridge_deserialize!(SenderCertificate::deserialize);
-bridge_get_bytearray!(SenderCertificate::serialized);
+bridge_get_bytearray!(SenderCertificate::serialize);
 bridge_get_bytearray!(SenderCertificate::certificate);
 bridge_get_bytearray!(SenderCertificate::signature);
 bridge_get!(SenderCertificate::sender_uuid -> &str);
@@ -571,7 +576,7 @@ fn SenderCertificate_Validate(
     key: &PublicKey,
     time: u64,
 ) -> Result<bool> {
-    cert.validate(key, time)
+    cert.verify_signature(ServerSignature::new(*key, time))
 }
 
 #[bridge_fn]
@@ -591,7 +596,7 @@ fn SenderCertificate_New(
 ) -> Result<SenderCertificate> {
     let mut rng = rand::rngs::OsRng;
 
-    SenderCertificate::new(
+    Ok(SenderCertificate::new(
         sender_uuid,
         sender_e164,
         *sender_key,
@@ -600,12 +605,12 @@ fn SenderCertificate_New(
         signer_cert.clone(),
         signer_key,
         &mut rng,
-    )
+    ))
 }
 
 bridge_deserialize!(UnidentifiedSenderMessageContent::deserialize);
 bridge_get_bytearray!(
-    UnidentifiedSenderMessageContent::serialized as Serialize,
+    UnidentifiedSenderMessageContent::serialize as Serialize,
     jni = "UnidentifiedSenderMessageContent_1GetSerialized"
 );
 bridge_get_bytearray!(UnidentifiedSenderMessageContent::contents);
@@ -662,13 +667,13 @@ fn UnidentifiedSenderMessageContent_New(
     content_hint: u32,
     group_id: Option<&[u8]>,
 ) -> Result<UnidentifiedSenderMessageContent> {
-    UnidentifiedSenderMessageContent::new(
+    Ok(UnidentifiedSenderMessageContent::new(
         message.message_type(),
         sender.clone(),
         message.serialize().to_owned(),
         ContentHint::from(content_hint),
         group_id.map(|g| g.to_owned()),
-    )
+    ))
 }
 
 // Alternate version for FFI because FFI can't support optional slices.
@@ -679,7 +684,7 @@ fn UnidentifiedSenderMessageContentNew(
     content_hint: u32,
     group_id: &[u8],
 ) -> Result<UnidentifiedSenderMessageContent> {
-    UnidentifiedSenderMessageContent::new(
+    Ok(UnidentifiedSenderMessageContent::new(
         message.message_type(),
         sender.clone(),
         message.serialize().to_owned(),
@@ -689,7 +694,7 @@ fn UnidentifiedSenderMessageContentNew(
         } else {
             Some(group_id.to_owned())
         },
-    )
+    ))
 }
 
 // Alternate version for Java since CiphertextMessage isn't opaque in Java.
@@ -704,13 +709,13 @@ fn UnidentifiedSenderMessageContent_New_Java(
     content_hint: u32,
     group_id: Option<&[u8]>,
 ) -> Result<UnidentifiedSenderMessageContent> {
-    UnidentifiedSenderMessageContent::new(
+    Ok(UnidentifiedSenderMessageContent::new(
         message.message_type(),
         sender.clone(),
         message.serialize().to_owned(),
         ContentHint::from(content_hint),
         group_id.map(|g| g.to_owned()),
-    )
+    ))
 }
 
 #[derive(Debug)]

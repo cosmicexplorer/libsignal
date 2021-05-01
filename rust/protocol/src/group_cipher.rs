@@ -32,23 +32,23 @@ pub async fn group_encrypt<R: Rng + CryptoRng>(
 
     let sender_key_state = record.sender_key_state()?;
 
-    let sender_key = sender_key_state.sender_chain_key()?.sender_message_key()?;
+    let sender_key = sender_key_state.sender_chain_key()?.sender_message_key();
 
     let ciphertext =
-        crypto::aes_256_cbc_encrypt(plaintext, &sender_key.cipher_key()?, &sender_key.iv()?)?;
+        crypto::aes_256_cbc_encrypt(plaintext, &sender_key.cipher_key(), &sender_key.iv())?;
 
     let signing_key = sender_key_state.signing_key_private()?;
 
     let skm = SenderKeyMessage::new(
         distribution_id,
         sender_key_state.chain_id()?,
-        sender_key.iteration()?,
+        sender_key.iteration(),
         ciphertext.into_boxed_slice(),
         csprng,
         &signing_key,
     )?;
 
-    sender_key_state.set_sender_chain_key(sender_key_state.sender_chain_key()?.next()?)?;
+    sender_key_state.set_sender_chain_key(sender_key_state.sender_chain_key()?.next());
 
     sender_key_store
         .store_sender_key(sender, distribution_id, &record, ctx)
@@ -60,18 +60,18 @@ pub async fn group_encrypt<R: Rng + CryptoRng>(
 fn get_sender_key(state: &mut SenderKeyState, iteration: u32) -> Result<SenderMessageKey> {
     let sender_chain_key = state.sender_chain_key()?;
 
-    if sender_chain_key.iteration()? > iteration {
-        if let Some(smk) = state.remove_sender_message_key(iteration)? {
+    if sender_chain_key.iteration() > iteration {
+        if let Some(smk) = state.remove_sender_message_key(iteration) {
             return Ok(smk);
         } else {
             return Err(SignalProtocolError::DuplicatedMessage(
-                sender_chain_key.iteration()?,
+                sender_chain_key.iteration(),
                 iteration,
             ));
         }
     }
 
-    let jump = (iteration - sender_chain_key.iteration()?) as usize;
+    let jump = (iteration - sender_chain_key.iteration()) as usize;
     if jump > limits::MAX_FORWARD_JUMPS {
         return Err(SignalProtocolError::InvalidMessage(
             "message from too far into the future",
@@ -80,13 +80,13 @@ fn get_sender_key(state: &mut SenderKeyState, iteration: u32) -> Result<SenderMe
 
     let mut sender_chain_key = sender_chain_key;
 
-    while sender_chain_key.iteration()? < iteration {
-        state.add_sender_message_key(&sender_chain_key.sender_message_key()?)?;
-        sender_chain_key = sender_chain_key.next()?;
+    while sender_chain_key.iteration() < iteration {
+        state.add_sender_message_key(&sender_chain_key.sender_message_key());
+        sender_chain_key = sender_chain_key.next();
     }
 
-    state.set_sender_chain_key(sender_chain_key.next()?)?;
-    Ok(sender_chain_key.sender_message_key()?)
+    state.set_sender_chain_key(sender_chain_key.next());
+    Ok(sender_chain_key.sender_message_key())
 }
 
 pub async fn group_decrypt(
@@ -110,11 +110,8 @@ pub async fn group_decrypt(
 
     let sender_key = get_sender_key(&mut sender_key_state, skm.iteration())?;
 
-    let plaintext = crypto::aes_256_cbc_decrypt(
-        skm.ciphertext(),
-        &sender_key.cipher_key()?,
-        &sender_key.iv()?,
-    )?;
+    let plaintext =
+        crypto::aes_256_cbc_decrypt(skm.ciphertext(), &sender_key.cipher_key(), &sender_key.iv())?;
 
     sender_key_store
         .store_sender_key(sender, skm.distribution_id(), &record, ctx)
@@ -184,8 +181,8 @@ pub async fn create_sender_key_distribution_message<R: Rng + CryptoRng>(
     SenderKeyDistributionMessage::new(
         distribution_id,
         state.chain_id()?,
-        sender_chain_key.iteration()?,
-        sender_chain_key.seed()?,
+        sender_chain_key.iteration(),
+        sender_chain_key.seed(),
         state.signing_key_public()?,
     )
 }

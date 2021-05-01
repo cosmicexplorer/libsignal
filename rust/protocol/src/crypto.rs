@@ -7,7 +7,6 @@ use crate::{error::Result, SignalProtocolError};
 
 use aes::cipher::stream::{NewStreamCipher, SyncStreamCipher};
 use aes::Aes256;
-use arrayref::array_ref;
 use block_modes::{block_padding::Pkcs7, BlockMode, Cbc};
 use ctr::Ctr128;
 use hmac::{Hmac, Mac, NewMac};
@@ -20,16 +19,16 @@ pub const AES_INPUT_SIZE: usize = 32;
 /// The size of the generated nonce used in [aes_256_ctr_encrypt].
 pub const AES_NONCE_SIZE: usize = 16;
 
-pub fn aes_256_ctr_encrypt(ptext: &[u8], key: &[u8; AES_INPUT_SIZE]) -> Result<Vec<u8>> {
+pub fn aes_256_ctr_encrypt(ptext: &[u8], key: &[u8; AES_INPUT_SIZE]) -> Vec<u8> {
     let zero_nonce = [0u8; AES_NONCE_SIZE];
     let mut cipher = Ctr128::<Aes256>::new(key.into(), (&zero_nonce).into());
 
     let mut ctext = ptext.to_vec();
     cipher.apply_keystream(&mut ctext);
-    Ok(ctext)
+    ctext
 }
 
-pub fn aes_256_ctr_decrypt(ctext: &[u8], key: &[u8; AES_INPUT_SIZE]) -> Result<Vec<u8>> {
+pub fn aes_256_ctr_decrypt(ctext: &[u8], key: &[u8; AES_INPUT_SIZE]) -> Vec<u8> {
     aes_256_ctr_encrypt(ctext, key)
 }
 
@@ -65,56 +64,46 @@ pub fn aes_256_cbc_decrypt(ctext: &[u8], key: &[u8], iv: &[u8]) -> Result<Vec<u8
 /// The statically-known size of the output of [hmac_sha256].
 pub const HMAC_OUTPUT_SIZE: usize = 32;
 
-pub fn hmac_sha256(key: &[u8], input: &[u8]) -> Result<[u8; HMAC_OUTPUT_SIZE]> {
+pub fn hmac_sha256(key: &[u8], input: &[u8]) -> [u8; HMAC_OUTPUT_SIZE] {
     let mut hmac = Hmac::<Sha256>::new_varkey(key).expect("HMAC-SHA256 should accept any size key");
     hmac.update(input);
-    Ok(hmac.finalize().into_bytes().into())
-}
-
-fn marshal_aes_key(cipher_key: &[u8]) -> Result<&[u8; AES_INPUT_SIZE]> {
-    if cipher_key.len() == AES_INPUT_SIZE {
-        Ok(array_ref![cipher_key, 0, AES_INPUT_SIZE])
-    } else {
-        Err(SignalProtocolError::InvalidCipherCryptographicParameters(
-            AES_INPUT_SIZE,
-            0,
-        ))
-    }
+    hmac.finalize().into_bytes().into()
 }
 
 pub fn aes256_ctr_hmacsha256_encrypt(
     msg: &[u8],
-    cipher_key: &[u8],
+    cipher_key: &[u8; AES_INPUT_SIZE],
     mac_key: &[u8],
-) -> Result<Vec<u8>> {
-    let ctext = aes_256_ctr_encrypt(msg, marshal_aes_key(cipher_key)?)?;
-    let mac = hmac_sha256(mac_key, &ctext)?;
+) -> Vec<u8> {
+    let ctext = aes_256_ctr_encrypt(msg, cipher_key);
+    let mac = hmac_sha256(mac_key, &ctext);
     let mut result = Vec::with_capacity(ctext.len() + 10);
     result.extend_from_slice(&ctext);
     result.extend_from_slice(&mac[..10]);
-    Ok(result)
+    result
 }
 
 pub fn aes256_ctr_hmacsha256_decrypt(
     ctext: &[u8],
-    cipher_key: &[u8],
+    cipher_key: &[u8; AES_INPUT_SIZE],
     mac_key: &[u8],
 ) -> Result<Vec<u8>> {
     if ctext.len() < 10 {
         return Err(SignalProtocolError::InvalidCiphertext);
     }
     let ptext_len = ctext.len() - 10;
-    let our_mac = hmac_sha256(mac_key, &ctext[..ptext_len])?;
+    let our_mac = hmac_sha256(mac_key, &ctext[..ptext_len]);
     let same: bool = our_mac[..10].ct_eq(&ctext[ptext_len..]).into();
     if !same {
         return Err(SignalProtocolError::InvalidCiphertext);
     }
-    aes_256_ctr_decrypt(&ctext[..ptext_len], marshal_aes_key(cipher_key)?)
+    Ok(aes_256_ctr_decrypt(&ctext[..ptext_len], cipher_key))
 }
 
 #[cfg(test)]
 mod test {
-    use super::{array_ref, Result, AES_INPUT_SIZE};
+    use super::{Result, AES_INPUT_SIZE};
+    use arrayref::array_ref;
 
     #[test]
     fn aes_cbc_test() -> Result<()> {
@@ -151,7 +140,7 @@ mod test {
             .expect("valid hex");
         let ptext = [0u8; 35];
 
-        let ctext = super::aes_256_ctr_encrypt(&ptext, array_ref![&key, 0, AES_INPUT_SIZE])?;
+        let ctext = super::aes_256_ctr_encrypt(&ptext, array_ref![&key, 0, AES_INPUT_SIZE]);
         assert_eq!(
             hex::encode(ctext),
             "e568f68194cf76d6174d4cc04310a85491151e5d0b7a1f1bc0d7acd0ae3e51e4170e23"

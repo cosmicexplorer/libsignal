@@ -23,7 +23,7 @@ fn test_server_cert() -> Result<(), SignalProtocolError> {
     let server_key = KeyPair::generate(&mut rng);
 
     let server_cert =
-        ServerCertificate::new(1, server_key.public_key, &trust_root.private_key, &mut rng)?;
+        ServerCertificate::new(1, server_key.public_key, &trust_root.private_key, &mut rng);
 
     let serialized = server_cert.serialize().to_vec();
 
@@ -72,7 +72,7 @@ fn test_revoked_server_cert() -> Result<(), SignalProtocolError> {
         server_key.public_key,
         &trust_root.private_key,
         &mut rng,
-    )?;
+    );
 
     let serialized = server_cert.serialize().to_vec();
 
@@ -91,7 +91,7 @@ fn test_sender_cert() -> Result<(), SignalProtocolError> {
     let key = KeyPair::generate(&mut rng);
 
     let server_cert =
-        ServerCertificate::new(1, server_key.public_key, &trust_root.private_key, &mut rng)?;
+        ServerCertificate::new(1, server_key.public_key, &trust_root.private_key, &mut rng);
 
     let device_id = 42;
     let expires = 1605722925;
@@ -105,7 +105,7 @@ fn test_sender_cert() -> Result<(), SignalProtocolError> {
         server_cert,
         &server_key.private_key,
         &mut rng,
-    )?;
+    );
 
     assert_eq!(
         sender_cert.verify_signature(ServerSignature::new(trust_root.public_key, expires))?,
@@ -184,7 +184,7 @@ fn test_sealed_sender() -> Result<(), SignalProtocolError> {
         let server_key = KeyPair::generate(&mut rng);
 
         let server_cert =
-            ServerCertificate::new(1, server_key.public_key, &trust_root.private_key, &mut rng)?;
+            ServerCertificate::new(1, server_key.public_key, &trust_root.private_key, &mut rng);
 
         let expires = 1605722925;
 
@@ -197,7 +197,7 @@ fn test_sealed_sender() -> Result<(), SignalProtocolError> {
             server_cert,
             &server_key.private_key,
             &mut rng,
-        )?;
+        );
 
         let alice_ptext = vec![1, 2, 3, 23, 99];
         let alice_ctext = sealed_sender_encrypt(
@@ -352,7 +352,7 @@ fn test_sender_key_in_sealed_sender() -> Result<(), SignalProtocolError> {
         let server_key = KeyPair::generate(&mut rng);
 
         let server_cert =
-            ServerCertificate::new(1, server_key.public_key, &trust_root.private_key, &mut rng)?;
+            ServerCertificate::new(1, server_key.public_key, &trust_root.private_key, &mut rng);
 
         let expires = 1605722925;
 
@@ -365,7 +365,7 @@ fn test_sender_key_in_sealed_sender() -> Result<(), SignalProtocolError> {
             server_cert,
             &server_key.private_key,
             &mut rng,
-        )?;
+        );
 
         let distribution_message = create_sender_key_distribution_message(
             &alice_uuid_address,
@@ -399,7 +399,7 @@ fn test_sender_key_in_sealed_sender() -> Result<(), SignalProtocolError> {
             alice_message.serialized().to_vec(),
             ContentHint::Default,
             None,
-        )?;
+        );
 
         let alice_ctext = sealed_sender_encrypt_from_usmc(
             &bob_uuid_address,
@@ -473,7 +473,7 @@ fn test_sealed_sender_multi_recipient() -> Result<(), SignalProtocolError> {
         let server_key = KeyPair::generate(&mut rng);
 
         let server_cert =
-            ServerCertificate::new(1, server_key.public_key, &trust_root.private_key, &mut rng)?;
+            ServerCertificate::new(1, server_key.public_key, &trust_root.private_key, &mut rng);
 
         let expires = 1605722925;
 
@@ -486,7 +486,7 @@ fn test_sealed_sender_multi_recipient() -> Result<(), SignalProtocolError> {
             server_cert,
             &server_key.private_key,
             &mut rng,
-        )?;
+        );
 
         let alice_ptext = vec![1, 2, 3, 23, 99];
         let alice_message = message_encrypt(
@@ -504,7 +504,7 @@ fn test_sealed_sender_multi_recipient() -> Result<(), SignalProtocolError> {
             alice_message.serialize().to_vec(),
             ContentHint::Default,
             None,
-        )?;
+        );
 
         let alice_ctext = sealed_sender_multi_recipient_encrypt(
             &[&bob_uuid_address],
@@ -554,7 +554,7 @@ fn test_sealed_sender_multi_recipient() -> Result<(), SignalProtocolError> {
             alice_message.serialize().to_vec(),
             ContentHint::Default,
             None,
-        )?;
+        );
 
         let alice_ctext = sealed_sender_multi_recipient_encrypt(
             &[&bob_uuid_address],
@@ -610,7 +610,7 @@ fn test_sealed_sender_multi_recipient() -> Result<(), SignalProtocolError> {
             alice_message.serialize().to_vec(),
             ContentHint::Default,
             None,
-        )?;
+        );
 
         let alice_ctext = sealed_sender_multi_recipient_encrypt(
             &[&bob_uuid_address],

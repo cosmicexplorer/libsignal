@@ -32,7 +32,7 @@ pub async fn message_encrypt(
 
     let chain_key = session_state.get_sender_chain_key()?;
 
-    let message_keys = chain_key.message_keys()?;
+    let message_keys = chain_key.message_keys();
 
     let sender_ephemeral = session_state.sender_ratchet_key()?;
     let previous_counter = session_state.previous_counter()?;
@@ -89,7 +89,7 @@ pub async fn message_encrypt(
         )?)
     };
 
-    session_state.set_sender_chain_key(&chain_key.next_chain_key()?)?;
+    session_state.set_sender_chain_key(&chain_key.next_chain_key())?;
 
     // XXX why is this check after everything else?!!
     if !identity_store
@@ -528,11 +528,11 @@ fn get_or_create_chain_key<R: Rng + CryptoRng>(
 
     let root_key = state.root_key()?;
     let our_ephemeral = state.sender_ratchet_private_key()?;
-    let receiver_chain = root_key.create_chain(their_ephemeral, &our_ephemeral)?;
+    let receiver_chain = root_key.create_chain(their_ephemeral, &our_ephemeral);
     let our_new_ephemeral = KeyPair::generate(csprng);
     let sender_chain = receiver_chain
         .0
-        .create_chain(their_ephemeral, &our_new_ephemeral.private_key)?;
+        .create_chain(their_ephemeral, &our_new_ephemeral.private_key);
 
     state.set_root_key(&sender_chain.0)?;
     state.add_receiver_chain(their_ephemeral, &receiver_chain.1)?;
@@ -602,11 +602,11 @@ fn get_or_create_message_key(
     let mut chain_key = chain_key.clone();
 
     while chain_key.index() < counter {
-        let message_keys = chain_key.message_keys()?;
+        let message_keys = chain_key.message_keys();
         state.set_message_keys(their_ephemeral, &message_keys)?;
-        chain_key = chain_key.next_chain_key()?;
+        chain_key = chain_key.next_chain_key();
     }
 
-    state.set_receiver_chain_key(their_ephemeral, &chain_key.next_chain_key()?)?;
-    Ok(chain_key.message_keys()?)
+    state.set_receiver_chain_key(their_ephemeral, &chain_key.next_chain_key())?;
+    Ok(chain_key.message_keys())
 }

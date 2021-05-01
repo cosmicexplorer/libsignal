@@ -25,39 +25,6 @@ use sha2::Sha256;
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
 
-pub enum CiphertextMessage {
-    SignalMessage(SignalMessage),
-    PreKeySignalMessage(PreKeySignalMessage),
-    SenderKeyMessage(SenderKeyMessage),
-}
-
-#[derive(Copy, Clone, Eq, PartialEq, Debug, num_enum::TryFromPrimitive)]
-#[repr(u8)]
-pub enum CiphertextMessageType {
-    Whisper = 2,
-    PreKey = 3,
-    // Further cases should line up with Envelope.Type (proto), even though old cases don't.
-    SenderKey = 7,
-}
-
-impl CiphertextMessage {
-    pub fn message_type(&self) -> CiphertextMessageType {
-        match self {
-            CiphertextMessage::SignalMessage(_) => CiphertextMessageType::Whisper,
-            CiphertextMessage::PreKeySignalMessage(_) => CiphertextMessageType::PreKey,
-            CiphertextMessage::SenderKeyMessage(_) => CiphertextMessageType::SenderKey,
-        }
-    }
-
-    pub fn serialize(&self) -> &[u8] {
-        match self {
-            CiphertextMessage::SignalMessage(x) => x.serialized(),
-            CiphertextMessage::PreKeySignalMessage(x) => x.serialized(),
-            CiphertextMessage::SenderKeyMessage(x) => x.serialized(),
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct SignalMessage {
     message_version: VersionType,

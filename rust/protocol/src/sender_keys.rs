@@ -24,48 +24,46 @@ pub struct SenderMessageKey {
 }
 
 impl SenderMessageKey {
-    pub fn new(iteration: u32, seed: Vec<u8>) -> Result<Self> {
+    pub fn new(iteration: Counter, seed: Vec<u8>) -> Self {
         let hkdf = HKDF::new_current();
-        let derived = hkdf.derive_secrets(&seed, b"WhisperGroup", 48)?;
-        Ok(Self {
+        let derived = hkdf.derive_secrets(&seed, b"WhisperGroup", 48);
+        Self {
             iteration,
             seed,
             iv: derived[0..16].to_vec(),
             cipher_key: derived[16..48].to_vec(),
-        })
+        }
     }
 
-    pub fn from_protobuf(
-        smk: storage_proto::sender_key_state_structure::SenderMessageKey,
-    ) -> Result<Self> {
+    pub fn from_protobuf(smk: storage_proto::sender_key_state_structure::SenderMessageKey) -> Self {
         Self::new(smk.iteration, smk.seed)
     }
 
-    pub fn iteration(&self) -> Result<u32> {
-        Ok(self.iteration)
+    #[inline]
+    pub fn iteration(&self) -> Counter {
+        self.iteration
     }
 
-    pub fn iv(&self) -> Result<Vec<u8>> {
-        Ok(self.iv.clone())
+    #[inline]
+    pub fn iv(&self) -> Vec<u8> {
+        self.iv.clone()
     }
 
-    pub fn cipher_key(&self) -> Result<Vec<u8>> {
-        Ok(self.cipher_key.clone())
+    #[inline]
+    pub fn cipher_key(&self) -> Vec<u8> {
+        self.cipher_key.clone()
     }
 
-    pub fn seed(&self) -> Result<Vec<u8>> {
-        Ok(self.seed.clone())
+    #[inline]
+    pub fn seed(&self) -> Vec<u8> {
+        self.seed.clone()
     }
 
-    pub fn as_protobuf(
-        &self,
-    ) -> Result<storage_proto::sender_key_state_structure::SenderMessageKey> {
-        Ok(
-            storage_proto::sender_key_state_structure::SenderMessageKey {
-                iteration: self.iteration,
-                seed: self.seed.clone(),
-            },
-        )
+    pub fn as_protobuf(&self) -> storage_proto::sender_key_state_structure::SenderMessageKey {
+        storage_proto::sender_key_state_structure::SenderMessageKey {
+            iteration: self.iteration,
+            seed: self.seed.clone(),
+        }
     }
 }
 
@@ -79,45 +77,46 @@ impl SenderChainKey {
     const MESSAGE_KEY_SEED: u8 = 0x01;
     const CHAIN_KEY_SEED: u8 = 0x02;
 
-    pub fn new(iteration: u32, chain_key: Vec<u8>) -> Result<Self> {
-        Ok(Self {
+    pub fn new(iteration: Counter, chain_key: Vec<u8>) -> Self {
+        Self {
             iteration,
             chain_key,
-        })
+        }
     }
 
-    pub fn iteration(&self) -> Result<u32> {
-        Ok(self.iteration)
+    #[inline]
+    pub fn iteration(&self) -> Counter {
+        self.iteration
     }
 
-    pub fn seed(&self) -> Result<Vec<u8>> {
-        Ok(self.chain_key.clone())
+    #[inline]
+    pub fn seed(&self) -> Vec<u8> {
+        self.chain_key.clone()
     }
 
-    pub fn next(&self) -> Result<SenderChainKey> {
-        Ok(SenderChainKey::new(
+    #[inline]
+    pub fn next(&self) -> SenderChainKey {
+        SenderChainKey::new(
             self.iteration + 1,
-            self.get_derivative(Self::CHAIN_KEY_SEED)?,
-        )?)
+            self.get_derivative(Self::CHAIN_KEY_SEED),
+        )
     }
 
-    pub fn sender_message_key(&self) -> Result<SenderMessageKey> {
-        Ok(SenderMessageKey::new(
-            self.iteration,
-            self.get_derivative(Self::MESSAGE_KEY_SEED)?,
-        )?)
+    #[inline]
+    pub fn sender_message_key(&self) -> SenderMessageKey {
+        SenderMessageKey::new(self.iteration, self.get_derivative(Self::MESSAGE_KEY_SEED))
     }
 
-    fn get_derivative(&self, label: u8) -> Result<Vec<u8>> {
+    fn get_derivative(&self, label: u8) -> Vec<u8> {
         let label = [label];
-        Ok(hmac_sha256(&self.chain_key, &label)?.to_vec())
+        hmac_sha256(&self.chain_key, &label).to_vec()
     }
 
-    pub fn as_protobuf(&self) -> Result<storage_proto::sender_key_state_structure::SenderChainKey> {
-        Ok(storage_proto::sender_key_state_structure::SenderChainKey {
+    pub fn as_protobuf(&self) -> storage_proto::sender_key_state_structure::SenderChainKey {
+        storage_proto::sender_key_state_structure::SenderChainKey {
             iteration: self.iteration,
             seed: self.chain_key.clone(),
-        })
+        }
     }
 }
 
@@ -137,7 +136,7 @@ impl SenderKeyState {
         let state = storage_proto::SenderKeyStateStructure {
             chain_id,
             sender_chain_key: Some(
-                SenderChainKey::new(iteration, chain_key.to_vec())?.as_protobuf()?,
+                SenderChainKey::new(iteration, chain_key.to_vec()).as_protobuf(),
             ),
             sender_signing_key: Some(
                 storage_proto::sender_key_state_structure::SenderSigningKey {
@@ -179,12 +178,14 @@ impl SenderKeyState {
             .sender_chain_key
             .as_ref()
             .ok_or(SignalProtocolError::InvalidProtobufEncoding)?;
-        SenderChainKey::new(sender_chain.iteration, sender_chain.seed.clone())
+        Ok(SenderChainKey::new(
+            sender_chain.iteration,
+            sender_chain.seed.clone(),
+        ))
     }
 
-    pub fn set_sender_chain_key(&mut self, chain_key: SenderChainKey) -> Result<()> {
-        self.state.sender_chain_key = Some(chain_key.as_protobuf()?);
-        Ok(())
+    pub fn set_sender_chain_key(&mut self, chain_key: SenderChainKey) {
+        self.state.sender_chain_key = Some(chain_key.as_protobuf());
     }
 
     pub fn signing_key_public(&self) -> Result<PublicKey> {
@@ -216,20 +217,16 @@ impl SenderKeyState {
         Ok(self.state.clone())
     }
 
-    pub fn add_sender_message_key(&mut self, sender_message_key: &SenderMessageKey) -> Result<()> {
+    pub fn add_sender_message_key(&mut self, sender_message_key: &SenderMessageKey) {
         self.state
             .sender_message_keys
-            .push(sender_message_key.as_protobuf()?);
+            .push(sender_message_key.as_protobuf());
         while self.state.sender_message_keys.len() > limits::MAX_MESSAGE_KEYS {
             self.state.sender_message_keys.remove(0);
         }
-        Ok(())
     }
 
-    pub fn remove_sender_message_key(
-        &mut self,
-        iteration: u32,
-    ) -> Result<Option<SenderMessageKey>> {
+    pub fn remove_sender_message_key(&mut self, iteration: u32) -> Option<SenderMessageKey> {
         if let Some(index) = self
             .state
             .sender_message_keys
@@ -237,9 +234,9 @@ impl SenderKeyState {
             .position(|x| x.iteration == iteration)
         {
             let smk = self.state.sender_message_keys.remove(index);
-            Ok(Some(SenderMessageKey::from_protobuf(smk)?))
+            Some(SenderMessageKey::from_protobuf(smk))
         } else {
-            Ok(None)
+            None
         }
     }
 }

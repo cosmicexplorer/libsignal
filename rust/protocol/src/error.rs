@@ -45,10 +45,6 @@ pub enum SignalProtocolError {
     InvalidPreKeyId,
     InvalidSignedPreKeyId,
 
-    InvalidRootKeyLength(usize),
-    InvalidChainKeyLength(usize),
-
-    InvalidMacKeyLength(usize),
     InvalidCipherCryptographicParameters(usize, usize),
     InvalidCiphertext,
 
@@ -150,20 +146,11 @@ impl fmt::Display for SignalProtocolError {
             SignalProtocolError::InvalidSignedPreKeyId => {
                 write!(f, "invalid signed prekey identifier")
             }
-            SignalProtocolError::InvalidChainKeyLength(l) => {
-                write!(f, "invalid chain key length <{}>", l)
-            }
-            SignalProtocolError::InvalidRootKeyLength(l) => {
-                write!(f, "invalid root key length <{}>", l)
-            }
             SignalProtocolError::InvalidCipherCryptographicParameters(kl, nl) => write!(
                 f,
                 "invalid cipher key length <{}> or nonce length <{}>",
                 kl, nl
             ),
-            SignalProtocolError::InvalidMacKeyLength(l) => {
-                write!(f, "invalid MAC key length <{}>", l)
-            }
             SignalProtocolError::UntrustedIdentity(addr) => {
                 write!(f, "untrusted identity for address {}", addr)
             }

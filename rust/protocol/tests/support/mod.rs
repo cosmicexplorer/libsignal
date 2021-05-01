@@ -64,7 +64,7 @@ pub async fn create_pre_key_bundle<R: Rng + CryptoRng>(
         .get_identity_key_pair(None)
         .await?
         .private_key()
-        .calculate_signature(&signed_pre_key_public, &mut csprng)?;
+        .calculate_signature(&signed_pre_key_public, &mut csprng);
 
     let device_id: u32 = csprng.gen();
     let pre_key_id: u32 = csprng.gen();

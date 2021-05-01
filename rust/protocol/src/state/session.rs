@@ -124,7 +124,10 @@ impl SessionState {
             return Err(SignalProtocolError::InvalidProtobufEncoding);
         }
         let hkdf = HKDF::new(self.session_version()?)?;
-        RootKey::new(hkdf, &self.session.root_key)
+        Ok(RootKey::new(
+            hkdf,
+            array_ref![&self.session.root_key, 0, 32],
+        ))
     }
 
     pub(crate) fn set_root_key(&mut self, root_key: &RootKey) -> Result<()> {
@@ -203,7 +206,11 @@ impl SessionState {
                         return Err(SignalProtocolError::InvalidProtobufEncoding);
                     }
                     let hkdf = HKDF::new(self.session_version()?)?;
-                    Ok(Some(ChainKey::new(hkdf, &c.key, c.index)?))
+                    Ok(Some(ChainKey::new(
+                        hkdf,
+                        array_ref![&c.key, 0, 32],
+                        c.index,
+                    )))
                 }
             },
         }
@@ -271,9 +278,15 @@ impl SessionState {
         let chain_key = sender_chain.chain_key.as_ref().ok_or_else(|| {
             SignalProtocolError::InvalidState("get_sender_chain_key", "No chain key".to_owned())
         })?;
-
+        if chain_key.key.len() != 32 {
+            return Err(SignalProtocolError::InvalidProtobufEncoding);
+        }
         let hkdf = HKDF::new(self.session_version()?)?;
-        ChainKey::new(hkdf, &chain_key.key, chain_key.index)
+        Ok(ChainKey::new(
+            hkdf,
+            array_ref![&chain_key.key, 0, 32],
+            chain_key.index,
+        ))
     }
 
     pub(crate) fn get_sender_chain_key_bytes(&self) -> Result<Vec<u8>> {
@@ -321,11 +334,11 @@ impl SessionState {
                 let message_key = chain_and_index.0.message_keys.remove(position);
 
                 let keys = MessageKeys::new(
-                    &message_key.cipher_key,
-                    &message_key.mac_key,
-                    &message_key.iv,
+                    array_ref![&message_key.cipher_key, 0, 32],
+                    array_ref![&message_key.mac_key, 0, 32],
+                    array_ref![&message_key.iv, 0, 16],
                     counter,
-                )?;
+                );
 
                 // Update with message key removed
                 self.session.receiver_chains[chain_and_index.1] = chain_and_index.0;

@@ -45,6 +45,61 @@ pub type ProtoContentHint = proto::sealed_sender::unidentified_sender_message::m
 /// The message type from [proto::sealed_sender].
 pub type ProtoMessageType = proto::sealed_sender::unidentified_sender_message::message::Type;
 
+pub enum CiphertextMessage {
+    SignalMessage(SignalMessage),
+    PreKeySignalMessage(PreKeySignalMessage),
+    SenderKeyMessage(SenderKeyMessage),
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Debug, num_enum::TryFromPrimitive)]
+#[repr(u8)]
+pub enum CiphertextMessageType {
+    Whisper = 2,
+    PreKey = 3,
+    // Further cases should line up with Envelope.Type (proto), even though old cases don't.
+    SenderKey = 7,
+}
+
+impl From<ProtoMessageType> for CiphertextMessageType {
+    fn from(value: ProtoMessageType) -> CiphertextMessageType {
+        match value {
+            ProtoMessageType::Message => CiphertextMessageType::Whisper,
+            ProtoMessageType::PrekeyMessage => CiphertextMessageType::PreKey,
+            ProtoMessageType::SenderkeyMessage => CiphertextMessageType::SenderKey,
+        }
+    }
+}
+
+impl From<CiphertextMessageType> for ProtoMessageType {
+    fn from(value: CiphertextMessageType) -> ProtoMessageType {
+        match value {
+            CiphertextMessageType::Whisper => ProtoMessageType::Message,
+            CiphertextMessageType::PreKey => ProtoMessageType::PrekeyMessage,
+            CiphertextMessageType::SenderKey => ProtoMessageType::SenderkeyMessage,
+        }
+    }
+}
+
+impl CiphertextMessage {
+    pub fn message_type(&self) -> CiphertextMessageType {
+        match self {
+            CiphertextMessage::SignalMessage(_) => CiphertextMessageType::Whisper,
+            CiphertextMessage::PreKeySignalMessage(_) => CiphertextMessageType::PreKey,
+            CiphertextMessage::SenderKeyMessage(_) => CiphertextMessageType::SenderKey,
+        }
+    }
+}
+
+impl<'a> RefSerializable<'a> for CiphertextMessage {
+    fn serialize(&'a self) -> &'a [u8] {
+        match self {
+            CiphertextMessage::SignalMessage(x) => x.serialized(),
+            CiphertextMessage::PreKeySignalMessage(x) => x.serialized(),
+            CiphertextMessage::SenderKeyMessage(x) => x.serialized(),
+        }
+    }
+}
+
 /// Certificate information provided by a Signal server instance.
 #[derive(Debug, Clone)]
 pub struct ServerCertificate {
@@ -690,7 +745,7 @@ pub mod sealed_sender_v1 {
 
     /// Wrapper over a KDF derived from ephemeral keys created for X3DH.
     pub struct EphemeralKeys {
-        derived_values: Box<[u8]>,
+        derived_values: [u8; 96],
     }
 
     impl EphemeralKeys {
@@ -714,35 +769,40 @@ pub mod sealed_sender_v1 {
             }
 
             let shared_secret = our_private.calculate_agreement(their_public);
-            let secret_bytes: &[u8] = shared_secret.as_ref();
-            let derived_values =
-                HKDF::new().derive_salted_secrets(secret_bytes, &ephemeral_salt, &[], 96);
+            let derived_values = HKDF::new_current().derive_salted_secrets(
+                shared_secret.as_ref(),
+                &ephemeral_salt,
+                &[],
+                96,
+            );
 
-            Self { derived_values }
+            Self {
+                derived_values: *array_ref![&derived_values, 0, 96],
+            }
         }
 
-        pub fn chain_key(&self) -> &KeyBytes {
-            as_key_bytes(&self.derived_values[0..32])
+        pub fn chain_key(&self) -> &[u8; 32] {
+            array_ref![&self.derived_values, 0, 32]
         }
 
-        pub fn cipher_key(&self) -> &KeyBytes {
-            as_key_bytes(&self.derived_values[32..64])
+        pub fn cipher_key(&self) -> &[u8; 32] {
+            array_ref![&self.derived_values, 32, 32]
         }
 
-        pub fn mac_key(&self) -> &KeyBytes {
-            as_key_bytes(&self.derived_values[64..96])
+        pub fn mac_key(&self) -> &[u8; 32] {
+            array_ref![&self.derived_values, 64, 32]
         }
     }
 
     /// Wrapper over a KDF derived from a signed pre-key and not an ephemeral key (???)
     pub struct StaticKeys {
-        derived_values: Box<[u8]>,
+        derived_values: [u8; 64],
     }
     impl StaticKeys {
         pub fn calculate(
             their_public: &PublicKey,
             our_private: &PrivateKey,
-            chain_key: &KeyBytes,
+            chain_key: &[u8; 32],
             ctext: &[u8],
         ) -> Result<Self> {
             let mut salt = Vec::with_capacity(chain_key.len() + ctext.len());
@@ -750,23 +810,24 @@ pub mod sealed_sender_v1 {
             salt.extend_from_slice(ctext);
 
             let shared_secret = our_private.calculate_agreement(their_public);
-            let kdf = HKDF::new();
-            let secret_bytes: &[u8] = shared_secret.as_ref();
-            // NB: 96 bytes are derived but the first 32 are discarded/unused.
-            // TODO: this is presumably in order to agree with the results of [EphemeralKeys] above.
-            let derived_values = kdf.derive_salted_secrets(secret_bytes, &salt, &[], 96)[32..]
-                .to_vec()
-                .into_boxed_slice();
+            let kdf = HKDF::new_current();
+            let derived_values = {
+                // NB: 96 bytes are derived but the first 32 are discarded/unused.
+                // TODO: this is presumably in order to agree with the results of
+                // [EphemeralKeys] above.
+                let ret = kdf.derive_salted_secrets(shared_secret.as_ref(), &salt, &[], 96);
+                *array_ref![&ret, 32, 64]
+            };
 
             Ok(Self { derived_values })
         }
 
-        pub fn cipher_key(&self) -> &KeyBytes {
-            as_key_bytes(&self.derived_values[..32])
+        pub fn cipher_key(&self) -> &[u8; 32] {
+            array_ref![&self.derived_values, 0, 32]
         }
 
-        pub fn mac_key(&self) -> &KeyBytes {
-            as_key_bytes(&self.derived_values[32..64])
+        pub fn mac_key(&self) -> &[u8; 32] {
+            array_ref![&self.derived_values, 32, 32]
         }
     }
 
@@ -989,7 +1050,10 @@ pub mod sealed_sender_v2 {
     ) -> Box<[u8]> {
         assert!(input.len() == 32);
 
-        let agreement = priv_key.calculate_agreement(&pub_key);
+        let agreement = priv_key
+            .calculate_agreement(&pub_key)
+            .to_vec()
+            .into_boxed_slice();
         let agreement_key_input = match direction {
             Direction::Sending => [
                 agreement,
@@ -1435,7 +1499,7 @@ fn test_lossless_round_trip() -> Result<()> {
     // let certificate_data_encoded = hex::encode(&serialized_certificate_data);
     // eprintln!("let certificate_data_encoded = \"{}\";", certificate_data_encoded);
     //
-    // let certificate_signature = server_key.calculate_signature(&serialized_certificate_data, &mut rng)?;
+    // let certificate_signature = server_key.calculate_signature(&serialized_certificate_data, &mut rng);
     // let certificate_signature_encoded = hex::encode(certificate_signature);
     // eprintln!("let certificate_signature_encoded = \"{}\";", certificate_signature_encoded);
 
