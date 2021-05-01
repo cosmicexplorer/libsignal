@@ -3,22 +3,25 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
+use crate::crypto;
+use crate::curve;
+use crate::proto;
+use crate::session_cipher;
 use crate::{
     message_encrypt, CiphertextMessageType, Context, Direction, IdentityKeyStore, KeyPair,
     PreKeySignalMessage, PreKeyStore, PrivateKey, ProtocolAddress, PublicKey, Result, SessionStore,
     SignalMessage, SignalProtocolError, SignedPreKeyStore, HKDF,
 };
 
-use crate::crypto;
-use crate::proto;
-use crate::session_cipher;
 use curve25519_dalek::scalar::Scalar;
 use prost::Message;
 use rand::{CryptoRng, Rng};
 use signal_crypto::Aes256GcmSiv;
-use std::convert::{TryFrom, TryInto};
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
+
+use std::array::TryFromSliceError;
+use std::convert::{TryFrom, TryInto};
 
 use proto::sealed_sender::unidentified_sender_message::message::Type as ProtoMessageType;
 
@@ -722,7 +725,11 @@ pub async fn sealed_sender_encrypt_from_usmc<R: Rng + CryptoRng>(
 
     let static_key_ctext = crypto::aes256_ctr_hmacsha256_encrypt(
         &our_identity.public_key().serialize(),
-        &eph_keys.cipher_key()?,
+        &eph_keys.cipher_key().and_then(|key| {
+            key.try_into().map_err(|_: TryFromSliceError| {
+                SignalProtocolError::BadKeyLength(curve::KeyType::Djb, key.len())
+            })
+        })?,
         &eph_keys.mac_key()?,
     )?;
 
@@ -735,7 +742,11 @@ pub async fn sealed_sender_encrypt_from_usmc<R: Rng + CryptoRng>(
 
     let message_data = crypto::aes256_ctr_hmacsha256_encrypt(
         usmc.serialized()?,
-        &static_keys.cipher_key()?,
+        &static_keys.cipher_key().and_then(|key| {
+            key.try_into().map_err(|_: TryFromSliceError| {
+                SignalProtocolError::BadKeyLength(curve::KeyType::Djb, key.len())
+            })
+        })?,
         &static_keys.mac_key()?,
     )?;
 
@@ -1016,7 +1027,11 @@ pub async fn sealed_sender_decrypt_to_usmc(
 
             let message_key_bytes = crypto::aes256_ctr_hmacsha256_decrypt(
                 &encrypted_static,
-                &eph_keys.cipher_key()?,
+                &eph_keys.cipher_key().and_then(|key| {
+                    key.try_into().map_err(|_: TryFromSliceError| {
+                        SignalProtocolError::BadKeyLength(curve::KeyType::Djb, key.len())
+                    })
+                })?,
                 &eph_keys.mac_key()?,
             )?;
 
@@ -1031,7 +1046,11 @@ pub async fn sealed_sender_decrypt_to_usmc(
 
             let message_bytes = crypto::aes256_ctr_hmacsha256_decrypt(
                 &encrypted_message,
-                &static_keys.cipher_key()?,
+                &static_keys.cipher_key().and_then(|key| {
+                    key.try_into().map_err(|_: TryFromSliceError| {
+                        SignalProtocolError::BadKeyLength(curve::KeyType::Djb, key.len())
+                    })
+                })?,
                 &static_keys.mac_key()?,
             )?;
 
