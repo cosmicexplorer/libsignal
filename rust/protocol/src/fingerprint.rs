@@ -1,10 +1,12 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020, 2021 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
 use crate::proto;
+use crate::utils::traits::serde::Serializable;
 use crate::{IdentityKey, Result, SignalProtocolError};
+
 use prost::Message;
 use sha2::{digest::Digest, Sha512};
 use std::fmt;
@@ -215,6 +217,7 @@ impl Fingerprint {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::utils::traits::serde::Deserializable;
 
     const ALICE_IDENTITY: &str =
         "0506863bc66d02b40d27b8d49ca7c09e9239236f9d7d25d6fcca5ce13c7064d868";
@@ -250,8 +253,8 @@ mod test {
     fn fingerprint_test_v1() -> Result<()> {
         // testVectorsVersion1 in Java
 
-        let a_key = IdentityKey::decode(&hex::decode(ALICE_IDENTITY).expect("valid hex"))?;
-        let b_key = IdentityKey::decode(&hex::decode(BOB_IDENTITY).expect("valid hex"))?;
+        let a_key = IdentityKey::deserialize(&hex::decode(ALICE_IDENTITY).expect("valid hex"))?;
+        let b_key = IdentityKey::deserialize(&hex::decode(BOB_IDENTITY).expect("valid hex"))?;
 
         let version = 1;
         let iterations = 5200;
@@ -302,8 +305,8 @@ mod test {
     fn fingerprint_test_v2() -> Result<()> {
         // testVectorsVersion2 in Java
 
-        let a_key = IdentityKey::decode(&hex::decode(ALICE_IDENTITY).expect("valid hex"))?;
-        let b_key = IdentityKey::decode(&hex::decode(BOB_IDENTITY).expect("valid hex"))?;
+        let a_key = IdentityKey::deserialize(&hex::decode(ALICE_IDENTITY).expect("valid hex"))?;
+        let b_key = IdentityKey::deserialize(&hex::decode(BOB_IDENTITY).expect("valid hex"))?;
 
         let version = 2;
         let iterations = 5200;
@@ -531,8 +534,8 @@ mod test {
 
     #[test]
     fn fingerprint_mismatching_versions() -> Result<()> {
-        let a_key = IdentityKey::decode(&hex::decode(ALICE_IDENTITY).expect("valid hex"))?;
-        let b_key = IdentityKey::decode(&hex::decode(BOB_IDENTITY).expect("valid hex"))?;
+        let a_key = IdentityKey::deserialize(&hex::decode(ALICE_IDENTITY).expect("valid hex"))?;
+        let b_key = IdentityKey::deserialize(&hex::decode(BOB_IDENTITY).expect("valid hex"))?;
 
         let iterations = 5200;
 

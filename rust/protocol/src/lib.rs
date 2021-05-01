@@ -35,7 +35,7 @@ pub mod sealed_sender;
 pub mod sender_keys;
 pub mod session;
 pub mod session_cipher;
-mod state;
+pub mod state;
 mod storage;
 pub mod utils;
 

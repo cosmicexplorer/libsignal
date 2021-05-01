@@ -7,6 +7,7 @@
 
 use crate::{consts::types::VersionType, curve::KeyType};
 
+use std::convert::Infallible;
 use std::error::Error;
 use std::fmt;
 use std::num;
@@ -75,6 +76,12 @@ impl Error for SignalProtocolError {
             SignalProtocolError::ApplicationCallbackError(_, e) => Some(e.as_ref()),
             _ => None,
         }
+    }
+}
+
+impl From<Infallible> for SignalProtocolError {
+    fn from(_value: Infallible) -> SignalProtocolError {
+        SignalProtocolError::InvalidProtobufEncoding
     }
 }
 

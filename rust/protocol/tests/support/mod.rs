@@ -76,9 +76,9 @@ pub async fn create_pre_key_bundle<R: Rng + CryptoRng>(
         Some((pre_key_id, pre_key_pair.public_key)),
         signed_pre_key_id,
         signed_pre_key_pair.public_key,
-        signed_pre_key_signature.to_vec(),
+        signed_pre_key_signature,
         *store.get_identity_key_pair(None).await?.identity_key(),
-    )?;
+    );
 
     store
         .save_pre_key(

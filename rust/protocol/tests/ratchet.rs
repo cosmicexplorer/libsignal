@@ -42,7 +42,7 @@ fn test_ratcheting_session_as_bob() -> Result<(), SignalProtocolError> {
 
     let expected_sender_chain = "9797caca53c989bbe229a40ca7727010eb2604fc14945d77958a0aeda088b44d";
 
-    let bob_identity_key_public = IdentityKey::decode(&bob_identity_public)?;
+    let bob_identity_key_public = IdentityKey::deserialize(&bob_identity_public)?;
 
     let bob_identity_key_private = PrivateKey::deserialize(&bob_identity_private)?;
 
@@ -62,7 +62,7 @@ fn test_ratcheting_session_as_bob() -> Result<(), SignalProtocolError> {
         bob_signed_prekey_pair,
         None, // one time pre key pair
         bob_ephemeral_pair,
-        IdentityKey::decode(&alice_identity_public)?,
+        IdentityKey::deserialize(&alice_identity_public)?,
         alice_base_public_key,
     );
 
@@ -122,7 +122,7 @@ fn test_ratcheting_session_as_alice() -> Result<(), SignalProtocolError> {
     let expected_receiver_chain =
         "ab9be50e5cb22a925446ab90ee5670545f4fd32902459ec274b6ad0ae5d6031a";
 
-    let alice_identity_key_public = IdentityKey::decode(&alice_identity_public)?;
+    let alice_identity_key_public = IdentityKey::deserialize(&alice_identity_public)?;
 
     let bob_ephemeral_public = PublicKey::deserialize(&bob_ephemeral_public)?;
 
@@ -138,7 +138,7 @@ fn test_ratcheting_session_as_alice() -> Result<(), SignalProtocolError> {
     let alice_parameters = AliceSignalProtocolParameters::new(
         alice_identity_key_pair,
         alice_base_key,
-        IdentityKey::decode(&bob_identity_public)?,
+        IdentityKey::deserialize(&bob_identity_public)?,
         bob_signed_prekey_public,
         None, // one-time prekey
         bob_ephemeral_public,

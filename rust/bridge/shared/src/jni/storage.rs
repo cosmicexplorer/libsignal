@@ -4,6 +4,8 @@
 //
 
 use super::*;
+use libsignal_protocol::utils::traits::serde::{Deserializable, Serializable};
+
 use async_trait::async_trait;
 use uuid::Uuid;
 
@@ -165,7 +167,7 @@ impl<'a> JniIdentityKeyStore<'a> {
 
         match bits {
             None => Ok(None),
-            Some(k) => Ok(Some(IdentityKey::decode(&k)?)),
+            Some(k) => Ok(Some(IdentityKey::deserialize(&k)?)),
         }
     }
 }
@@ -252,7 +254,7 @@ impl<'a> JniPreKeyStore<'a> {
         let jobject_record = jobject_from_serialized(
             self.env,
             "org/whispersystems/libsignal/state/PreKeyRecord",
-            &record.serialize()?,
+            &record.serialize(),
         )?;
         let callback_sig = jni_signature!((
             int,
@@ -359,7 +361,7 @@ impl<'a> JniSignedPreKeyStore<'a> {
         let jobject_record = jobject_from_serialized(
             self.env,
             "org/whispersystems/libsignal/state/SignedPreKeyRecord",
-            &record.serialize()?,
+            &record.serialize(),
         )?;
         let callback_sig = jni_signature!((
             int,
@@ -445,7 +447,7 @@ impl<'a> JniSessionStore<'a> {
         let session_jobject = jobject_from_serialized(
             self.env,
             "org/whispersystems/libsignal/state/SessionRecord",
-            &record.serialize()?,
+            &record.serialize(),
         )?;
 
         let callback_sig = jni_signature!((

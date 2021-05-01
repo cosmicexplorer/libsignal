@@ -3,15 +3,21 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-use crate::proto::storage::SignedPreKeyRecordStructure;
 use crate::{
-    utils::traits::serde::{Deserializable, Serializable},
-    KeyPair, PrivateKey, PublicKey, Result,
+    curve::{KeyPair, PrivateKey, PublicKey},
+    proto::storage::SignedPreKeyRecordStructure,
+    utils::{
+        traits::serde::{Deserializable, Serializable},
+        unwrap::no_encoding_error,
+    },
+    Result,
 };
+
 use prost::Message;
 
 pub type SignedPreKeyId = u32;
 
+/// An entry for a [crate::storage::traits::SignedPreKeyStore].
 #[derive(Debug, Clone)]
 pub struct SignedPreKeyRecord {
     signed_pre_key: SignedPreKeyRecordStructure,
@@ -31,12 +37,6 @@ impl SignedPreKeyRecord {
                 signature,
             },
         }
-    }
-
-    pub fn deserialize(data: &[u8]) -> Result<Self> {
-        Ok(Self {
-            signed_pre_key: SignedPreKeyRecordStructure::decode(data)?,
-        })
     }
 
     pub fn id(&self) -> Result<SignedPreKeyId> {
@@ -65,10 +65,20 @@ impl SignedPreKeyRecord {
             &self.signed_pre_key.private_key,
         )
     }
+}
 
-    pub fn serialize(&self) -> Result<Vec<u8>> {
+impl Deserializable for SignedPreKeyRecord {
+    fn deserialize(data: &[u8]) -> Result<Self> {
+        Ok(Self {
+            signed_pre_key: SignedPreKeyRecordStructure::decode(data)?,
+        })
+    }
+}
+
+impl Serializable<Vec<u8>> for SignedPreKeyRecord {
+    fn serialize(&self) -> Vec<u8> {
         let mut buf = vec![];
-        self.signed_pre_key.encode(&mut buf)?;
-        Ok(buf)
+        no_encoding_error(self.signed_pre_key.encode(&mut buf));
+        buf
     }
 }

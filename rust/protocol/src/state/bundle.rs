@@ -1,39 +1,51 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020-2021 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-use crate::state::{PreKeyId, SignedPreKeyId};
-use crate::{IdentityKey, PublicKey, Result};
+use crate::{
+    address::DeviceId,
+    consts::byte_lengths::SIGNATURE_LENGTH,
+    curve::PublicKey,
+    state::{PreKeyId, SignedPreKeyId},
+    IdentityKey,
+};
 
+/// The type in memory to represent the unique identity of a specific [PreKeyBundle].
+pub type RegistrationId = u32;
+
+/// Corresponds to the pre-key bundle described in the [X3DH] key agreement protocol.
+///
+/// [X3DH]: https://signal.org/docs/specifications/x3dh/#sending-the-initial-message
 #[derive(Debug, Clone)]
 pub struct PreKeyBundle {
-    registration_id: u32,
-    device_id: u32,
+    registration_id: RegistrationId,
+    device_id: DeviceId,
     pre_key_id: Option<PreKeyId>,
     pre_key_public: Option<PublicKey>,
     signed_pre_key_id: SignedPreKeyId,
     signed_pre_key_public: PublicKey,
-    signed_pre_key_signature: Vec<u8>,
+    signed_pre_key_signature: [u8; SIGNATURE_LENGTH],
     identity_key: IdentityKey,
 }
 
 impl PreKeyBundle {
+    /// Create a new instance.
     pub fn new(
-        registration_id: u32,
-        device_id: u32,
+        registration_id: RegistrationId,
+        device_id: DeviceId,
         pre_key: Option<(PreKeyId, PublicKey)>,
         signed_pre_key_id: SignedPreKeyId,
         signed_pre_key_public: PublicKey,
-        signed_pre_key_signature: Vec<u8>,
+        signed_pre_key_signature: [u8; SIGNATURE_LENGTH],
         identity_key: IdentityKey,
-    ) -> Result<Self> {
+    ) -> Self {
         let (pre_key_id, pre_key_public) = match pre_key {
             None => (None, None),
             Some((id, key)) => (Some(id), Some(key)),
         };
 
-        Ok(Self {
+        Self {
             registration_id,
             device_id,
             pre_key_id,
@@ -42,38 +54,41 @@ impl PreKeyBundle {
             signed_pre_key_public,
             signed_pre_key_signature,
             identity_key,
-        })
+        }
     }
 
-    pub fn registration_id(&self) -> Result<u32> {
-        Ok(self.registration_id)
+    pub fn registration_id(&self) -> RegistrationId {
+        self.registration_id
     }
 
-    pub fn device_id(&self) -> Result<u32> {
-        Ok(self.device_id)
+    pub fn device_id(&self) -> DeviceId {
+        self.device_id
     }
 
-    pub fn pre_key_id(&self) -> Result<Option<PreKeyId>> {
-        Ok(self.pre_key_id)
+    pub fn pre_key_id(&self) -> Option<PreKeyId> {
+        self.pre_key_id
     }
 
-    pub fn pre_key_public(&self) -> Result<Option<PublicKey>> {
-        Ok(self.pre_key_public)
+    pub fn pre_key_public(&self) -> Option<PublicKey> {
+        self.pre_key_public
     }
 
-    pub fn signed_pre_key_id(&self) -> Result<SignedPreKeyId> {
-        Ok(self.signed_pre_key_id)
+    pub fn signed_pre_key_id(&self) -> SignedPreKeyId {
+        self.signed_pre_key_id
     }
 
-    pub fn signed_pre_key_public(&self) -> Result<PublicKey> {
-        Ok(self.signed_pre_key_public)
+    #[inline]
+    pub fn signed_pre_key_public(&self) -> PublicKey {
+        self.signed_pre_key_public
     }
 
-    pub fn signed_pre_key_signature(&self) -> Result<&[u8]> {
-        Ok(self.signed_pre_key_signature.as_ref())
+    #[inline]
+    pub fn signed_pre_key_signature(&self) -> &[u8; SIGNATURE_LENGTH] {
+        &self.signed_pre_key_signature
     }
 
-    pub fn identity_key(&self) -> Result<&IdentityKey> {
-        Ok(&self.identity_key)
+    #[inline]
+    pub fn identity_key(&self) -> &IdentityKey {
+        &self.identity_key
     }
 }

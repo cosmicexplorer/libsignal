@@ -32,13 +32,16 @@ impl IdentityKey {
     pub fn public_key(&self) -> &PublicKey {
         &self.public_key
     }
+}
 
-    #[inline]
-    pub fn serialize(&self) -> Box<[u8]> {
+impl Serializable<Box<[u8]>> for IdentityKey {
+    fn serialize(&self) -> Box<[u8]> {
         self.public_key.serialize()
     }
+}
 
-    pub fn decode(value: &[u8]) -> Result<Self> {
+impl Deserializable for IdentityKey {
+    fn deserialize(value: &[u8]) -> Result<Self> {
         let pk = PublicKey::try_from(value)?;
         Ok(Self { public_key: pk })
     }
@@ -48,7 +51,7 @@ impl TryFrom<&[u8]> for IdentityKey {
     type Error = SignalProtocolError;
 
     fn try_from(value: &[u8]) -> Result<Self> {
-        IdentityKey::decode(value)
+        IdentityKey::deserialize(value)
     }
 }
 
@@ -98,8 +101,10 @@ impl IdentityKeyPair {
     pub fn private_key(&self) -> &PrivateKey {
         &self.private_key
     }
+}
 
-    pub fn serialize(&self) -> Box<[u8]> {
+impl Serializable<Box<[u8]>> for IdentityKeyPair {
+    fn serialize(&self) -> Box<[u8]> {
         let structure = proto::storage::IdentityKeyPairStructure {
             public_key: self.identity_key.serialize().to_vec(),
             private_key: self.private_key.serialize().to_vec(),

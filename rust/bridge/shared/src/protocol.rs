@@ -197,8 +197,8 @@ fn NumericFingerprintGenerator_New(
     remote_identifier: &[u8],
     remote_key: &[u8],
 ) -> Result<Fingerprint> {
-    let local_key = IdentityKey::decode(local_key)?;
-    let remote_key = IdentityKey::decode(remote_key)?;
+    let local_key = IdentityKey::deserialize(local_key)?;
+    let remote_key = IdentityKey::deserialize(remote_key)?;
 
     Fingerprint::new(
         version,
@@ -480,20 +480,20 @@ fn PreKeyBundle_New(
         }
     };
 
-    PreKeyBundle::new(
+    Ok(PreKeyBundle::new(
         registration_id,
         device_id,
         prekey,
         signed_prekey_id,
         *signed_prekey,
-        signed_prekey_signature.to_vec(),
+        *array_ref![signed_prekey_signature, 0, 64],
         identity_key,
-    )
+    ))
 }
 
 #[bridge_fn]
 fn PreKeyBundle_GetIdentityKey(p: &PreKeyBundle) -> Result<PublicKey> {
-    Ok(*p.identity_key()?.public_key())
+    Ok(*p.identity_key().public_key())
 }
 
 bridge_get_bytearray!(PreKeyBundle::signed_pre_key_signature);
@@ -775,7 +775,7 @@ fn SessionRecord_FromSingleSessionState(session_state: &[u8]) -> Result<SessionR
 #[bridge_fn(ffi = false, node = false)]
 fn SessionRecord_GetSessionVersion(s: &SessionRecord) -> Result<u32> {
     match s.session_version() {
-        Ok(v) => Ok(v),
+        Ok(v) => Ok(v.into()),
         Err(SignalProtocolError::InvalidState(_, _)) => Ok(0),
         Err(e) => Err(e),
     }

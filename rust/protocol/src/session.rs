@@ -142,7 +142,7 @@ pub async fn process_prekey_bundle<R: Rng + CryptoRng>(
     mut csprng: &mut R,
     ctx: Context,
 ) -> Result<()> {
-    let their_identity_key = bundle.identity_key()?;
+    let their_identity_key = bundle.identity_key();
 
     if !identity_store
         .is_trusted_identity(&remote_address, their_identity_key, Direction::Sending, ctx)
@@ -156,8 +156,8 @@ pub async fn process_prekey_bundle<R: Rng + CryptoRng>(
     if !their_identity_key
         .public_key()
         .verify_signature(PublicKeySignature {
-            message: &bundle.signed_pre_key_public()?.serialize(),
-            signature: array_ref![bundle.signed_pre_key_signature()?, 0, 64],
+            message: &bundle.signed_pre_key_public().serialize(),
+            signature: array_ref![bundle.signed_pre_key_signature(), 0, 64],
         })?
     {
         return Err(SignalProtocolError::SignatureValidationFailed);
@@ -169,10 +169,10 @@ pub async fn process_prekey_bundle<R: Rng + CryptoRng>(
         .unwrap_or_else(SessionRecord::new_fresh);
 
     let our_base_key_pair = KeyPair::generate(&mut csprng);
-    let their_signed_prekey = bundle.signed_pre_key_public()?;
+    let their_signed_prekey = bundle.signed_pre_key_public();
 
-    let their_one_time_prekey = bundle.pre_key_public()?;
-    let their_one_time_prekey_id = bundle.pre_key_id()?;
+    let their_one_time_prekey = bundle.pre_key_public();
+    let their_one_time_prekey_id = bundle.pre_key_id();
 
     let our_identity_key_pair = identity_store.get_identity_key_pair(ctx).await?;
 
@@ -195,12 +195,12 @@ pub async fn process_prekey_bundle<R: Rng + CryptoRng>(
 
     session.set_unacknowledged_pre_key_message(
         their_one_time_prekey_id,
-        bundle.signed_pre_key_id()?,
+        bundle.signed_pre_key_id(),
         &our_base_key_pair.public_key,
     )?;
 
     session.set_local_registration_id(identity_store.get_local_registration_id(ctx).await?)?;
-    session.set_remote_registration_id(bundle.registration_id()?)?;
+    session.set_remote_registration_id(bundle.registration_id())?;
     session.set_alice_base_key(&our_base_key_pair.public_key.serialize())?;
 
     identity_store

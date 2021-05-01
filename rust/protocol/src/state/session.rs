@@ -3,20 +3,24 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-use crate::consts::limits;
-use crate::proto::storage::session_structure;
-use crate::proto::storage::{RecordStructure, SessionStructure};
-use crate::ratchet::{ChainKey, MessageKeys, RootKey};
-use crate::state::{PreKeyId, SignedPreKeyId};
 use crate::{
-    utils::traits::serde::{Deserializable, Serializable},
-    IdentityKey, KeyPair, PrivateKey, PublicKey, Result, SignalProtocolError, HKDF,
+    consts::{self, types::VersionType},
+    curve::{KeyPair, PrivateKey, PublicKey},
+    proto::storage::{session_structure, RecordStructure, SessionStructure},
+    ratchet::{ChainKey, MessageKeys, RootKey},
+    state::{PreKeyId, SignedPreKeyId},
+    utils::{
+        traits::serde::{Deserializable, Serializable},
+        unwrap::no_encoding_error,
+    },
+    IdentityKey, Result, SignalProtocolError, HKDF,
 };
 
 use arrayref::array_ref;
 use prost::Message;
 
 use std::collections::VecDeque;
+use std::convert::TryInto;
 
 #[derive(Debug, Clone)]
 pub(crate) struct UnacknowledgedPreKeyMessageItems {
@@ -72,17 +76,17 @@ impl SessionState {
         Ok(())
     }
 
-    pub fn session_version(&self) -> Result<u32> {
+    pub fn session_version(&self) -> Result<VersionType> {
         match self.session.session_version {
             0 => Ok(2),
-            v => Ok(v),
+            v => Ok(v.try_into()?),
         }
     }
 
     pub(crate) fn remote_identity_key(&self) -> Result<Option<IdentityKey>> {
         match self.session.remote_identity_public.len() {
             0 => Ok(None),
-            _ => Ok(Some(IdentityKey::decode(
+            _ => Ok(Some(IdentityKey::deserialize(
                 &self.session.remote_identity_public,
             )?)),
         }
@@ -93,7 +97,7 @@ impl SessionState {
     }
 
     pub(crate) fn local_identity_key(&self) -> Result<IdentityKey> {
-        IdentityKey::decode(&self.session.local_identity_public)
+        IdentityKey::deserialize(&self.session.local_identity_public)
     }
 
     pub(crate) fn local_identity_key_bytes(&self) -> Result<Vec<u8>> {
@@ -123,7 +127,7 @@ impl SessionState {
         if self.session.root_key.len() != 32 {
             return Err(SignalProtocolError::InvalidProtobufEncoding);
         }
-        let hkdf = HKDF::new(self.session_version()?)?;
+        let hkdf = HKDF::new(self.session_version()?.into())?;
         Ok(RootKey::new(
             hkdf,
             array_ref![&self.session.root_key, 0, 32],
@@ -205,7 +209,7 @@ impl SessionState {
                     if c.key.len() != 32 {
                         return Err(SignalProtocolError::InvalidProtobufEncoding);
                     }
-                    let hkdf = HKDF::new(self.session_version()?)?;
+                    let hkdf = HKDF::new(self.session_version()?.into())?;
                     Ok(Some(ChainKey::new(
                         hkdf,
                         array_ref![&c.key, 0, 32],
@@ -235,7 +239,7 @@ impl SessionState {
 
         self.session.receiver_chains.push(chain);
 
-        if self.session.receiver_chains.len() > limits::MAX_RECEIVER_CHAINS {
+        if self.session.receiver_chains.len() > consts::limits::MAX_RECEIVER_CHAINS {
             log::info!(
                 "Trimming excessive receiver_chain for session with base key {}, chain count: {}",
                 self.sender_ratchet_key_for_logging()
@@ -278,10 +282,8 @@ impl SessionState {
         let chain_key = sender_chain.chain_key.as_ref().ok_or_else(|| {
             SignalProtocolError::InvalidState("get_sender_chain_key", "No chain key".to_owned())
         })?;
-        if chain_key.key.len() != 32 {
-            return Err(SignalProtocolError::InvalidProtobufEncoding);
-        }
-        let hkdf = HKDF::new(self.session_version()?)?;
+
+        let hkdf = HKDF::new(self.session_version()?.into())?;
         Ok(ChainKey::new(
             hkdf,
             array_ref![&chain_key.key, 0, 32],
@@ -365,7 +367,7 @@ impl SessionState {
             let mut updated_chain = chain_and_index.0;
             updated_chain.message_keys.insert(0, new_keys);
 
-            if updated_chain.message_keys.len() > limits::MAX_MESSAGE_KEYS {
+            if updated_chain.message_keys.len() > consts::limits::MAX_MESSAGE_KEYS {
                 updated_chain.message_keys.pop();
             }
 
@@ -475,6 +477,7 @@ impl From<&SessionState> for SessionStructure {
     }
 }
 
+/// An entry for a [crate::storage::traits::SessionStore].
 #[derive(Clone, Debug)]
 pub struct SessionRecord {
     current_session: Option<SessionState>,
@@ -482,6 +485,7 @@ pub struct SessionRecord {
 }
 
 impl SessionRecord {
+    /// Create a new instance.
     pub fn new_fresh() -> Self {
         Self {
             current_session: None,
@@ -496,20 +500,6 @@ impl SessionRecord {
         }
     }
 
-    pub fn deserialize(bytes: &[u8]) -> Result<Self> {
-        let record = RecordStructure::decode(bytes)?;
-
-        let mut previous = VecDeque::with_capacity(record.previous_sessions.len());
-        for s in record.previous_sessions {
-            previous.push_back(s.into());
-        }
-
-        Ok(Self {
-            current_session: record.current_session.map(|s| s.into()),
-            previous_sessions: previous,
-        })
-    }
-
     pub fn from_single_session_state(bytes: &[u8]) -> Result<Self> {
         let session = SessionState::new(SessionStructure::decode(bytes)?);
         Ok(Self {
@@ -518,7 +508,11 @@ impl SessionRecord {
         })
     }
 
-    pub(crate) fn has_session_state(&self, version: u32, alice_base_key: &[u8]) -> Result<bool> {
+    pub(crate) fn has_session_state(
+        &self,
+        version: VersionType,
+        alice_base_key: &[u8],
+    ) -> Result<bool> {
         if let Some(current_session) = &self.current_session {
             if current_session.session_version()? == version
                 && alice_base_key == current_session.alice_base_key()?
@@ -594,7 +588,7 @@ impl SessionRecord {
         if self.current_session.is_some() {
             self.previous_sessions
                 .push_front(self.current_session.take().expect("Checked is_some"));
-            if self.previous_sessions.len() > limits::ARCHIVED_STATES_MAX_LENGTH {
+            if self.previous_sessions.len() > consts::limits::ARCHIVED_STATES_MAX_LENGTH {
                 self.previous_sessions.pop_back();
             }
         } else {
@@ -602,17 +596,6 @@ impl SessionRecord {
         }
 
         Ok(())
-    }
-
-    pub fn serialize(&self) -> Result<Vec<u8>> {
-        let mut buf = vec![];
-
-        let record = RecordStructure {
-            current_session: self.current_session.as_ref().map(|s| s.into()),
-            previous_sessions: self.previous_sessions.iter().map(|s| s.into()).collect(),
-        };
-        record.encode(&mut buf)?;
-        Ok(buf)
     }
 
     pub fn remote_registration_id(&self) -> Result<u32> {
@@ -623,7 +606,7 @@ impl SessionRecord {
         self.session_state()?.local_registration_id()
     }
 
-    pub fn session_version(&self) -> Result<u32> {
+    pub fn session_version(&self) -> Result<VersionType> {
         self.session_state()?.session_version()
     }
 
@@ -652,5 +635,34 @@ impl SessionRecord {
 
     pub fn get_sender_chain_key_bytes(&self) -> Result<Vec<u8>> {
         self.session_state()?.get_sender_chain_key_bytes()
+    }
+}
+
+impl Deserializable for SessionRecord {
+    fn deserialize(bytes: &[u8]) -> Result<Self> {
+        let record = RecordStructure::decode(bytes)?;
+
+        let mut previous = VecDeque::with_capacity(record.previous_sessions.len());
+        for s in record.previous_sessions {
+            previous.push_back(s.into());
+        }
+
+        Ok(Self {
+            current_session: record.current_session.map(|s| s.into()),
+            previous_sessions: previous,
+        })
+    }
+}
+
+impl Serializable<Vec<u8>> for SessionRecord {
+    fn serialize(&self) -> Vec<u8> {
+        let mut buf = vec![];
+
+        let record = RecordStructure {
+            current_session: self.current_session.as_ref().map(|s| s.into()),
+            previous_sessions: self.previous_sessions.iter().map(|s| s.into()).collect(),
+        };
+        no_encoding_error(record.encode(&mut buf));
+        buf
     }
 }

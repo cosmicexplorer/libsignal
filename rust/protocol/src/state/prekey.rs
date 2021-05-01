@@ -3,15 +3,23 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-use crate::proto::storage::PreKeyRecordStructure;
 use crate::{
-    utils::traits::serde::{Deserializable, Serializable},
-    KeyPair, PrivateKey, PublicKey, Result,
+    curve::{KeyPair, PrivateKey, PublicKey},
+    proto::storage::PreKeyRecordStructure,
+    utils::{
+        traits::serde::{Deserializable, Serializable},
+        unwrap::no_encoding_error,
+    },
+    Result,
 };
+
 use prost::Message;
 
+/// Type used to record the identity of a specific pre-key in the
+/// [crate::storage::traits::PreKeyStore].
 pub type PreKeyId = u32;
 
+/// An entry for a [crate::storage::traits::PreKeyStore].
 #[derive(Debug, Clone)]
 pub struct PreKeyRecord {
     pre_key: PreKeyRecordStructure,
@@ -30,12 +38,6 @@ impl PreKeyRecord {
         }
     }
 
-    pub fn deserialize(data: &[u8]) -> Result<Self> {
-        Ok(Self {
-            pre_key: PreKeyRecordStructure::decode(data)?,
-        })
-    }
-
     pub fn id(&self) -> Result<PreKeyId> {
         Ok(self.pre_key.id)
     }
@@ -51,10 +53,20 @@ impl PreKeyRecord {
     pub fn private_key(&self) -> Result<PrivateKey> {
         PrivateKey::deserialize(&self.pre_key.private_key)
     }
+}
 
-    pub fn serialize(&self) -> Result<Vec<u8>> {
+impl Deserializable for PreKeyRecord {
+    fn deserialize(data: &[u8]) -> Result<Self> {
+        Ok(Self {
+            pre_key: PreKeyRecordStructure::decode(data)?,
+        })
+    }
+}
+
+impl Serializable<Vec<u8>> for PreKeyRecord {
+    fn serialize(&self) -> Vec<u8> {
         let mut buf = vec![];
-        self.pre_key.encode(&mut buf)?;
-        Ok(buf)
+        no_encoding_error(self.pre_key.encode(&mut buf));
+        buf
     }
 }
