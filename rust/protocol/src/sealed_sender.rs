@@ -3,25 +3,55 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
+//! The various types of messages a Signal Protocol client may receive which
+//! would kick off a new Double Ratchet chain.
+//!
+//! This module has two implementations of what amounts to the [`X3DH`] key agreement protocol:
+//! 1. [sealed_sender_v1], which only allows for a single recipient.
+//! 2. [sealed_sender_v2], which can send to multiple recipients.
+//!
+//! [`X3DH`]: https://signal.org/docs/specifications/x3dh/#receiving-the-initial-message
+
 use crate::{
-    message_encrypt, CiphertextMessageType, Context, Direction, IdentityKeyStore, KeyPair,
-    PreKeySignalMessage, PreKeyStore, PrivateKey, ProtocolAddress, PublicKey, Result, SessionStore,
-    SignalMessage, SignalProtocolError, SignedPreKeyStore, HKDF,
+    address::DeviceId,
+    consts::{
+        byte_lengths::SIGNATURE_LENGTH,
+        types::{as_key_bytes, KeyBytes},
+    },
+    crypto,
+    curve::{KeyPair, PrivateKey, PublicKey, PublicKeySignature},
+    kdf::{HKDF, KDF},
+    proto,
+    protocol::CiphertextMessageType,
+    session_cipher,
+    utils::{
+        traits::{
+            message::SignatureVerifiable,
+            serde::{Deserializable, RefSerializable, Serializable},
+        },
+        unwrap::no_encoding_error,
+    },
+    Context, Direction, IdentityKeyStore, PreKeySignalMessage, PreKeyStore, ProtocolAddress,
+    Result, SessionStore, SignalMessage, SignalProtocolError, SignedPreKeyStore,
 };
 
-use crate::crypto;
-use crate::proto;
-use crate::session_cipher;
+use arrayref::array_ref;
+use async_trait::async_trait;
 use curve25519_dalek::scalar::Scalar;
 use prost::Message;
 use rand::{CryptoRng, Rng};
 use signal_crypto::Aes256GcmSiv;
-use std::convert::{TryFrom, TryInto};
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
 
-use proto::sealed_sender::unidentified_sender_message::message::Type as ProtoMessageType;
+use std::convert::{AsRef, TryFrom, TryInto};
 
+/// The `ContentHint` object from [proto::sealed_sender].
+pub type ProtoContentHint = proto::sealed_sender::unidentified_sender_message::message::ContentHint;
+/// The message type from [proto::sealed_sender].
+pub type ProtoMessageType = proto::sealed_sender::unidentified_sender_message::message::Type;
+
+/// Certificate information provided by a Signal server instance.
 #[derive(Debug, Clone)]
 pub struct ServerCertificate {
     serialized: Vec<u8>,
@@ -31,18 +61,18 @@ pub struct ServerCertificate {
     signature: Vec<u8>,
 }
 
-/*
-0xDEADC357 is a server certificate ID which is used to test the
-revocation logic. As of this writing, no prod server certificates have
-been revoked. If one ever does, add its key ID here.
+/// Test data for certificate revocation.
+///
+/// 0xDEADC357 is a server certificate ID which is used to test the
+/// revocation logic. As of this writing, no prod server certificates have
+/// been revoked. If one ever does, add its key ID here.
+///
+/// If a production server certificate is ever generated which collides
+/// with this test certificate ID, Bad Things will happen.
+pub const REVOKED_SERVER_CERTIFICATE_KEY_IDS: &[u32] = &[0xDEADC357];
 
-If a production server certificate is ever generated which collides
-with this test certificate ID, Bad Things will happen.
-*/
-const REVOKED_SERVER_CERTIFICATE_KEY_IDS: &[u32] = &[0xDEADC357];
-
-impl ServerCertificate {
-    pub fn deserialize(data: &[u8]) -> Result<Self> {
+impl Deserializable for ServerCertificate {
+    fn deserialize(data: &[u8]) -> Result<Self> {
         let pb = proto::sealed_sender::ServerCertificate::decode(data)?;
 
         if pb.certificate.is_none() || pb.signature.is_none() {
@@ -74,47 +104,10 @@ impl ServerCertificate {
             key_id,
         })
     }
+}
 
-    pub fn new<R: Rng + CryptoRng>(
-        key_id: u32,
-        key: PublicKey,
-        trust_root: &PrivateKey,
-        rng: &mut R,
-    ) -> Result<Self> {
-        let certificate_pb = proto::sealed_sender::server_certificate::Certificate {
-            id: Some(key_id),
-            key: Some(key.serialize().to_vec()),
-        };
-
-        let mut certificate = vec![];
-        certificate_pb.encode(&mut certificate)?;
-
-        let signature = trust_root.calculate_signature(&certificate, rng)?.to_vec();
-
-        let mut serialized = vec![];
-        let pb = proto::sealed_sender::ServerCertificate {
-            certificate: Some(certificate.clone()),
-            signature: Some(signature.clone()),
-        };
-        pb.encode(&mut serialized)?;
-
-        Ok(Self {
-            serialized,
-            certificate,
-            signature,
-            key,
-            key_id,
-        })
-    }
-
-    pub(crate) fn to_protobuf(&self) -> Result<proto::sealed_sender::ServerCertificate> {
-        Ok(proto::sealed_sender::ServerCertificate {
-            certificate: Some(self.certificate.clone()),
-            signature: Some(self.signature.clone()),
-        })
-    }
-
-    pub fn validate(&self, trust_root: &PublicKey) -> Result<bool> {
+impl SignatureVerifiable<PublicKey> for ServerCertificate {
+    fn verify_signature(&self, trust_root: PublicKey) -> Result<bool> {
         if REVOKED_SERVER_CERTIFICATE_KEY_IDS.contains(&self.key_id()?) {
             log::error!(
                 "received server certificate with revoked ID {:x}",
@@ -122,35 +115,90 @@ impl ServerCertificate {
             );
             return Ok(false);
         }
-        trust_root.verify_signature(&self.certificate, &self.signature)
+        trust_root.verify_signature(PublicKeySignature {
+            message: &self.certificate,
+            signature: array_ref![&self.signature, 0, SIGNATURE_LENGTH],
+        })
+    }
+}
+
+impl ServerCertificate {
+    /// ???/Create a new instance.
+    pub fn new<R: Rng + CryptoRng>(
+        key_id: u32,
+        key: PublicKey,
+        trust_root: &PrivateKey,
+        rng: &mut R,
+    ) -> Self {
+        let certificate_pb = proto::sealed_sender::server_certificate::Certificate {
+            id: Some(key_id),
+            key: Some(key.serialize().to_vec()),
+        };
+
+        let mut certificate = vec![];
+        no_encoding_error(certificate_pb.encode(&mut certificate));
+
+        let signature = trust_root.calculate_signature(&certificate, rng).to_vec();
+
+        let mut serialized = vec![];
+        let pb = proto::sealed_sender::ServerCertificate {
+            certificate: Some(certificate.clone()),
+            signature: Some(signature.clone()),
+        };
+        no_encoding_error(pb.encode(&mut serialized));
+
+        Self {
+            serialized,
+            certificate,
+            signature,
+            key,
+            key_id,
+        }
     }
 
+    pub(crate) fn to_protobuf(&self) -> proto::sealed_sender::ServerCertificate {
+        proto::sealed_sender::ServerCertificate {
+            certificate: Some(self.certificate.clone()),
+            signature: Some(self.signature.clone()),
+        }
+    }
+
+    #[inline]
     pub fn key_id(&self) -> Result<u32> {
         Ok(self.key_id)
     }
 
+    #[inline]
     pub fn public_key(&self) -> Result<PublicKey> {
         Ok(self.key)
     }
 
+    #[inline]
     pub fn certificate(&self) -> Result<&[u8]> {
         Ok(&self.certificate)
     }
 
+    #[inline]
     pub fn signature(&self) -> Result<&[u8]> {
         Ok(&self.signature)
     }
+}
 
-    pub fn serialized(&self) -> Result<&[u8]> {
-        Ok(&self.serialized)
+impl<'a> RefSerializable<'a> for ServerCertificate {
+    #[inline]
+    fn serialize(&'a self) -> &'a [u8] {
+        &self.serialized
     }
 }
 
+/// The [ServerCertificate] along with the signed pre-key [`SPK_B`] from the Signal server.
+///
+/// [`SPK_B`]: https://signal.org/docs/specifications/x3dh/#publishing-keys
 #[derive(Debug, Clone)]
 pub struct SenderCertificate {
     signer: ServerCertificate,
     key: PublicKey,
-    sender_device_id: u32,
+    sender_device_id: DeviceId,
     sender_uuid: String,
     sender_e164: Option<String>,
     expiration: u64,
@@ -159,8 +207,158 @@ pub struct SenderCertificate {
     signature: Vec<u8>,
 }
 
+/// All the information necessary to validate a server's signature.
+#[derive(Debug, Copy, Clone)]
+pub struct ServerSignature {
+    pub trust_root: PublicKey,
+    pub validation_time: u64,
+}
+
+impl SignatureVerifiable<ServerSignature> for SenderCertificate {
+    fn verify_signature(&self, signature: ServerSignature) -> Result<bool> {
+        let ServerSignature {
+            trust_root,
+            validation_time,
+        } = signature;
+        if !self.signer.verify_signature(trust_root)? {
+            log::error!("received server certificate not signed by trust root");
+            return Ok(false);
+        }
+
+        if !self
+            .signer
+            .public_key()?
+            .verify_signature(PublicKeySignature {
+                message: &self.certificate,
+                signature: array_ref![&self.signature, 0, SIGNATURE_LENGTH],
+            })?
+        {
+            log::error!("received sender certificate not signed by server");
+            return Ok(false);
+        }
+
+        if validation_time > self.expiration {
+            log::error!(
+                "received expired sender certificate (expiration: {}, validation_time: {})",
+                self.expiration,
+                validation_time
+            );
+            return Ok(false);
+        }
+
+        Ok(true)
+    }
+}
+
 impl SenderCertificate {
-    pub fn deserialize(data: &[u8]) -> Result<Self> {
+    /// ???/Create a new instance.
+    pub fn new<R: Rng + CryptoRng>(
+        sender_uuid: String,
+        sender_e164: Option<String>,
+        key: PublicKey,
+        sender_device_id: DeviceId,
+        expiration: u64,
+        signer: ServerCertificate,
+        signer_key: &PrivateKey,
+        rng: &mut R,
+    ) -> Self {
+        let certificate_pb = proto::sealed_sender::sender_certificate::Certificate {
+            sender_uuid: Some(sender_uuid.clone()),
+            sender_e164: sender_e164.clone(),
+            sender_device: Some(sender_device_id),
+            expires: Some(expiration),
+            identity_key: Some(key.serialize().to_vec()),
+            signer: Some(signer.to_protobuf()),
+        };
+
+        let mut certificate = vec![];
+        no_encoding_error(certificate_pb.encode(&mut certificate));
+
+        let signature = signer_key.calculate_signature(&certificate, rng).to_vec();
+
+        let pb = proto::sealed_sender::SenderCertificate {
+            certificate: Some(certificate.clone()),
+            signature: Some(signature.clone()),
+        };
+        let mut serialized = vec![];
+        no_encoding_error(pb.encode(&mut serialized));
+
+        Self {
+            signer,
+            key,
+            sender_device_id,
+            sender_uuid,
+            sender_e164,
+            expiration,
+            serialized,
+            certificate,
+            signature,
+        }
+    }
+
+    pub(crate) fn from_protobuf(pb: &proto::sealed_sender::SenderCertificate) -> Result<Self> {
+        let mut bits = vec![];
+        no_encoding_error(pb.encode(&mut bits));
+        Self::deserialize(&bits)
+    }
+
+    pub(crate) fn to_protobuf(&self) -> proto::sealed_sender::SenderCertificate {
+        proto::sealed_sender::SenderCertificate {
+            certificate: Some(self.certificate.clone()),
+            signature: Some(self.signature.clone()),
+        }
+    }
+
+    #[inline]
+    pub fn signer(&self) -> Result<&ServerCertificate> {
+        Ok(&self.signer)
+    }
+
+    #[inline]
+    pub fn key(&self) -> Result<PublicKey> {
+        Ok(self.key)
+    }
+
+    #[inline]
+    pub fn sender_device_id(&self) -> Result<DeviceId> {
+        Ok(self.sender_device_id)
+    }
+
+    #[inline]
+    pub fn sender_uuid(&self) -> Result<&str> {
+        Ok(&self.sender_uuid)
+    }
+
+    #[inline]
+    pub fn sender_e164(&self) -> Result<Option<&str>> {
+        Ok(self.sender_e164.as_deref())
+    }
+
+    #[inline]
+    pub fn expiration(&self) -> Result<u64> {
+        Ok(self.expiration)
+    }
+
+    #[inline]
+    pub fn certificate(&self) -> Result<&[u8]> {
+        Ok(&self.certificate)
+    }
+
+    #[inline]
+    pub fn signature(&self) -> Result<&[u8]> {
+        Ok(&self.signature)
+    }
+}
+
+impl<'a> RefSerializable<'a> for SenderCertificate {
+    #[inline]
+    fn serialize(&'a self) -> &'a [u8] {
+        &self.serialized
+    }
+}
+
+impl Deserializable for SenderCertificate {
+    fn deserialize(data: &[u8]) -> Result<Self> {
         let pb = proto::sealed_sender::SenderCertificate::decode(data)?;
         let certificate = pb
             .certificate
@@ -192,7 +390,7 @@ impl SenderCertificate {
         )?;
 
         let mut signer_bits = vec![];
-        signer_pb.encode(&mut signer_bits)?;
+        no_encoding_error(signer_pb.encode(&mut signer_bits));
         let signer = ServerCertificate::deserialize(&signer_bits)?;
 
         Ok(Self {
@@ -207,154 +405,10 @@ impl SenderCertificate {
             signature,
         })
     }
-
-    pub fn new<R: Rng + CryptoRng>(
-        sender_uuid: String,
-        sender_e164: Option<String>,
-        key: PublicKey,
-        sender_device_id: u32,
-        expiration: u64,
-        signer: ServerCertificate,
-        signer_key: &PrivateKey,
-        rng: &mut R,
-    ) -> Result<Self> {
-        let certificate_pb = proto::sealed_sender::sender_certificate::Certificate {
-            sender_uuid: Some(sender_uuid.clone()),
-            sender_e164: sender_e164.clone(),
-            sender_device: Some(sender_device_id),
-            expires: Some(expiration),
-            identity_key: Some(key.serialize().to_vec()),
-            signer: Some(signer.to_protobuf()?),
-        };
-
-        let mut certificate = vec![];
-        certificate_pb.encode(&mut certificate)?;
-
-        let signature = signer_key.calculate_signature(&certificate, rng)?.to_vec();
-
-        let pb = proto::sealed_sender::SenderCertificate {
-            certificate: Some(certificate.clone()),
-            signature: Some(signature.clone()),
-        };
-        let mut serialized = vec![];
-        pb.encode(&mut serialized)?;
-
-        Ok(Self {
-            signer,
-            key,
-            sender_device_id,
-            sender_uuid,
-            sender_e164,
-            expiration,
-            serialized,
-            certificate,
-            signature,
-        })
-    }
-
-    pub(crate) fn from_protobuf(pb: &proto::sealed_sender::SenderCertificate) -> Result<Self> {
-        let mut bits = vec![];
-        pb.encode(&mut bits)?;
-        Self::deserialize(&bits)
-    }
-
-    pub(crate) fn to_protobuf(&self) -> Result<proto::sealed_sender::SenderCertificate> {
-        Ok(proto::sealed_sender::SenderCertificate {
-            certificate: Some(self.certificate.clone()),
-            signature: Some(self.signature.clone()),
-        })
-    }
-
-    pub fn validate(&self, trust_root: &PublicKey, validation_time: u64) -> Result<bool> {
-        if !self.signer.validate(&trust_root)? {
-            log::error!("received server certificate not signed by trust root");
-            return Ok(false);
-        }
-
-        if !self
-            .signer
-            .public_key()?
-            .verify_signature(&self.certificate, &self.signature)?
-        {
-            log::error!("received sender certificate not signed by server");
-            return Ok(false);
-        }
-
-        if validation_time > self.expiration {
-            log::error!(
-                "received expired sender certificate (expiration: {}, validation_time: {})",
-                self.expiration,
-                validation_time
-            );
-            return Ok(false);
-        }
-
-        Ok(true)
-    }
-
-    pub fn signer(&self) -> Result<&ServerCertificate> {
-        Ok(&self.signer)
-    }
-
-    pub fn key(&self) -> Result<PublicKey> {
-        Ok(self.key)
-    }
-
-    pub fn sender_device_id(&self) -> Result<u32> {
-        Ok(self.sender_device_id)
-    }
-
-    pub fn sender_uuid(&self) -> Result<&str> {
-        Ok(&self.sender_uuid)
-    }
-
-    pub fn sender_e164(&self) -> Result<Option<&str>> {
-        Ok(self.sender_e164.as_deref())
-    }
-
-    pub fn expiration(&self) -> Result<u64> {
-        Ok(self.expiration)
-    }
-
-    pub fn serialized(&self) -> Result<&[u8]> {
-        Ok(&self.serialized)
-    }
-
-    pub fn certificate(&self) -> Result<&[u8]> {
-        Ok(&self.certificate)
-    }
-
-    pub fn signature(&self) -> Result<&[u8]> {
-        Ok(&self.signature)
-    }
 }
 
-impl From<ProtoMessageType> for CiphertextMessageType {
-    fn from(message_type: ProtoMessageType) -> Self {
-        let result = match message_type {
-            ProtoMessageType::Message => Self::Whisper,
-            ProtoMessageType::PrekeyMessage => Self::PreKey,
-            ProtoMessageType::SenderkeyMessage => Self::SenderKey,
-        };
-        // Keep raw values in sync from now on, for efficient codegen.
-        assert!(result == Self::PreKey || message_type as i32 == result as i32);
-        result
-    }
-}
-
-impl From<CiphertextMessageType> for ProtoMessageType {
-    fn from(message_type: CiphertextMessageType) -> Self {
-        let result = match message_type {
-            CiphertextMessageType::PreKey => Self::PrekeyMessage,
-            CiphertextMessageType::Whisper => Self::Message,
-            CiphertextMessageType::SenderKey => Self::SenderkeyMessage,
-        };
-        // Keep raw values in sync from now on, for efficient codegen.
-        assert!(result == Self::PrekeyMessage || message_type as i32 == result as i32);
-        result
-    }
-}
-
+/// The "state" of an [UnidentifiedSenderMessageContent] instance, which may allow its contents to
+/// be ignored.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ContentHint {
     Default,
@@ -373,7 +427,6 @@ impl ContentHint {
     }
 
     pub const fn to_u32(self) -> u32 {
-        use proto::sealed_sender::unidentified_sender_message::message::ContentHint as ProtoContentHint;
         match self {
             ContentHint::Default => 0,
             ContentHint::Supplementary => ProtoContentHint::Supplementary as u32,
@@ -385,7 +438,6 @@ impl ContentHint {
 
 impl From<u32> for ContentHint {
     fn from(raw_value: u32) -> Self {
-        use proto::sealed_sender::unidentified_sender_message::message::ContentHint as ProtoContentHint;
         assert!(!ProtoContentHint::is_valid(0));
         match ProtoContentHint::from_i32(raw_value as i32) {
             None if raw_value == 0 => ContentHint::Default,
@@ -401,6 +453,8 @@ impl From<ContentHint> for u32 {
         hint.to_u32()
     }
 }
+
+/// A serialized message of a given [CiphertextMessageType] containing a [SenderCertificate].
 pub struct UnidentifiedSenderMessageContent {
     serialized: Vec<u8>,
     contents: Vec<u8>,
@@ -411,7 +465,77 @@ pub struct UnidentifiedSenderMessageContent {
 }
 
 impl UnidentifiedSenderMessageContent {
-    pub fn deserialize(data: &[u8]) -> Result<Self> {
+    /// ???/Create a new instance.
+    pub fn new(
+        msg_type: CiphertextMessageType,
+        sender: SenderCertificate,
+        contents: Vec<u8>,
+        content_hint: ContentHint,
+        group_id: Option<Vec<u8>>,
+    ) -> Self {
+        let proto_msg_type = ProtoMessageType::from(msg_type);
+        let msg = proto::sealed_sender::unidentified_sender_message::Message {
+            content: Some(contents.clone()),
+            r#type: Some(proto_msg_type.into()),
+            sender_certificate: Some(sender.to_protobuf()),
+            content_hint: content_hint.to_proto(),
+            group_id: group_id.as_ref().and_then(|buf| {
+                if buf.is_empty() {
+                    None
+                } else {
+                    Some(buf.clone())
+                }
+            }),
+        };
+
+        let mut serialized = vec![];
+        no_encoding_error(msg.encode(&mut serialized));
+
+        Self {
+            serialized,
+            msg_type,
+            sender,
+            contents,
+            content_hint,
+            group_id,
+        }
+    }
+
+    #[inline]
+    pub fn msg_type(&self) -> Result<CiphertextMessageType> {
+        Ok(self.msg_type)
+    }
+
+    #[inline]
+    pub fn sender(&self) -> Result<&SenderCertificate> {
+        Ok(&self.sender)
+    }
+
+    #[inline]
+    pub fn contents(&self) -> Result<&[u8]> {
+        Ok(&self.contents)
+    }
+
+    #[inline]
+    pub fn content_hint(&self) -> Result<ContentHint> {
+        Ok(self.content_hint)
+    }
+
+    #[inline]
+    pub fn group_id(&self) -> Result<Option<&[u8]>> {
+        Ok(self.group_id.as_deref())
+    }
+}
+
+impl<'a> RefSerializable<'a> for UnidentifiedSenderMessageContent {
+    #[inline]
+    fn serialize(&'a self) -> &'a [u8] {
+        &self.serialized
+    }
+}
+
+impl Deserializable for UnidentifiedSenderMessageContent {
+    fn deserialize(data: &[u8]) -> Result<Self> {
         let pb = proto::sealed_sender::unidentified_sender_message::Message::decode(data)?;
 
         let msg_type = pb
@@ -451,85 +575,17 @@ impl UnidentifiedSenderMessageContent {
             group_id,
         })
     }
-
-    pub fn new(
-        msg_type: CiphertextMessageType,
-        sender: SenderCertificate,
-        contents: Vec<u8>,
-        content_hint: ContentHint,
-        group_id: Option<Vec<u8>>,
-    ) -> Result<Self> {
-        let proto_msg_type = ProtoMessageType::from(msg_type);
-        let msg = proto::sealed_sender::unidentified_sender_message::Message {
-            content: Some(contents.clone()),
-            r#type: Some(proto_msg_type.into()),
-            sender_certificate: Some(sender.to_protobuf()?),
-            content_hint: content_hint.to_proto(),
-            group_id: group_id.as_ref().and_then(|buf| {
-                if buf.is_empty() {
-                    None
-                } else {
-                    Some(buf.clone())
-                }
-            }),
-        };
-
-        let mut serialized = vec![];
-        msg.encode(&mut serialized)?;
-
-        Ok(Self {
-            serialized,
-            msg_type,
-            sender,
-            contents,
-            content_hint,
-            group_id,
-        })
-    }
-
-    pub fn msg_type(&self) -> Result<CiphertextMessageType> {
-        Ok(self.msg_type)
-    }
-
-    pub fn sender(&self) -> Result<&SenderCertificate> {
-        Ok(&self.sender)
-    }
-
-    pub fn contents(&self) -> Result<&[u8]> {
-        Ok(&self.contents)
-    }
-
-    pub fn content_hint(&self) -> Result<ContentHint> {
-        Ok(self.content_hint)
-    }
-
-    pub fn group_id(&self) -> Result<Option<&[u8]>> {
-        Ok(self.group_id.as_deref())
-    }
-
-    pub fn serialized(&self) -> Result<&[u8]> {
-        Ok(&self.serialized)
-    }
 }
 
-enum UnidentifiedSenderMessage {
-    V1 {
-        ephemeral_public: PublicKey,
-        encrypted_static: Vec<u8>,
-        encrypted_message: Vec<u8>,
-    },
-    V2 {
-        ephemeral_public: PublicKey,
-        encrypted_message_key: Box<[u8]>,
-        authentication_tag: Box<[u8]>,
-        encrypted_message: Box<[u8]>,
-    },
+/// All the types of [MessageCodec] messages that we can read.
+pub enum UnidentifiedSenderMessage {
+    /// See the [sealed_sender_v1] module documentation.
+    V1(UnidentifiedSenderMessageV1),
+    /// See the [sealed_sender_v2] module documentation.
+    V2(UnidentifiedSenderMessageV2),
 }
 
-const SEALED_SENDER_V1_VERSION: u8 = 1;
-const SEALED_SENDER_V2_VERSION: u8 = 2;
-
-impl UnidentifiedSenderMessage {
+impl Deserializable for UnidentifiedSenderMessage {
     fn deserialize(data: &[u8]) -> Result<Self> {
         if data.is_empty() {
             return Err(SignalProtocolError::InvalidSealedSenderMessage(
@@ -543,7 +599,7 @@ impl UnidentifiedSenderMessage {
         );
 
         match version {
-            0 | SEALED_SENDER_V1_VERSION => {
+            0 | sealed_sender_v1::SEALED_SENDER_V1_VERSION => {
                 // XXX should we really be accepted version == 0 here?
                 let pb = proto::sealed_sender::UnidentifiedSenderMessage::decode(&data[1..])?;
 
@@ -559,13 +615,13 @@ impl UnidentifiedSenderMessage {
 
                 let ephemeral_public = PublicKey::try_from(&ephemeral_public[..])?;
 
-                Ok(Self::V1 {
+                Ok(Self::V1(UnidentifiedSenderMessageV1 {
                     ephemeral_public,
                     encrypted_static,
                     encrypted_message,
-                })
+                }))
             }
-            SEALED_SENDER_V2_VERSION => {
+            sealed_sender_v2::SEALED_SENDER_V2_VERSION => {
                 // Uses a flat representation: C || AT || E.pub || ciphertext
                 let remaining = &data[1..];
                 if remaining.len() < 32 + 16 + 32 {
@@ -575,35 +631,62 @@ impl UnidentifiedSenderMessage {
                 let (encrypted_authentication_tag, remaining) = remaining.split_at(16);
                 let (ephemeral_public, encrypted_message) = remaining.split_at(32);
 
-                Ok(Self::V2 {
+                Ok(Self::V2(UnidentifiedSenderMessageV2 {
                     ephemeral_public: PublicKey::from_djb_public_key_bytes(ephemeral_public)?,
                     encrypted_message_key: encrypted_message_key.into(),
                     authentication_tag: encrypted_authentication_tag.into(),
                     encrypted_message: encrypted_message.into(),
-                })
+                }))
             }
             _ => Err(SignalProtocolError::UnknownSealedSenderVersion(version)),
         }
     }
 }
 
-mod sealed_sender_v1 {
-    // Described at https://signal.org/blog/sealed-sender/
+/// Defines a codec for encrypting and decrypting "sealed-sender" messages, which are used to kick
+/// off a post-X3DH Double Ratchet.
+#[async_trait(?Send)]
+pub trait MessageCodec<'a> {
+    /// Where to send the message to. See [ProtocolAddress].
+    type Destination;
+    type MessageContent;
+    /// What type of message we need to decrypt. See [UnidentifiedSenderMessageV1] and
+    /// [UnidentifiedSenderMessageV2].
+    type SenderMessage;
+    type DecryptMessage;
+    /// Encipher the contents of `usmc` in order to send to `destination`.
+    async fn encrypt<R: Rng + CryptoRng>(
+        destination: &'a Self::Destination,
+        usmc: &'a Self::MessageContent,
+        identity_store: &'a mut dyn IdentityKeyStore,
+        ctx: Context,
+        rng: &'a mut R,
+    ) -> Result<Vec<u8>>;
+    /// Decrypt the contents of `sender_message`.
+    async fn decrypt(
+        identity_store: &'a mut dyn IdentityKeyStore,
+        ctx: Context,
+        sender_message: Self::SenderMessage,
+    ) -> Result<Self::DecryptMessage>;
+}
 
-    // e_pub, e_priv                  = X25519.generateEphemeral()
-    // e_chain, e_cipherKey, e_macKey = HKDF(salt="UnidentifiedDelivery" || recipientIdentityPublic || e_pub, ikm=ECDH(recipientIdentityPublic, e_priv), info="")
-    // e_ciphertext                   = AES_CTR(key=e_cipherKey, input=senderIdentityPublic)
-    // e_mac                          = Hmac256(key=e_macKey, input=e_ciphertext)
-    //
-    // s_cipherKey, s_macKey = HKDF(salt=e_chain || e_ciphertext || e_mac, ikm=ECDH(recipientIdentityPublic, senderIdentityPrivate), info="")
-    // s_ciphertext          = AES_CTR(key=s_cipherKey, input=sender_certificate || message_ciphertext)
-    // s_mac                 = Hmac256(key=s_macKey, input=s_ciphertext)
-    //
-    // message_to_send = s_ciphertext || s_mac
-
+/// Described at <https://signal.org/blog/sealed-sender/>.
+///
+/// 1. `e_pub, e_priv                  = X25519.generateEphemeral();`
+/// 1. `e_chain, e_cipherKey, e_macKey = HKDF(salt="UnidentifiedDelivery" || recipientIdentityPublic || e_pub, ikm=ECDH(recipientIdentityPublic, e_priv), info="");`
+/// 1. `e_ciphertext                   = AES_CTR(key=e_cipherKey, input=senderIdentityPublic);`
+/// 1. `e_mac                          = Hmac256(key=e_macKey, input=e_ciphertext);`
+///
+/// 1. `s_cipherKey, s_macKey = HKDF(salt=e_chain || e_ciphertext || e_mac, ikm=ECDH(recipientIdentityPublic, senderIdentityPrivate), info="");`
+/// 1. `s_ciphertext          = AES_CTR(key=s_cipherKey, input=sender_certificate || message_ciphertext);`
+/// 1. `s_mac                 = Hmac256(key=s_macKey, input=s_ciphertext);`
+///
+/// 1. `message_to_send = s_ciphertext || s_mac;`
+pub mod sealed_sender_v1 {
     use super::*;
 
-    pub(super) struct EphemeralKeys {
+    /// Wrapper over a KDF derived from ephemeral keys created for X3DH.
+    pub struct EphemeralKeys {
         derived_values: Box<[u8]>,
     }
 
@@ -612,8 +695,10 @@ mod sealed_sender_v1 {
             their_public: &PublicKey,
             our_public: &PublicKey,
             our_private: &PrivateKey,
+            // TODO: convert this into an enum!
             sending: bool,
-        ) -> Result<Self> {
+        ) -> Self {
+            /* TODO: where does `2 * 32 + 20` come from? */
             let mut ephemeral_salt = Vec::with_capacity(2 * 32 + 20);
             ephemeral_salt.extend_from_slice("UnidentifiedDelivery".as_bytes());
 
@@ -625,164 +710,227 @@ mod sealed_sender_v1 {
                 ephemeral_salt.extend_from_slice(&their_public.serialize());
             }
 
-            let shared_secret = our_private.calculate_agreement(their_public)?;
-            let kdf = HKDF::new_current();
+            let shared_secret = our_private.calculate_agreement(their_public);
+            let secret_bytes: &[u8] = shared_secret.as_ref();
             let derived_values =
-                kdf.derive_salted_secrets(&shared_secret, &ephemeral_salt, &[], 96)?;
+                HKDF::new().derive_salted_secrets(secret_bytes, &ephemeral_salt, &[], 96);
 
-            Ok(Self { derived_values })
+            Self { derived_values }
         }
 
-        pub fn chain_key(&self) -> Result<&[u8]> {
-            Ok(&self.derived_values[0..32])
+        pub fn chain_key(&self) -> &KeyBytes {
+            as_key_bytes(&self.derived_values[0..32])
         }
 
-        pub fn cipher_key(&self) -> Result<&[u8]> {
-            Ok(&self.derived_values[32..64])
+        pub fn cipher_key(&self) -> &KeyBytes {
+            as_key_bytes(&self.derived_values[32..64])
         }
 
-        pub fn mac_key(&self) -> Result<&[u8]> {
-            Ok(&self.derived_values[64..96])
+        pub fn mac_key(&self) -> &KeyBytes {
+            as_key_bytes(&self.derived_values[64..96])
         }
     }
 
-    pub(super) struct StaticKeys {
+    /// Wrapper over a KDF derived from a signed pre-key and not an ephemeral key (???)
+    pub struct StaticKeys {
         derived_values: Box<[u8]>,
     }
     impl StaticKeys {
         pub fn calculate(
             their_public: &PublicKey,
             our_private: &PrivateKey,
-            chain_key: &[u8],
+            chain_key: &KeyBytes,
             ctext: &[u8],
         ) -> Result<Self> {
             let mut salt = Vec::with_capacity(chain_key.len() + ctext.len());
             salt.extend_from_slice(chain_key);
             salt.extend_from_slice(ctext);
 
-            let shared_secret = our_private.calculate_agreement(their_public)?;
-            let kdf = HKDF::new_current();
-            // 96 bytes are derived but the first 32 are discarded/unused
-            let derived_values = kdf.derive_salted_secrets(&shared_secret, &salt, &[], 96)?;
+            let shared_secret = our_private.calculate_agreement(their_public);
+            let kdf = HKDF::new();
+            let secret_bytes: &[u8] = shared_secret.as_ref();
+            // NB: 96 bytes are derived but the first 32 are discarded/unused.
+            // TODO: this is presumably in order to agree with the results of [EphemeralKeys] above.
+            let derived_values = kdf.derive_salted_secrets(secret_bytes, &salt, &[], 96)[32..]
+                .to_vec()
+                .into_boxed_slice();
 
             Ok(Self { derived_values })
         }
 
-        pub fn cipher_key(&self) -> Result<&[u8]> {
-            Ok(&self.derived_values[32..64])
+        pub fn cipher_key(&self) -> &KeyBytes {
+            as_key_bytes(&self.derived_values[..32])
         }
 
-        pub fn mac_key(&self) -> Result<&[u8]> {
-            Ok(&self.derived_values[64..96])
+        pub fn mac_key(&self) -> &KeyBytes {
+            as_key_bytes(&self.derived_values[32..64])
         }
     }
+
+    pub const SEALED_SENDER_V1_VERSION: crate::consts::types::VersionType = 1;
+
+    pub struct UnidentifiedSenderMessageV1 {
+        pub ephemeral_public: PublicKey,
+        pub encrypted_static: Vec<u8>,
+        pub encrypted_message: Vec<u8>,
+    }
+
+    /// Implements [MessageCodec] for [sealed_sender_v1].
+    pub struct SealedSenderV1;
+
+    #[async_trait(?Send)]
+    impl<'a> MessageCodec<'a> for SealedSenderV1 {
+        type Destination = ProtocolAddress;
+        type MessageContent = UnidentifiedSenderMessageContent;
+        type SenderMessage = UnidentifiedSenderMessageV1;
+        type DecryptMessage = UnidentifiedSenderMessageContent;
+        async fn encrypt<R: Rng + CryptoRng>(
+            destination: &'a ProtocolAddress,
+            usmc: &'a UnidentifiedSenderMessageContent,
+            identity_store: &'a mut dyn IdentityKeyStore,
+            ctx: Context,
+            rng: &'a mut R,
+        ) -> Result<Vec<u8>> {
+            sealed_sender_encrypt_from_usmc::<R>(destination, usmc, identity_store, ctx, rng).await
+        }
+        async fn decrypt(
+            identity_store: &'a mut dyn IdentityKeyStore,
+            ctx: Context,
+            sender_message: UnidentifiedSenderMessageV1,
+        ) -> Result<UnidentifiedSenderMessageContent> {
+            let UnidentifiedSenderMessageV1 {
+                ephemeral_public,
+                encrypted_static,
+                encrypted_message,
+            } = sender_message;
+            let our_identity = identity_store.get_identity_key_pair(ctx).await?;
+            let eph_keys = sealed_sender_v1::EphemeralKeys::calculate(
+                &ephemeral_public,
+                &our_identity.public_key(),
+                &our_identity.private_key(),
+                false,
+            );
+
+            let message_key_bytes = crypto::aes256_ctr_hmacsha256_decrypt(
+                &encrypted_static,
+                &eph_keys.cipher_key(),
+                &*eph_keys.mac_key(),
+            )?;
+
+            let static_key = PublicKey::try_from(&message_key_bytes[..])?;
+
+            let static_keys = sealed_sender_v1::StaticKeys::calculate(
+                &static_key,
+                our_identity.private_key(),
+                eph_keys.chain_key(),
+                &encrypted_static,
+            )?;
+
+            let message_bytes = crypto::aes256_ctr_hmacsha256_decrypt(
+                &encrypted_message,
+                &static_keys.cipher_key(),
+                &*static_keys.mac_key(),
+            )?;
+
+            let usmc = UnidentifiedSenderMessageContent::deserialize(&message_bytes)?;
+
+            if !bool::from(message_key_bytes.ct_eq(&usmc.sender()?.key()?.serialize())) {
+                return Err(SignalProtocolError::InvalidSealedSenderMessage(
+                    "sender certificate key does not match message key".to_string(),
+                ));
+            }
+
+            Ok(usmc)
+        }
+    }
+
+    /// Implements `.encrypt()` for [SealedSenderV1].
+    pub async fn sealed_sender_encrypt_from_usmc<R: Rng + CryptoRng>(
+        destination: &ProtocolAddress,
+        usmc: &UnidentifiedSenderMessageContent,
+        identity_store: &mut dyn IdentityKeyStore,
+        ctx: Context,
+        rng: &mut R,
+    ) -> Result<Vec<u8>> {
+        let our_identity = identity_store.get_identity_key_pair(ctx).await?;
+        let their_identity = identity_store
+            .get_identity(destination, ctx)
+            .await?
+            .ok_or_else(|| SignalProtocolError::SessionNotFound(format!("{}", destination)))?;
+
+        let ephemeral = KeyPair::generate(rng);
+
+        let eph_keys = sealed_sender_v1::EphemeralKeys::calculate(
+            their_identity.public_key(),
+            &ephemeral.public_key,
+            &ephemeral.private_key,
+            true,
+        );
+
+        let static_key_ctext = crypto::aes256_ctr_hmacsha256_encrypt(
+            &our_identity.public_key().serialize(),
+            &eph_keys.cipher_key(),
+            &*eph_keys.mac_key(),
+        );
+
+        let static_keys = sealed_sender_v1::StaticKeys::calculate(
+            their_identity.public_key(),
+            our_identity.private_key(),
+            eph_keys.chain_key(),
+            &static_key_ctext,
+        )?;
+
+        let message_data = crypto::aes256_ctr_hmacsha256_encrypt(
+            usmc.serialize(),
+            &static_keys.cipher_key(),
+            &*static_keys.mac_key(),
+        );
+
+        let version = SEALED_SENDER_V1_VERSION;
+        let mut serialized = vec![];
+        serialized.push(version | (version << 4));
+        let pb = proto::sealed_sender::UnidentifiedSenderMessage {
+            ephemeral_public: Some(ephemeral.public_key.serialize().to_vec()),
+            encrypted_static: Some(static_key_ctext),
+            encrypted_message: Some(message_data),
+        };
+        no_encoding_error(pb.encode(&mut serialized));
+
+        Ok(serialized)
+    }
 }
+pub use sealed_sender_v1::{
+    sealed_sender_encrypt_from_usmc, SealedSenderV1, UnidentifiedSenderMessageV1,
+};
 
-pub async fn sealed_sender_encrypt<R: Rng + CryptoRng>(
-    destination: &ProtocolAddress,
-    sender_cert: &SenderCertificate,
-    ptext: &[u8],
-    session_store: &mut dyn SessionStore,
-    identity_store: &mut dyn IdentityKeyStore,
-    ctx: Context,
-    rng: &mut R,
-) -> Result<Vec<u8>> {
-    let message = message_encrypt(ptext, destination, session_store, identity_store, ctx).await?;
-    let usmc = UnidentifiedSenderMessageContent::new(
-        message.message_type(),
-        sender_cert.clone(),
-        message.serialize().to_vec(),
-        ContentHint::Default,
-        None,
-    )?;
-    sealed_sender_encrypt_from_usmc(destination, &usmc, identity_store, ctx, rng).await
-}
-
-pub async fn sealed_sender_encrypt_from_usmc<R: Rng + CryptoRng>(
-    destination: &ProtocolAddress,
-    usmc: &UnidentifiedSenderMessageContent,
-    identity_store: &mut dyn IdentityKeyStore,
-    ctx: Context,
-    rng: &mut R,
-) -> Result<Vec<u8>> {
-    let our_identity = identity_store.get_identity_key_pair(ctx).await?;
-    let their_identity = identity_store
-        .get_identity(destination, ctx)
-        .await?
-        .ok_or_else(|| SignalProtocolError::SessionNotFound(format!("{}", destination)))?;
-
-    let ephemeral = KeyPair::generate(rng);
-
-    let eph_keys = sealed_sender_v1::EphemeralKeys::calculate(
-        their_identity.public_key(),
-        &ephemeral.public_key,
-        &ephemeral.private_key,
-        true,
-    )?;
-
-    let static_key_ctext = crypto::aes256_ctr_hmacsha256_encrypt(
-        &our_identity.public_key().serialize(),
-        &eph_keys.cipher_key()?,
-        &eph_keys.mac_key()?,
-    )?;
-
-    let static_keys = sealed_sender_v1::StaticKeys::calculate(
-        their_identity.public_key(),
-        our_identity.private_key(),
-        eph_keys.chain_key()?,
-        &static_key_ctext,
-    )?;
-
-    let message_data = crypto::aes256_ctr_hmacsha256_encrypt(
-        usmc.serialized()?,
-        &static_keys.cipher_key()?,
-        &static_keys.mac_key()?,
-    )?;
-
-    let version = SEALED_SENDER_V1_VERSION;
-    let mut serialized = vec![];
-    serialized.push(version | (version << 4));
-    let pb = proto::sealed_sender::UnidentifiedSenderMessage {
-        ephemeral_public: Some(ephemeral.public_key.serialize().to_vec()),
-        encrypted_static: Some(static_key_ctext),
-        encrypted_message: Some(message_data),
-    };
-    pb.encode(&mut serialized)?; // appends to buffer
-
-    Ok(serialized)
-}
-
-mod sealed_sender_v2 {
-    // ENCRYPT(message, R_i):
-    //     M = Random(32)
-    //     r = KDF(label_r, M, len=64)
-    //     K = KDF(label_K, M, len=32)
-    //     E = DeriveKeyPair(r)
-    //     for i in num_recipients:
-    //         C_i = KDF(label_DH, DH(E, R_i) || E.public || R_i.public, len=32) XOR M
-    //         AT_i = KDF(label_DH_s, DH(S, R_i) || E.public || C_i || S.public || R_i.public, len=16)
-    //     ciphertext = AEAD_Encrypt(K, message)
-    //     return E.public, C_i, AT_i, ciphertext
-
-    // DECRYPT(E.public, C, AT, ciphertext):
-    //     M = KDF(label_DH, DH(E, R) || E.public || R.public, len=32) xor C
-    //     r = KDF(label_r, M, len=64)
-    //     K = KDF(label_K, M, len=32)
-    //     E' = DeriveKeyPair(r)
-    //     if E.public != E'.public:
-    //         return DecryptionError
-    //     message = AEAD_Decrypt(K, ciphertext) // includes S.public
-    //     AT' = KDF(label_DH_s, DH(S, R) || E.public || C || S.public || R.public, len=16)
-    //     if AT != AT':
-    //         return DecryptionError
-    //     return message
-
-    // This is a single-key multi-recipient KEM, defined in Manuel Barbosa's "Randomness Reuse:
-    // Extensions and Improvements" [1]. It uses the "Generic Construction" in 4.1 of that paper,
-    // instantiated with ElGamal encryption.
-    //
-    // [1]: https://haslab.uminho.pt/mbb/files/reuse.pdf
-
+/// This is a single-key multi-recipient KEM, defined in [Manuel Barbosa's "Randomness Reuse:
+/// Extensions and Improvements"](https://haslab.uminho.pt/mbb/files/reuse.pdf). It uses the
+/// "Generic Construction" in 4.1 of that paper, instantiated with ElGamal encryption.
+///
+/// ### `ENCRYPT(message, R_i)`:
+/// 1. `M = Random(32);`
+/// 2. `r = KDF(label_r, M, len=64);`
+/// 3. `K = KDF(label_K, M, len=32);`
+/// 4. `E = DeriveKeyPair(r);`
+/// 5. `for i in num_recipients:`
+///     - `C_i = KDF(label_DH, DH(E, R_i) || E.public || R_i.public, len=32) XOR M;`
+///     - `AT_i = KDF(label_DH_s, DH(S, R_i) || E.public || C_i || S.public || R_i.public, len=16);`
+/// 6. `ciphertext = AEAD_Encrypt(K, message);`
+/// 7. `return E.public, C_i, AT_i, ciphertext;`
+///
+/// ### `DECRYPT(E.public, C, AT, ciphertext)`:
+/// 1. `M = KDF(label_DH, DH(E, R) || E.public || R.public, len=32) xor C;`
+/// 2. `r = KDF(label_r, M, len=64);`
+/// 3. `K = KDF(label_K, M, len=32);`
+/// 4. `E_prime = DeriveKeyPair(r);`
+/// 5. `if E.public != E_prime.public:`
+///     - `return DecryptionError;`
+/// 6. `message = AEAD_Decrypt(K, ciphertext); // includes S.public`
+/// 7. `AT_prime = KDF(label_DH_s, DH(S, R) || E.public || C || S.public || R.public, len=16);`
+/// 8. `if AT != AT_prime:`
+///     - `return DecryptionError;`
+/// 9. `return message;`
+pub mod sealed_sender_v2 {
     use super::*;
 
     const LABEL_R: &[u8] = b"Sealed Sender v2: r";
@@ -790,20 +938,16 @@ mod sealed_sender_v2 {
     const LABEL_DH: &[u8] = b"Sealed Sender v2: DH";
     const LABEL_DH_S: &[u8] = b"Sealed Sender v2: DH-sender";
 
-    pub(super) struct DerivedKeys {
-        pub(super) e: PrivateKey,
-        pub(super) k: Box<[u8]>,
+    pub struct DerivedKeys {
+        pub e: PrivateKey,
+        pub k: Box<[u8]>,
     }
 
     impl DerivedKeys {
-        pub(super) fn calculate(m: &[u8]) -> DerivedKeys {
-            let kdf = HKDF::new_current();
-            let r = kdf
-                .derive_secrets(&m, LABEL_R, 64)
-                .expect("valid use of KDF");
-            let k = kdf
-                .derive_secrets(&m, LABEL_K, 32)
-                .expect("valid use of KDF");
+        pub fn calculate(m: &[u8]) -> DerivedKeys {
+            let kdf = HKDF::new();
+            let r = kdf.derive_secrets(&m, LABEL_R, 64);
+            let k = kdf.derive_secrets(&m, LABEL_K, 32);
             let e_raw =
                 Scalar::from_bytes_mod_order_wide(r.as_ref().try_into().expect("64-byte slice"));
             let e = PrivateKey::try_from(&e_raw.as_bytes()[..]).expect("valid PrivateKey");
@@ -811,144 +955,239 @@ mod sealed_sender_v2 {
         }
     }
 
-    pub(super) fn apply_agreement_xor(
+    pub fn apply_agreement_xor(
         priv_key: &PrivateKey,
         pub_key: &PublicKey,
         direction: Direction,
         input: &[u8],
-    ) -> Result<Box<[u8]>> {
+    ) -> Box<[u8]> {
         assert!(input.len() == 32);
 
-        let agreement = priv_key.calculate_agreement(&pub_key)?;
+        let agreement = priv_key.calculate_agreement(&pub_key);
         let agreement_key_input = match direction {
             Direction::Sending => [
                 agreement,
-                priv_key.public_key()?.serialize(),
+                priv_key.public_key().serialize(),
                 pub_key.serialize(),
             ],
             Direction::Receiving => [
                 agreement,
                 pub_key.serialize(),
-                priv_key.public_key()?.serialize(),
+                priv_key.public_key().serialize(),
             ],
         }
         .concat();
 
-        let mut result = HKDF::new_current().derive_secrets(&agreement_key_input, LABEL_DH, 32)?;
+        let mut result = HKDF::new().derive_secrets(&agreement_key_input, LABEL_DH, 32);
         result
             .iter_mut()
             .zip(input)
             .for_each(|(result_byte, input_byte)| *result_byte ^= input_byte);
-        Ok(result)
+        result
     }
 
-    pub(super) fn compute_authentication_tag(
+    pub fn compute_authentication_tag(
         priv_key: &PrivateKey,
         pub_key: &PublicKey,
         direction: Direction,
         ephemeral_pub_key: &PublicKey,
         encrypted_message_key: &[u8],
-    ) -> Result<Box<[u8]>> {
-        let agreement = priv_key.calculate_agreement(&pub_key)?;
-        let mut agreement_key_input = agreement.into_vec();
+    ) -> Box<[u8]> {
+        let agreement = priv_key.calculate_agreement(&pub_key);
+        let mut agreement_key_input = agreement.to_vec();
         agreement_key_input.extend_from_slice(&ephemeral_pub_key.serialize());
         agreement_key_input.extend_from_slice(encrypted_message_key);
         match direction {
             Direction::Sending => {
-                agreement_key_input.extend_from_slice(&priv_key.public_key()?.serialize());
+                agreement_key_input.extend_from_slice(&priv_key.public_key().serialize());
                 agreement_key_input.extend_from_slice(&pub_key.serialize());
             }
             Direction::Receiving => {
                 agreement_key_input.extend_from_slice(&pub_key.serialize());
-                agreement_key_input.extend_from_slice(&priv_key.public_key()?.serialize());
+                agreement_key_input.extend_from_slice(&priv_key.public_key().serialize());
             }
         }
 
-        HKDF::new_current().derive_secrets(&agreement_key_input, LABEL_DH_S, 16)
+        HKDF::new().derive_secrets(&agreement_key_input, LABEL_DH_S, 16)
     }
-}
 
-pub async fn sealed_sender_multi_recipient_encrypt<R: Rng + CryptoRng>(
-    destinations: &[&ProtocolAddress],
-    usmc: &UnidentifiedSenderMessageContent,
-    identity_store: &mut dyn IdentityKeyStore,
-    ctx: Context,
-    rng: &mut R,
-) -> Result<Vec<u8>> {
-    let m: [u8; 32] = rng.gen();
-    let keys = sealed_sender_v2::DerivedKeys::calculate(&m);
-    let e_pub = keys.e.public_key()?;
+    pub const SEALED_SENDER_V2_VERSION: crate::consts::types::VersionType = 2;
 
-    let mut ciphertext = usmc.serialized()?.to_vec();
-    let tag = Aes256GcmSiv::new(&keys.k)
-        .and_then(|aes_gcm_siv| {
-            aes_gcm_siv.encrypt(
-                &mut ciphertext,
-                // There's no nonce because the key is already one-use.
-                &[0; Aes256GcmSiv::NONCE_SIZE],
-                // And there's no associated data.
-                &[],
-            )
-        })
-        .map_err(|err| {
-            log::error!("failed to encrypt using AES-GCM-SIV: {}", err);
-            SignalProtocolError::InternalError("failed to encrypt using AES-GCM-SIV")
-        })?;
+    pub struct UnidentifiedSenderMessageV2 {
+        pub ephemeral_public: PublicKey,
+        pub encrypted_message_key: Box<[u8]>,
+        pub authentication_tag: Box<[u8]>,
+        pub encrypted_message: Box<[u8]>,
+    }
 
-    // Uses a flat representation: count || UUID_i || deviceId_i || C_i || AT_i || ... || E.pub || ciphertext
-    let version = SEALED_SENDER_V2_VERSION;
-    let mut serialized: Vec<u8> = vec![(version | (version << 4))];
+    /// Implements [MessageCodec] for [sealed_sender_v2].
+    pub struct SealedSenderV2;
 
-    prost::encode_length_delimiter(destinations.len(), &mut serialized)
-        .expect("cannot fail encoding to Vec");
+    #[async_trait(?Send)]
+    impl<'a> MessageCodec<'a> for SealedSenderV2 {
+        type Destination = Vec<ProtocolAddress>;
+        type MessageContent = UnidentifiedSenderMessageContent;
+        type DecryptMessage = UnidentifiedSenderMessageContent;
+        type SenderMessage = UnidentifiedSenderMessageV2;
+        async fn encrypt<R: Rng + CryptoRng>(
+            destination: &'a Vec<ProtocolAddress>,
+            usmc: &'a UnidentifiedSenderMessageContent,
+            identity_store: &'a mut dyn IdentityKeyStore,
+            ctx: Context,
+            rng: &'a mut R,
+        ) -> Result<Vec<u8>> {
+            let intermediate_slice: Vec<&ProtocolAddress> = destination.iter().collect();
+            let destination: &[&ProtocolAddress] = intermediate_slice.as_ref();
+            sealed_sender_multi_recipient_encrypt::<R>(destination, usmc, identity_store, ctx, rng)
+                .await
+        }
+        async fn decrypt(
+            identity_store: &'a mut dyn IdentityKeyStore,
+            ctx: Context,
+            sender_message: UnidentifiedSenderMessageV2,
+        ) -> Result<UnidentifiedSenderMessageContent> {
+            let UnidentifiedSenderMessageV2 {
+                ephemeral_public,
+                encrypted_message_key,
+                authentication_tag,
+                encrypted_message,
+            } = sender_message;
+            let our_identity = identity_store.get_identity_key_pair(ctx).await?;
+            let m = sealed_sender_v2::apply_agreement_xor(
+                our_identity.private_key(),
+                &ephemeral_public,
+                Direction::Receiving,
+                &encrypted_message_key,
+            );
 
-    let our_identity = identity_store.get_identity_key_pair(ctx).await?;
-    for destination in destinations {
-        let their_uuid = Uuid::parse_str(destination.name()).map_err(|_| {
-            SignalProtocolError::InvalidArgument(format!(
-                "multi-recipient sealed sender requires UUID recipients (not {})",
-                destination.name()
-            ))
-        })?;
+            let keys = sealed_sender_v2::DerivedKeys::calculate(&m);
+            if !bool::from(keys.e.public_key().ct_eq(&ephemeral_public)) {
+                return Err(SignalProtocolError::InvalidSealedSenderMessage(
+                    "derived ephemeral key did not match key provided in message".to_string(),
+                ));
+            }
 
-        let their_identity = identity_store
-            .get_identity(destination, ctx)
-            .await?
-            .ok_or_else(|| SignalProtocolError::SessionNotFound(format!("{}", destination)))?;
+            let mut message_bytes = encrypted_message.into_vec();
+            let result = Aes256GcmSiv::new(&keys.k).and_then(|aes_gcm_siv| {
+                aes_gcm_siv.decrypt_with_appended_tag(
+                    &mut message_bytes,
+                    // There's no nonce because the key is already one-use.
+                    &[0; Aes256GcmSiv::NONCE_SIZE],
+                    // And there's no associated data.
+                    &[],
+                )
+            });
+            if let Err(err) = result {
+                return Err(SignalProtocolError::InvalidSealedSenderMessage(format!(
+                    "failed to decrypt inner message: {}",
+                    err
+                )));
+            }
 
-        let c_i = sealed_sender_v2::apply_agreement_xor(
-            &keys.e,
-            their_identity.public_key(),
-            Direction::Sending,
-            &m,
-        )?;
+            let usmc = UnidentifiedSenderMessageContent::deserialize(&message_bytes)?;
 
-        let at_i = sealed_sender_v2::compute_authentication_tag(
-            our_identity.private_key(),
-            their_identity.public_key(),
-            Direction::Sending,
-            &e_pub,
-            &c_i,
-        )?;
+            let at = sealed_sender_v2::compute_authentication_tag(
+                our_identity.private_key(),
+                &usmc.sender()?.key()?,
+                Direction::Receiving,
+                &ephemeral_public,
+                &encrypted_message_key,
+            );
+            if !bool::from(authentication_tag.ct_eq(&at)) {
+                return Err(SignalProtocolError::InvalidSealedSenderMessage(
+                    "sender certificate key does not match authentication tag".to_string(),
+                ));
+            }
 
-        serialized.extend_from_slice(their_uuid.as_bytes());
-        prost::encode_length_delimiter(destination.device_id() as usize, &mut serialized)
+            Ok(usmc)
+        }
+    }
+
+    pub async fn sealed_sender_multi_recipient_encrypt<R: Rng + CryptoRng>(
+        destinations: &[&ProtocolAddress],
+        usmc: &UnidentifiedSenderMessageContent,
+        identity_store: &mut dyn IdentityKeyStore,
+        ctx: Context,
+        rng: &mut R,
+    ) -> Result<Vec<u8>> {
+        let m: [u8; 32] = rng.gen();
+        let keys = sealed_sender_v2::DerivedKeys::calculate(&m);
+        let e_pub = keys.e.public_key();
+
+        let mut ciphertext = usmc.serialize().to_vec();
+        let tag = Aes256GcmSiv::new(&keys.k)
+            .and_then(|aes_gcm_siv| {
+                aes_gcm_siv.encrypt(
+                    &mut ciphertext,
+                    // There's no nonce because the key is already one-use.
+                    &[0; Aes256GcmSiv::NONCE_SIZE],
+                    // And there's no associated data.
+                    &[],
+                )
+            })
+            .map_err(|err| {
+                log::error!("failed to encrypt using AES-GCM-SIV: {}", err);
+                SignalProtocolError::InternalError("failed to encrypt using AES-GCM-SIV")
+            })?;
+
+        // Uses a flat representation: count || UUID_i || deviceId_i || C_i || AT_i || ... || E.pub || ciphertext
+        let version = SEALED_SENDER_V2_VERSION;
+        let mut serialized: Vec<u8> = vec![(version | (version << 4))];
+
+        prost::encode_length_delimiter(destinations.len(), &mut serialized)
             .expect("cannot fail encoding to Vec");
-        serialized.extend_from_slice(&c_i);
-        serialized.extend_from_slice(&at_i);
+
+        let our_identity = identity_store.get_identity_key_pair(ctx).await?;
+        for destination in destinations {
+            let their_uuid = Uuid::parse_str(destination.name()).map_err(|_| {
+                SignalProtocolError::InvalidArgument(format!(
+                    "multi-recipient sealed sender requires UUID recipients (not {})",
+                    destination.name()
+                ))
+            })?;
+
+            let their_identity = identity_store
+                .get_identity(destination, ctx)
+                .await?
+                .ok_or_else(|| SignalProtocolError::SessionNotFound(format!("{}", destination)))?;
+
+            let c_i = sealed_sender_v2::apply_agreement_xor(
+                &keys.e,
+                their_identity.public_key(),
+                Direction::Sending,
+                &m,
+            );
+
+            let at_i = sealed_sender_v2::compute_authentication_tag(
+                our_identity.private_key(),
+                their_identity.public_key(),
+                Direction::Sending,
+                &e_pub,
+                &c_i,
+            );
+
+            serialized.extend_from_slice(their_uuid.as_bytes());
+            prost::encode_length_delimiter(destination.device_id() as usize, &mut serialized)
+                .expect("cannot fail encoding to Vec");
+            serialized.extend_from_slice(&c_i);
+            serialized.extend_from_slice(&at_i);
+        }
+
+        serialized.extend_from_slice(&*e_pub.public_key_bytes()?);
+        serialized.extend_from_slice(&ciphertext);
+        serialized.extend_from_slice(&tag);
+
+        Ok(serialized)
     }
-
-    serialized.extend_from_slice(&e_pub.public_key_bytes()?);
-    serialized.extend_from_slice(&ciphertext);
-    serialized.extend_from_slice(&tag);
-
-    Ok(serialized)
 }
+pub use sealed_sender_v2::{
+    sealed_sender_multi_recipient_encrypt, SealedSenderV2, UnidentifiedSenderMessageV2,
+};
 
-// For testing
+/// TODO: For testing purposes only (?).
 pub fn sealed_sender_multi_recipient_fan_out(data: &[u8]) -> Result<Vec<Vec<u8>>> {
     let version = data[0] >> 4;
-    if version != SEALED_SENDER_V2_VERSION {
+    if version != sealed_sender_v2::SEALED_SENDER_V2_VERSION {
         return Err(SignalProtocolError::UnknownSealedSenderVersion(version));
     }
 
@@ -994,119 +1233,30 @@ pub fn sealed_sender_multi_recipient_fan_out(data: &[u8]) -> Result<Vec<Vec<u8>>
     Ok(messages)
 }
 
+/// Deserialize `ciphertext` into an [UnidentifiedSenderMessage] instance, then call
+/// [MessageCodec::decrypt].
 pub async fn sealed_sender_decrypt_to_usmc(
     ciphertext: &[u8],
     identity_store: &mut dyn IdentityKeyStore,
     ctx: Context,
 ) -> Result<UnidentifiedSenderMessageContent> {
-    let our_identity = identity_store.get_identity_key_pair(ctx).await?;
-
     match UnidentifiedSenderMessage::deserialize(ciphertext)? {
-        UnidentifiedSenderMessage::V1 {
-            ephemeral_public,
-            encrypted_static,
-            encrypted_message,
-        } => {
-            let eph_keys = sealed_sender_v1::EphemeralKeys::calculate(
-                &ephemeral_public,
-                &our_identity.public_key(),
-                &our_identity.private_key(),
-                false,
-            )?;
-
-            let message_key_bytes = crypto::aes256_ctr_hmacsha256_decrypt(
-                &encrypted_static,
-                &eph_keys.cipher_key()?,
-                &eph_keys.mac_key()?,
-            )?;
-
-            let static_key = PublicKey::try_from(&message_key_bytes[..])?;
-
-            let static_keys = sealed_sender_v1::StaticKeys::calculate(
-                &static_key,
-                our_identity.private_key(),
-                eph_keys.chain_key()?,
-                &encrypted_static,
-            )?;
-
-            let message_bytes = crypto::aes256_ctr_hmacsha256_decrypt(
-                &encrypted_message,
-                &static_keys.cipher_key()?,
-                &static_keys.mac_key()?,
-            )?;
-
-            let usmc = UnidentifiedSenderMessageContent::deserialize(&message_bytes)?;
-
-            if !bool::from(message_key_bytes.ct_eq(&usmc.sender()?.key()?.serialize())) {
-                return Err(SignalProtocolError::InvalidSealedSenderMessage(
-                    "sender certificate key does not match message key".to_string(),
-                ));
-            }
-
-            Ok(usmc)
+        UnidentifiedSenderMessage::V1(sender_message) => {
+            SealedSenderV1::decrypt(identity_store, ctx, sender_message).await
         }
-        UnidentifiedSenderMessage::V2 {
-            ephemeral_public,
-            encrypted_message_key,
-            authentication_tag,
-            encrypted_message,
-        } => {
-            let m = sealed_sender_v2::apply_agreement_xor(
-                our_identity.private_key(),
-                &ephemeral_public,
-                Direction::Receiving,
-                &encrypted_message_key,
-            )?;
-
-            let keys = sealed_sender_v2::DerivedKeys::calculate(&m);
-            if !bool::from(keys.e.public_key()?.ct_eq(&ephemeral_public)) {
-                return Err(SignalProtocolError::InvalidSealedSenderMessage(
-                    "derived ephemeral key did not match key provided in message".to_string(),
-                ));
-            }
-
-            let mut message_bytes = encrypted_message.into_vec();
-            let result = Aes256GcmSiv::new(&keys.k).and_then(|aes_gcm_siv| {
-                aes_gcm_siv.decrypt_with_appended_tag(
-                    &mut message_bytes,
-                    // There's no nonce because the key is already one-use.
-                    &[0; Aes256GcmSiv::NONCE_SIZE],
-                    // And there's no associated data.
-                    &[],
-                )
-            });
-            if let Err(err) = result {
-                return Err(SignalProtocolError::InvalidSealedSenderMessage(format!(
-                    "failed to decrypt inner message: {}",
-                    err
-                )));
-            }
-
-            let usmc = UnidentifiedSenderMessageContent::deserialize(&message_bytes)?;
-
-            let at = sealed_sender_v2::compute_authentication_tag(
-                our_identity.private_key(),
-                &usmc.sender()?.key()?,
-                Direction::Receiving,
-                &ephemeral_public,
-                &encrypted_message_key,
-            )?;
-            if !bool::from(authentication_tag.ct_eq(&at)) {
-                return Err(SignalProtocolError::InvalidSealedSenderMessage(
-                    "sender certificate key does not match authentication tag".to_string(),
-                ));
-            }
-
-            Ok(usmc)
+        UnidentifiedSenderMessage::V2(sender_message) => {
+            SealedSenderV2::decrypt(identity_store, ctx, sender_message).await
         }
     }
 }
 
+/// The decrypted initial message of a Double Ratchet chain, after performing a successful X3DH
+/// key agreement.
 #[derive(Debug)]
 pub struct SealedSenderDecryptionResult {
     pub sender_uuid: String,
     pub sender_e164: Option<String>,
-    pub device_id: u32,
+    pub device_id: DeviceId,
     pub message: Vec<u8>,
 }
 
@@ -1119,7 +1269,7 @@ impl SealedSenderDecryptionResult {
         Ok(self.sender_e164.as_deref())
     }
 
-    pub fn device_id(&self) -> Result<u32> {
+    pub fn device_id(&self) -> Result<DeviceId> {
         Ok(self.device_id)
     }
 
@@ -1128,23 +1278,27 @@ impl SealedSenderDecryptionResult {
     }
 }
 
+/// Call [sealed_sender_decrypt_to_usmc], then validate the server's signature.
 #[allow(clippy::too_many_arguments)]
-pub async fn sealed_sender_decrypt(
-    ciphertext: &[u8],
-    trust_root: &PublicKey,
+pub async fn sealed_sender_decrypt<'a>(
+    ciphertext: &'a [u8],
+    trust_root: &'a PublicKey,
     timestamp: u64,
     local_e164: Option<String>,
     local_uuid: String,
-    local_device_id: u32,
-    identity_store: &mut dyn IdentityKeyStore,
-    session_store: &mut dyn SessionStore,
-    pre_key_store: &mut dyn PreKeyStore,
-    signed_pre_key_store: &mut dyn SignedPreKeyStore,
+    local_device_id: DeviceId,
+    identity_store: &'a mut dyn IdentityKeyStore,
+    session_store: &'a mut dyn SessionStore,
+    pre_key_store: &'a mut dyn PreKeyStore,
+    signed_pre_key_store: &'a mut dyn SignedPreKeyStore,
     ctx: Context,
 ) -> Result<SealedSenderDecryptionResult> {
     let usmc = sealed_sender_decrypt_to_usmc(ciphertext, identity_store, ctx).await?;
 
-    if !usmc.sender()?.validate(trust_root, timestamp)? {
+    if !usmc.sender()?.verify_signature(ServerSignature {
+        trust_root: *trust_root,
+        validation_time: timestamp,
+    })? {
         return Err(SignalProtocolError::InvalidSealedSenderMessage(
             "trust root validation failed".to_string(),
         ));
@@ -1273,6 +1427,9 @@ fn test_lossless_round_trip() -> Result<()> {
     };
 
     let sender_certificate = SenderCertificate::from_protobuf(&sender_certificate_data)?;
-    assert!(sender_certificate.validate(&trust_root.public_key()?, 31336)?);
+    assert!(sender_certificate.verify_signature(ServerSignature {
+        trust_root: trust_root.public_key(),
+        validation_time: 31336
+    })?);
     Ok(())
 }
