@@ -1,16 +1,19 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020-2021 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
+use crate::ratchet::{self, AliceSignalProtocolParameters, BobSignalProtocolParameters};
+use crate::state::PreKeyId;
 use crate::{
+    curve::SIGNATURE_LENGTH,
+    utils::traits::{message::SignatureVerifiable, serde::Serializable},
     Context, Direction, IdentityKeyStore, KeyPair, PreKeyBundle, PreKeySignalMessage, PreKeyStore,
-    ProtocolAddress, Result, SessionRecord, SessionStore, SignalProtocolError, SignedPreKeyStore,
+    ProtocolAddress, PublicKeySignature, Result, SessionRecord, SessionStore, SignalProtocolError,
+    SignedPreKeyStore,
 };
 
-use crate::ratchet;
-use crate::ratchet::{AliceSignalProtocolParameters, BobSignalProtocolParameters};
-use crate::state::PreKeyId;
+use arrayref::array_ref;
 use rand::{CryptoRng, Rng};
 
 /*
@@ -138,10 +141,13 @@ pub async fn process_prekey_bundle<R: Rng + CryptoRng>(
         ));
     }
 
-    if !their_identity_key.public_key().verify_signature(
-        &bundle.signed_pre_key_public()?.serialize(),
-        bundle.signed_pre_key_signature()?,
-    )? {
+    if !their_identity_key
+        .public_key()
+        .verify_signature(PublicKeySignature {
+            message: &bundle.signed_pre_key_public()?.serialize(),
+            signature: array_ref![bundle.signed_pre_key_signature()?, 0, SIGNATURE_LENGTH],
+        })?
+    {
         return Err(SignalProtocolError::SignatureValidationFailed);
     }
 

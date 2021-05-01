@@ -1,11 +1,12 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020-2021 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
 mod support;
 
 use futures::executor::block_on;
+use libsignal_protocol::utils::traits::serde::{RefSerializable, Serializable};
 use libsignal_protocol::*;
 use rand::rngs::OsRng;
 use std::convert::TryFrom;

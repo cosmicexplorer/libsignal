@@ -31,19 +31,19 @@ pub mod kdf;
 pub mod proto;
 mod protocol;
 pub mod ratchet;
-mod sealed_sender;
+pub mod sealed_sender;
 mod sender_keys;
 mod session;
 mod session_cipher;
 mod state;
 mod storage;
-mod utils;
+pub mod utils;
 
 use error::Result;
 
 pub use {
     address::ProtocolAddress,
-    curve::{KeyPair, PrivateKey, PublicKey},
+    curve::{KeyPair, PrivateKey, PublicKey, PublicKeySignature},
     error::SignalProtocolError,
     fingerprint::{DisplayableFingerprint, Fingerprint, ScannableFingerprint},
     group_cipher::{
@@ -53,8 +53,7 @@ pub use {
     identity_key::{IdentityKey, IdentityKeyPair},
     kdf::HKDF,
     protocol::{
-        CiphertextMessage, CiphertextMessageType, PreKeySignalMessage,
-        SenderKeyDistributionMessage, SenderKeyMessage, SignalMessage,
+        PreKeySignalMessage, SenderKeyDistributionMessage, SenderKeyMessage, SignalMessage,
     },
     ratchet::{
         initialize_alice_session_record, initialize_bob_session_record,
@@ -63,8 +62,9 @@ pub use {
     sealed_sender::{
         sealed_sender_decrypt, sealed_sender_decrypt_to_usmc, sealed_sender_encrypt,
         sealed_sender_encrypt_from_usmc, sealed_sender_multi_recipient_encrypt,
-        sealed_sender_multi_recipient_fan_out, ContentHint, SealedSenderDecryptionResult,
-        SenderCertificate, ServerCertificate, UnidentifiedSenderMessageContent,
+        sealed_sender_multi_recipient_fan_out, CiphertextMessage, CiphertextMessageType,
+        ContentHint, SealedSenderDecryptionResult, SealedSenderV1, SealedSenderV2,
+        SenderCertificate, ServerCertificate, ServerSignature, UnidentifiedSenderMessageContent,
     },
     sender_keys::SenderKeyRecord,
     session::{process_prekey, process_prekey_bundle},

@@ -1,10 +1,13 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020-2021 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
 use crate::proto::storage::SignedPreKeyRecordStructure;
-use crate::{KeyPair, PrivateKey, PublicKey, Result};
+use crate::{
+    utils::traits::serde::{Deserializable, Serializable},
+    KeyPair, PrivateKey, PublicKey, Result,
+};
 use prost::Message;
 
 pub type SignedPreKeyId = u32;

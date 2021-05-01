@@ -4,8 +4,17 @@
 //
 
 use libsignal_bridge_macros::*;
-use libsignal_protocol::error::Result;
 use libsignal_protocol::*;
+use libsignal_protocol::{
+    consts::byte_lengths::SIGNATURE_LENGTH,
+    error::Result,
+    utils::traits::{
+        message::SignatureVerifiable,
+        serde::{Deserializable, RefSerializable, Serializable},
+    },
+};
+
+use arrayref::array_ref;
 use static_assertions::const_assert_eq;
 use std::convert::TryFrom;
 use uuid::Uuid;
@@ -102,7 +111,10 @@ fn ECPublicKey_Compare(key1: &PublicKey, key2: &PublicKey) -> i32 {
 
 #[bridge_fn(ffi = "publickey_verify", node = "PublicKey_Verify")]
 fn ECPublicKey_Verify(key: &PublicKey, message: &[u8], signature: &[u8]) -> Result<bool> {
-    key.verify_signature(&message, &signature)
+    key.verify_signature(PublicKeySignature {
+        message,
+        signature: array_ref![signature, 0, SIGNATURE_LENGTH],
+    })
 }
 
 bridge_deserialize!(

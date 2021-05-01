@@ -7,6 +7,10 @@ mod support;
 use support::*;
 
 use futures::executor::block_on;
+use libsignal_protocol::utils::traits::{
+    message::SignatureVerifiable,
+    serde::{Deserializable, RefSerializable},
+};
 use libsignal_protocol::*;
 use rand::rngs::OsRng;
 use std::convert::TryFrom;
@@ -21,11 +25,11 @@ fn test_server_cert() -> Result<(), SignalProtocolError> {
     let server_cert =
         ServerCertificate::new(1, server_key.public_key, &trust_root.private_key, &mut rng)?;
 
-    let serialized = server_cert.serialized()?.to_vec();
+    let serialized = server_cert.serialize().to_vec();
 
     let recovered = ServerCertificate::deserialize(&serialized)?;
 
-    assert_eq!(recovered.validate(&trust_root.public_key)?, true);
+    assert_eq!(recovered.verify_signature(trust_root.public_key)?, true);
 
     let mut cert_data = serialized;
     let cert_bits = cert_data.len() * 8;
@@ -37,7 +41,7 @@ fn test_server_cert() -> Result<(), SignalProtocolError> {
 
         match cert {
             Ok(cert) => {
-                assert_eq!(cert.validate(&trust_root.public_key)?, false);
+                assert_eq!(cert.verify_signature(trust_root.public_key)?, false);
             }
             Err(e) => match e {
                 SignalProtocolError::InvalidProtobufEncoding
@@ -70,11 +74,11 @@ fn test_revoked_server_cert() -> Result<(), SignalProtocolError> {
         &mut rng,
     )?;
 
-    let serialized = server_cert.serialized()?.to_vec();
+    let serialized = server_cert.serialize().to_vec();
 
     let recovered = ServerCertificate::deserialize(&serialized)?;
 
-    assert_eq!(recovered.validate(&trust_root.public_key)?, false);
+    assert_eq!(recovered.verify_signature(trust_root.public_key)?, false);
 
     Ok(())
 }
@@ -103,13 +107,16 @@ fn test_sender_cert() -> Result<(), SignalProtocolError> {
         &mut rng,
     )?;
 
-    assert_eq!(sender_cert.validate(&trust_root.public_key, expires)?, true);
     assert_eq!(
-        sender_cert.validate(&trust_root.public_key, expires + 1)?,
+        sender_cert.verify_signature(ServerSignature::new(trust_root.public_key, expires))?,
+        true
+    );
+    assert_eq!(
+        sender_cert.verify_signature(ServerSignature::new(trust_root.public_key, expires + 1))?,
         false
     ); // expired
 
-    let mut sender_cert_data = sender_cert.serialized()?.to_vec();
+    let mut sender_cert_data = sender_cert.serialize().to_vec();
     let sender_cert_bits = sender_cert_data.len() * 8;
 
     for b in 0..sender_cert_bits {
@@ -119,7 +126,10 @@ fn test_sender_cert() -> Result<(), SignalProtocolError> {
 
         match cert {
             Ok(cert) => {
-                assert_eq!(cert.validate(&trust_root.public_key, expires)?, false);
+                assert_eq!(
+                    cert.verify_signature(ServerSignature::new(trust_root.public_key, expires))?,
+                    false
+                );
             }
             Err(e) => match e {
                 SignalProtocolError::InvalidProtobufEncoding

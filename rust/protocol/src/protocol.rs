@@ -4,14 +4,20 @@
 //
 
 use crate::consts::{
+    byte_lengths::SIGNATURE_LENGTH,
     types::{Counter, VersionType},
     CIPHERTEXT_MESSAGE_CURRENT_VERSION,
 };
 use crate::proto;
-use crate::{IdentityKey, PrivateKey, PublicKey, Result, SignalProtocolError};
+use crate::utils::traits::{
+    message::SignatureVerifiable,
+    serde::{Deserializable, Serializable},
+};
+use crate::{IdentityKey, PrivateKey, PublicKey, PublicKeySignature, Result, SignalProtocolError};
 
 use std::convert::TryFrom;
 
+use arrayref::array_ref;
 use hmac::{Hmac, Mac, NewMac};
 use prost::Message;
 use rand::{CryptoRng, Rng};
@@ -159,9 +165,6 @@ impl SignalMessage {
         mac_key: &[u8],
         message: &[u8],
     ) -> Result<[u8; Self::MAC_LENGTH]> {
-        if mac_key.len() != 32 {
-            return Err(SignalProtocolError::InvalidMacKeyLength(mac_key.len()));
-        }
         let mut mac = Hmac::<Sha256>::new_varkey(mac_key).map_err(|_| {
             SignalProtocolError::InvalidArgument(format!(
                 "Invalid HMAC key length <{}>",
@@ -383,8 +386,6 @@ pub struct SenderKeyMessage {
 }
 
 impl SenderKeyMessage {
-    const SIGNATURE_LEN: usize = 64;
-
     pub fn new<R: CryptoRng + Rng>(
         distribution_id: Uuid,
         chain_id: u32,
@@ -400,12 +401,12 @@ impl SenderKeyMessage {
             ciphertext: Some(ciphertext.to_vec()),
         };
         let proto_message_len = proto_message.encoded_len();
-        let mut serialized = vec![0u8; 1 + proto_message_len + Self::SIGNATURE_LEN];
+        let mut serialized = vec![0u8; 1 + proto_message_len + SIGNATURE_LENGTH];
         serialized[0] =
             ((CIPHERTEXT_MESSAGE_CURRENT_VERSION & 0xF) << 4) | CIPHERTEXT_MESSAGE_CURRENT_VERSION;
         proto_message.encode(&mut &mut serialized[1..1 + proto_message_len])?;
         let signature =
-            signature_key.calculate_signature(&serialized[..1 + proto_message_len], csprng)?;
+            signature_key.calculate_signature(&serialized[..1 + proto_message_len], csprng);
         serialized[1 + proto_message_len..].copy_from_slice(&signature[..]);
         Ok(Self {
             message_version: CIPHERTEXT_MESSAGE_CURRENT_VERSION,
@@ -418,10 +419,14 @@ impl SenderKeyMessage {
     }
 
     pub fn verify_signature(&self, signature_key: &PublicKey) -> Result<bool> {
-        let valid = signature_key.verify_signature(
-            &self.serialized[..self.serialized.len() - Self::SIGNATURE_LEN],
-            &self.serialized[self.serialized.len() - Self::SIGNATURE_LEN..],
-        )?;
+        let valid = signature_key.verify_signature(PublicKeySignature {
+            message: &self.serialized[..self.serialized.len() - SIGNATURE_LENGTH],
+            signature: array_ref![
+                &self.serialized[self.serialized.len() - SIGNATURE_LENGTH..],
+                0,
+                SIGNATURE_LENGTH
+            ],
+        })?;
 
         Ok(valid)
     }
@@ -467,7 +472,7 @@ impl TryFrom<&[u8]> for SenderKeyMessage {
     type Error = SignalProtocolError;
 
     fn try_from(value: &[u8]) -> Result<Self> {
-        if value.len() < 1 + Self::SIGNATURE_LEN {
+        if value.len() < 1 + SIGNATURE_LENGTH {
             return Err(SignalProtocolError::CiphertextMessageTooShort(value.len()));
         }
         let message_version = value[0] >> 4;
@@ -482,7 +487,7 @@ impl TryFrom<&[u8]> for SenderKeyMessage {
             ));
         }
         let proto_structure =
-            proto::wire::SenderKeyMessage::decode(&value[1..value.len() - Self::SIGNATURE_LEN])?;
+            proto::wire::SenderKeyMessage::decode(&value[1..value.len() - SIGNATURE_LENGTH])?;
 
         let distribution_id = proto_structure
             .distribution_uuid

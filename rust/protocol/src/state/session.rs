@@ -3,13 +3,17 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-use crate::ratchet::{ChainKey, MessageKeys, RootKey};
-use crate::{IdentityKey, KeyPair, PrivateKey, PublicKey, Result, SignalProtocolError, HKDF};
-
 use crate::consts::limits;
 use crate::proto::storage::session_structure;
 use crate::proto::storage::{RecordStructure, SessionStructure};
+use crate::ratchet::{ChainKey, MessageKeys, RootKey};
 use crate::state::{PreKeyId, SignedPreKeyId};
+use crate::{
+    utils::traits::serde::{Deserializable, Serializable},
+    IdentityKey, KeyPair, PrivateKey, PublicKey, Result, SignalProtocolError, HKDF,
+};
+
+use arrayref::array_ref;
 use prost::Message;
 
 use std::collections::VecDeque;

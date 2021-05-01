@@ -12,18 +12,12 @@
 //!
 //! [`X3DH`]: https://signal.org/docs/specifications/x3dh/#receiving-the-initial-message
 
+use crate::crypto;
+use crate::proto;
+use crate::session_cipher;
 use crate::{
     address::DeviceId,
-    consts::{
-        byte_lengths::SIGNATURE_LENGTH,
-        types::{as_key_bytes, KeyBytes},
-    },
-    crypto,
-    curve::{KeyPair, PrivateKey, PublicKey, PublicKeySignature},
-    kdf::{HKDF, KDF},
-    proto,
-    protocol::CiphertextMessageType,
-    session_cipher,
+    curve::{PublicKeySignature, SIGNATURE_LENGTH},
     utils::{
         traits::{
             message::SignatureVerifiable,
@@ -31,8 +25,9 @@ use crate::{
         },
         unwrap::no_encoding_error,
     },
-    Context, Direction, IdentityKeyStore, PreKeySignalMessage, PreKeyStore, ProtocolAddress,
-    Result, SessionStore, SignalMessage, SignalProtocolError, SignedPreKeyStore,
+    Context, Direction, IdentityKeyStore, KeyPair, PreKeySignalMessage, PreKeyStore, PrivateKey,
+    ProtocolAddress, PublicKey, Result, SenderKeyMessage, SessionStore, SignalMessage,
+    SignalProtocolError, SignedPreKeyStore, HKDF,
 };
 
 use arrayref::array_ref;
@@ -41,10 +36,9 @@ use curve25519_dalek::scalar::Scalar;
 use prost::Message;
 use rand::{CryptoRng, Rng};
 use signal_crypto::Aes256GcmSiv;
+use std::convert::{TryFrom, TryInto};
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
-
-use std::convert::{AsRef, TryFrom, TryInto};
 
 /// The `ContentHint` object from [proto::sealed_sender].
 pub type ProtoContentHint = proto::sealed_sender::unidentified_sender_message::message::ContentHint;
@@ -123,7 +117,7 @@ impl SignatureVerifiable<PublicKey> for ServerCertificate {
 }
 
 impl ServerCertificate {
-    /// ???/Create a new instance.
+    /// Create a new instance.
     pub fn new<R: Rng + CryptoRng>(
         key_id: u32,
         key: PublicKey,
@@ -214,6 +208,15 @@ pub struct ServerSignature {
     pub validation_time: u64,
 }
 
+impl ServerSignature {
+    pub fn new(trust_root: PublicKey, validation_time: u64) -> Self {
+        Self {
+            trust_root,
+            validation_time,
+        }
+    }
+}
+
 impl SignatureVerifiable<ServerSignature> for SenderCertificate {
     fn verify_signature(&self, signature: ServerSignature) -> Result<bool> {
         let ServerSignature {
@@ -251,7 +254,7 @@ impl SignatureVerifiable<ServerSignature> for SenderCertificate {
 }
 
 impl SenderCertificate {
-    /// ???/Create a new instance.
+    /// Create a new instance.
     pub fn new<R: Rng + CryptoRng>(
         sender_uuid: String,
         sender_e164: Option<String>,
@@ -465,7 +468,7 @@ pub struct UnidentifiedSenderMessageContent {
 }
 
 impl UnidentifiedSenderMessageContent {
-    /// ???/Create a new instance.
+    /// Create a new instance.
     pub fn new(
         msg_type: CiphertextMessageType,
         sender: SenderCertificate,
@@ -844,6 +847,28 @@ pub mod sealed_sender_v1 {
         }
     }
 
+    pub async fn sealed_sender_encrypt<R: Rng + CryptoRng>(
+        destination: &ProtocolAddress,
+        sender_cert: &SenderCertificate,
+        ptext: &[u8],
+        session_store: &mut dyn SessionStore,
+        identity_store: &mut dyn IdentityKeyStore,
+        ctx: Context,
+        rng: &mut R,
+    ) -> Result<Vec<u8>> {
+        let message =
+            session_cipher::message_encrypt(ptext, destination, session_store, identity_store, ctx)
+                .await?;
+        let usmc = UnidentifiedSenderMessageContent::new(
+            message.message_type(),
+            sender_cert.clone(),
+            message.serialize().to_vec(),
+            ContentHint::Default,
+            None,
+        );
+        sealed_sender_encrypt_from_usmc(destination, &usmc, identity_store, ctx, rng).await
+    }
+
     /// Implements `.encrypt()` for [SealedSenderV1].
     pub async fn sealed_sender_encrypt_from_usmc<R: Rng + CryptoRng>(
         destination: &ProtocolAddress,
@@ -900,7 +925,8 @@ pub mod sealed_sender_v1 {
     }
 }
 pub use sealed_sender_v1::{
-    sealed_sender_encrypt_from_usmc, SealedSenderV1, UnidentifiedSenderMessageV1,
+    sealed_sender_encrypt, sealed_sender_encrypt_from_usmc, SealedSenderV1,
+    UnidentifiedSenderMessageV1,
 };
 
 /// This is a single-key multi-recipient KEM, defined in [Manuel Barbosa's "Randomness Reuse:
@@ -945,7 +971,7 @@ pub mod sealed_sender_v2 {
 
     impl DerivedKeys {
         pub fn calculate(m: &[u8]) -> DerivedKeys {
-            let kdf = HKDF::new();
+            let kdf = HKDF::new_current();
             let r = kdf.derive_secrets(&m, LABEL_R, 64);
             let k = kdf.derive_secrets(&m, LABEL_K, 32);
             let e_raw =
@@ -978,7 +1004,7 @@ pub mod sealed_sender_v2 {
         }
         .concat();
 
-        let mut result = HKDF::new().derive_secrets(&agreement_key_input, LABEL_DH, 32);
+        let mut result = HKDF::new_current().derive_secrets(&agreement_key_input, LABEL_DH, 32);
         result
             .iter_mut()
             .zip(input)
@@ -1008,7 +1034,7 @@ pub mod sealed_sender_v2 {
             }
         }
 
-        HKDF::new().derive_secrets(&agreement_key_input, LABEL_DH_S, 16)
+        HKDF::new_current().derive_secrets(&agreement_key_input, LABEL_DH_S, 16)
     }
 
     pub const SEALED_SENDER_V2_VERSION: crate::consts::types::VersionType = 2;

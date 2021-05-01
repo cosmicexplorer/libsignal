@@ -3,10 +3,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-use crate::consts::limits;
+use crate::consts::{limits, types::Counter};
 use crate::crypto::hmac_sha256;
 use crate::proto::storage as storage_proto;
-use crate::{PrivateKey, PublicKey, Result, SignalProtocolError, HKDF};
+use crate::{
+    utils::traits::serde::{Deserializable, Serializable},
+    PrivateKey, PublicKey, Result, SignalProtocolError, HKDF,
+};
 
 use prost::Message;
 use std::collections::VecDeque;
@@ -14,7 +17,7 @@ use std::convert::TryFrom;
 
 #[derive(Debug, Clone)]
 pub struct SenderMessageKey {
-    iteration: u32,
+    iteration: Counter,
     iv: Vec<u8>,
     cipher_key: Vec<u8>,
     seed: Vec<u8>,

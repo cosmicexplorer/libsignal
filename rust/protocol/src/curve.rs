@@ -9,6 +9,10 @@ mod curve25519;
 
 pub use curve25519::{AGREEMENT_LENGTH, PRIVATE_KEY_LENGTH, PUBLIC_KEY_LENGTH, SIGNATURE_LENGTH};
 
+use crate::utils::traits::{
+    message::SignatureVerifiable,
+    serde::{Deserializable, Serializable},
+};
 use crate::{Result, SignalProtocolError};
 
 use std::cmp::Ordering;
@@ -18,6 +22,10 @@ use std::fmt;
 use arrayref::array_ref;
 use rand::{CryptoRng, Rng};
 use subtle::ConstantTimeEq;
+
+pub trait Keyed {
+    fn key_type(&self) -> KeyType;
+}
 
 /// TODO: describe the intent of this enum!
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -68,7 +76,64 @@ impl PublicKey {
         Self { key }
     }
 
-    pub fn deserialize(value: &[u8]) -> Result<Self> {
+    /// Return the bytes that make up this public key.
+    pub fn public_key_bytes(&self) -> Result<&[u8]> {
+        match self.key {
+            PublicKeyData::DjbPublicKey(ref v) => Ok(v),
+        }
+    }
+
+    /// Create an instance by attempting to interpret `bytes` as a [KeyType::Djb] public key.
+    pub fn from_djb_public_key_bytes(bytes: &[u8]) -> Result<Self> {
+        match <[u8; PUBLIC_KEY_LENGTH]>::try_from(bytes) {
+            Err(_) => Err(SignalProtocolError::BadKeyLength(KeyType::Djb, bytes.len())),
+            Ok(key) => Ok(PublicKey {
+                key: PublicKeyData::DjbPublicKey(key),
+            }),
+        }
+    }
+
+    fn key_data(&self) -> &[u8] {
+        match self.key {
+            PublicKeyData::DjbPublicKey(ref k) => k.as_ref(),
+        }
+    }
+}
+
+impl Keyed for PublicKey {
+    fn key_type(&self) -> KeyType {
+        match self.key {
+            PublicKeyData::DjbPublicKey(_) => KeyType::Djb,
+        }
+    }
+}
+
+/// All the information necessary to implement [SignatureVerifiable] for [PublicKey].
+pub struct PublicKeySignature<'a> {
+    pub message: &'a [u8],
+    pub signature: &'a [u8; SIGNATURE_LENGTH],
+}
+
+impl<'a> SignatureVerifiable<PublicKeySignature<'a>> for PublicKey {
+    fn verify_signature(&self, sig: PublicKeySignature<'a>) -> Result<bool> {
+        let PublicKeySignature { message, signature } = sig;
+        match self.key {
+            PublicKeyData::DjbPublicKey(pub_key) => {
+                if signature.len() != 64 {
+                    return Ok(false);
+                }
+                Ok(curve25519::KeyPair::verify_signature(
+                    &pub_key,
+                    message,
+                    array_ref![signature, 0, 64],
+                ))
+            }
+        }
+    }
+}
+
+impl Deserializable for PublicKey {
+    fn deserialize(value: &[u8]) -> Result<Self> {
         if value.is_empty() {
             return Err(SignalProtocolError::NoKeyTypeIdentifier);
         }
@@ -87,25 +152,10 @@ impl PublicKey {
             }
         }
     }
+}
 
-    /// Return the bytes that make up this public key.
-    pub fn public_key_bytes(&self) -> Result<&[u8]> {
-        match self.key {
-            PublicKeyData::DjbPublicKey(ref v) => Ok(v),
-        }
-    }
-
-    /// Create an instance by attempting to interpret `bytes` as a [KeyType::Djb] public key.
-    pub fn from_djb_public_key_bytes(bytes: &[u8]) -> Result<Self> {
-        match <[u8; PUBLIC_KEY_LENGTH]>::try_from(bytes) {
-            Err(_) => Err(SignalProtocolError::BadKeyLength(KeyType::Djb, bytes.len())),
-            Ok(key) => Ok(PublicKey {
-                key: PublicKeyData::DjbPublicKey(key),
-            }),
-        }
-    }
-
-    pub fn serialize(&self) -> Box<[u8]> {
+impl Serializable<Box<[u8]>> for PublicKey {
+    fn serialize(&self) -> Box<[u8]> {
         let value_len = match self.key {
             PublicKeyData::DjbPublicKey(v) => v.len(),
         };
@@ -115,33 +165,6 @@ impl PublicKey {
             PublicKeyData::DjbPublicKey(v) => result.extend_from_slice(&v),
         }
         result.into_boxed_slice()
-    }
-
-    pub fn verify_signature(&self, message: &[u8], signature: &[u8]) -> Result<bool> {
-        match self.key {
-            PublicKeyData::DjbPublicKey(pub_key) => {
-                if signature.len() != 64 {
-                    return Ok(false);
-                }
-                Ok(curve25519::KeyPair::verify_signature(
-                    &pub_key,
-                    message,
-                    array_ref![signature, 0, 64],
-                ))
-            }
-        }
-    }
-
-    fn key_data(&self) -> &[u8] {
-        match self.key {
-            PublicKeyData::DjbPublicKey(ref k) => k.as_ref(),
-        }
-    }
-
-    pub fn key_type(&self) -> KeyType {
-        match self.key {
-            PublicKeyData::DjbPublicKey(_) => KeyType::Djb,
-        }
     }
 }
 
@@ -217,28 +240,6 @@ pub struct PrivateKey {
 }
 
 impl PrivateKey {
-    pub fn deserialize(value: &[u8]) -> Result<Self> {
-        if value.len() != PRIVATE_KEY_LENGTH {
-            Err(SignalProtocolError::BadKeyLength(KeyType::Djb, value.len()))
-        } else {
-            let mut key = [0u8; PRIVATE_KEY_LENGTH];
-            key.copy_from_slice(&value[..PRIVATE_KEY_LENGTH]);
-            // Clamp:
-            key[0] &= 0xF8;
-            key[PRIVATE_KEY_LENGTH - 1] &= 0x7F;
-            key[PRIVATE_KEY_LENGTH - 1] |= 0x40;
-            Ok(Self {
-                key: PrivateKeyData::DjbPrivateKey(key),
-            })
-        }
-    }
-
-    pub fn serialize(&self) -> Vec<u8> {
-        match self.key {
-            PrivateKeyData::DjbPrivateKey(v) => v.to_vec(),
-        }
-    }
-
     /// Derive a public key from the current private key's contents.
     pub fn public_key(&self) -> Result<PublicKey> {
         match self.key {
@@ -246,12 +247,6 @@ impl PrivateKey {
                 let public_key = curve25519::derive_public_key(&private_key);
                 Ok(PublicKey::new(PublicKeyData::DjbPublicKey(public_key)))
             }
-        }
-    }
-
-    pub fn key_type(&self) -> KeyType {
-        match self.key {
-            PrivateKeyData::DjbPrivateKey(_) => KeyType::Djb,
         }
     }
 
@@ -276,6 +271,40 @@ impl PrivateKey {
                 let kp = curve25519::KeyPair::from(priv_key);
                 Ok(Box::new(kp.calculate_agreement(&pub_key)))
             }
+        }
+    }
+}
+
+impl Keyed for PrivateKey {
+    fn key_type(&self) -> KeyType {
+        match self.key {
+            PrivateKeyData::DjbPrivateKey(_) => KeyType::Djb,
+        }
+    }
+}
+
+impl Deserializable for PrivateKey {
+    fn deserialize(value: &[u8]) -> Result<Self> {
+        if value.len() != PRIVATE_KEY_LENGTH {
+            Err(SignalProtocolError::BadKeyLength(KeyType::Djb, value.len()))
+        } else {
+            let mut key = [0u8; PRIVATE_KEY_LENGTH];
+            key.copy_from_slice(&value[..PRIVATE_KEY_LENGTH]);
+            // Clamp:
+            key[0] &= 0xF8;
+            key[PRIVATE_KEY_LENGTH - 1] &= 0x7F;
+            key[PRIVATE_KEY_LENGTH - 1] |= 0x40;
+            Ok(Self {
+                key: PrivateKeyData::DjbPrivateKey(key),
+            })
+        }
+    }
+}
+
+impl Serializable<Vec<u8>> for PrivateKey {
+    fn serialize(&self) -> Vec<u8> {
+        match self.key {
+            PrivateKeyData::DjbPrivateKey(v) => v.to_vec(),
         }
     }
 }
@@ -350,9 +379,11 @@ impl KeyPair {
 
 #[cfg(test)]
 mod tests {
-    use rand::rngs::OsRng;
-
     use super::*;
+    use crate::PublicKeySignature;
+
+    use arrayref::array_ref;
+    use rand::rngs::OsRng;
 
     #[test]
     fn test_large_signatures() -> Result<()> {
@@ -363,12 +394,21 @@ mod tests {
             .private_key
             .calculate_signature(&message, &mut csprng)?;
 
-        assert!(key_pair.public_key.verify_signature(&message, &signature)?);
+        assert!(key_pair.public_key.verify_signature(PublicKeySignature {
+            message: &message,
+            signature: array_ref![&signature, 0, 64],
+        })?);
         message[0] ^= 0x01u8;
-        assert!(!key_pair.public_key.verify_signature(&message, &signature)?);
+        assert!(!key_pair.public_key.verify_signature(PublicKeySignature {
+            message: &message,
+            signature: array_ref![&signature, 0, 64],
+        })?);
         message[0] ^= 0x01u8;
-        let public_key = key_pair.private_key.public_key()?;
-        assert!(public_key.verify_signature(&message, &signature)?);
+        let public_key = key_pair.private_key.public_key();
+        assert!(public_key.verify_signature(PublicKeySignature {
+            message: &message,
+            signature: array_ref![&signature, 0, 64],
+        })?);
 
         Ok(())
     }

@@ -5,6 +5,15 @@
 
 //! Magic numbers.
 
+/// Lengths of byte strings used throughout the protocol.
+pub mod byte_lengths {
+    pub use crate::curve::{
+        AGREEMENT_LENGTH, PRIVATE_KEY_LENGTH, PUBLIC_KEY_LENGTH, SIGNATURE_LENGTH,
+    };
+
+    pub use crate::crypto::{AES_INPUT_SIZE, AES_NONCE_SIZE, HMAC_OUTPUT_SIZE};
+}
+
 /// Types which must stay static for correctness, and often correlate to fields of structs in
 /// [crate::proto].
 pub mod types {

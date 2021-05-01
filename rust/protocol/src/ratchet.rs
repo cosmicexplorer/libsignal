@@ -12,9 +12,11 @@ mod params;
 
 pub use self::keys::{ChainKey, MessageKeys, RootKey};
 pub use self::params::{AliceSignalProtocolParameters, BobSignalProtocolParameters};
+
 use crate::consts::CIPHERTEXT_MESSAGE_CURRENT_VERSION;
 use crate::proto::storage::SessionStructure;
 use crate::state::SessionState;
+use crate::utils::traits::serde::Serializable;
 use crate::{KeyPair, Result, SessionRecord};
 use rand::{CryptoRng, Rng};
 

@@ -1,5 +1,5 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020-2021 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
@@ -7,6 +7,7 @@ mod support;
 
 use async_trait::async_trait;
 use futures::executor::block_on;
+use libsignal_protocol::utils::traits::serde::RefSerializable;
 use libsignal_protocol::*;
 use rand::rngs::OsRng;
 use rand::seq::SliceRandom;
@@ -366,7 +367,7 @@ fn group_sealed_sender() -> Result<(), SignalProtocolError> {
             sealed_sender_decrypt_to_usmc(&carol_ctext, &mut carol_store.identity_store, None)
                 .await?;
 
-        assert_eq!(carol_usmc.serialized()?, bob_usmc.serialized()?);
+        assert_eq!(carol_usmc.serialize(), bob_usmc.serialize());
 
         let carol_plaintext = group_decrypt(
             carol_usmc.contents()?,
