@@ -3,7 +3,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-use crate::{error::Result, SignalProtocolError};
+//! Application of cryptographic primitives, including HMAC and AES.
+
+use crate::{error::Result, utils::unwrap::no_hmac_varkey_error, SignalProtocolError};
 
 use aes::cipher::stream::{NewStreamCipher, SyncStreamCipher};
 use aes::Aes256;
@@ -19,6 +21,9 @@ pub const AES_INPUT_SIZE: usize = 32;
 /// The size of the generated nonce used in [aes_256_ctr_encrypt].
 pub const AES_NONCE_SIZE: usize = 16;
 
+/// Encrypt `ptext` using `key` with AES-256 in CTR mode.
+///
+/// `key` is expanded to 256 bits.
 pub fn aes_256_ctr_encrypt(ptext: &[u8], key: &[u8; AES_INPUT_SIZE]) -> Vec<u8> {
     let zero_nonce = [0u8; AES_NONCE_SIZE];
     let mut cipher = Ctr128::<Aes256>::new(key.into(), (&zero_nonce).into());
@@ -28,10 +33,16 @@ pub fn aes_256_ctr_encrypt(ptext: &[u8], key: &[u8; AES_INPUT_SIZE]) -> Vec<u8> 
     ctext
 }
 
+/// Decrypt `ptext` using `key` with AES-256 in CTR mode.
+///
+/// `key` is expanded to 256 bits. Note that this method just delegates to [aes_256_ctr_encrypt].
 pub fn aes_256_ctr_decrypt(ctext: &[u8], key: &[u8; AES_INPUT_SIZE]) -> Vec<u8> {
     aes_256_ctr_encrypt(ctext, key)
 }
 
+/// Encrypt `ptext` using `key` and `iv` with AES-256 in CBC mode.
+///
+/// `key` is expanded to 256 bits.
 pub fn aes_256_cbc_encrypt(ptext: &[u8], key: &[u8], iv: &[u8]) -> Result<Vec<u8>> {
     match Cbc::<Aes256, Pkcs7>::new_var(key, iv) {
         Ok(mode) => Ok(mode.encrypt_vec(&ptext)),
@@ -41,6 +52,9 @@ pub fn aes_256_cbc_encrypt(ptext: &[u8], key: &[u8], iv: &[u8]) -> Result<Vec<u8
     }
 }
 
+/// Decrypt `ptext` using `key` and `iv` with AES-256 in CBC mode.
+///
+/// `key` is expanded to 256 bits.
 pub fn aes_256_cbc_decrypt(ctext: &[u8], key: &[u8], iv: &[u8]) -> Result<Vec<u8>> {
     if ctext.is_empty() || ctext.len() % 16 != 0 {
         return Err(SignalProtocolError::InvalidCiphertext);
@@ -64,12 +78,21 @@ pub fn aes_256_cbc_decrypt(ctext: &[u8], key: &[u8], iv: &[u8]) -> Result<Vec<u8
 /// The statically-known size of the output of [hmac_sha256].
 pub const HMAC_OUTPUT_SIZE: usize = 32;
 
+/// Calculate the HMAC-SHA256 code over `input` using `key`.
 pub fn hmac_sha256(key: &[u8], input: &[u8]) -> [u8; HMAC_OUTPUT_SIZE] {
-    let mut hmac = Hmac::<Sha256>::new_varkey(key).expect("HMAC-SHA256 should accept any size key");
+    let mut hmac = no_hmac_varkey_error(Hmac::<Sha256>::new_varkey(key));
     hmac.update(input);
     hmac.finalize().into_bytes().into()
 }
 
+/// Length of the MAC key used for [aes256_ctr_hmacsha256_encrypt] and
+/// [aes256_ctr_hmacsha256_decrypt].
+pub const MAC_KEY_LENGTH: usize = 10;
+
+/// Concatenate the results of [aes_256_ctr_encrypt] with `cipher_key` and [hmac_sha256] with
+/// `mac_key` over the message `msg`.
+///
+/// Only the first [MAC_KEY_LENGTH] bytes of the MAC key are used.
 pub fn aes256_ctr_hmacsha256_encrypt(
     msg: &[u8],
     cipher_key: &[u8; AES_INPUT_SIZE],
@@ -77,23 +100,27 @@ pub fn aes256_ctr_hmacsha256_encrypt(
 ) -> Vec<u8> {
     let ctext = aes_256_ctr_encrypt(msg, cipher_key);
     let mac = hmac_sha256(mac_key, &ctext);
-    let mut result = Vec::with_capacity(ctext.len() + 10);
+    let mut result = Vec::with_capacity(ctext.len() + MAC_KEY_LENGTH);
     result.extend_from_slice(&ctext);
-    result.extend_from_slice(&mac[..10]);
+    result.extend_from_slice(&mac[..MAC_KEY_LENGTH]);
     result
 }
 
+/// Validate that the MAC code from `mac_key` agrees with the ciphertext `ctext`, then decrypt with
+/// `cipher_key` using [aes_256_ctr_decrypt].
+///
+/// `ctext` is assumed to contain exactly [MAC_KEY_LENGTH] key bytes at the end.
 pub fn aes256_ctr_hmacsha256_decrypt(
     ctext: &[u8],
     cipher_key: &[u8; AES_INPUT_SIZE],
     mac_key: &[u8],
 ) -> Result<Vec<u8>> {
-    if ctext.len() < 10 {
+    if ctext.len() < MAC_KEY_LENGTH {
         return Err(SignalProtocolError::InvalidCiphertext);
     }
-    let ptext_len = ctext.len() - 10;
+    let ptext_len = ctext.len() - MAC_KEY_LENGTH;
     let our_mac = hmac_sha256(mac_key, &ctext[..ptext_len]);
-    let same: bool = our_mac[..10].ct_eq(&ctext[ptext_len..]).into();
+    let same: bool = our_mac[..MAC_KEY_LENGTH].ct_eq(&ctext[ptext_len..]).into();
     if !same {
         return Err(SignalProtocolError::InvalidCiphertext);
     }
