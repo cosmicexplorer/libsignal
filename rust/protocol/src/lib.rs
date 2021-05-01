@@ -3,6 +3,19 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
+//! Rust implementation of the **[Signal Protocol]** for asynchronous
+//! forward-secret public-key cryptography.
+//!
+//! In particular, this library implements operations conforming to the following specifications:
+//! - the **[X3DH]** key agreement protocol,
+//! - the **[Double Ratchet]** *(Axolotl)* messaging protocol,
+//! - the **[Sesame]** session agreement protocol.
+//!
+//! [Signal Protocol]: https://signal.org/
+//! [X3DH]: https://signal.org/docs/specifications/x3dh/
+//! [Double Ratchet]: https://signal.org/docs/specifications/doubleratchet/
+//! [Sesame]: https://signal.org/docs/specifications/sesame/
+
 #![warn(clippy::unwrap_used)]
 #![deny(unsafe_code)]
 
