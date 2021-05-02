@@ -8,8 +8,8 @@ mod params;
 
 pub use self::keys::{ChainKey, MessageKeys, RootKey};
 pub use self::params::{AliceSignalProtocolParameters, BobSignalProtocolParameters};
+use crate::consts::CIPHERTEXT_MESSAGE_CURRENT_VERSION;
 use crate::proto::storage::SessionStructure;
-use crate::protocol::CIPHERTEXT_MESSAGE_CURRENT_VERSION;
 use crate::state::SessionState;
 use crate::{KeyPair, Result, SessionRecord};
 use rand::{CryptoRng, Rng};

@@ -3,6 +3,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
+use crate::consts::{
+    types::{Counter, VersionType},
+    CIPHERTEXT_MESSAGE_CURRENT_VERSION,
+};
 use crate::proto;
 use crate::{IdentityKey, PrivateKey, PublicKey, Result, SignalProtocolError};
 
@@ -14,8 +18,6 @@ use rand::{CryptoRng, Rng};
 use sha2::Sha256;
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
-
-pub const CIPHERTEXT_MESSAGE_CURRENT_VERSION: u8 = 3;
 
 pub enum CiphertextMessage {
     SignalMessage(SignalMessage),
@@ -52,11 +54,11 @@ impl CiphertextMessage {
 
 #[derive(Debug, Clone)]
 pub struct SignalMessage {
-    message_version: u8,
+    message_version: VersionType,
     sender_ratchet_key: PublicKey,
-    counter: u32,
+    counter: Counter,
     #[allow(dead_code)]
-    previous_counter: u32,
+    previous_counter: Counter,
     ciphertext: Box<[u8]>,
     serialized: Box<[u8]>,
 }
@@ -65,11 +67,11 @@ impl SignalMessage {
     const MAC_LENGTH: usize = 8;
 
     pub fn new(
-        message_version: u8,
+        message_version: VersionType,
         mac_key: &[u8],
         sender_ratchet_key: PublicKey,
-        counter: u32,
-        previous_counter: u32,
+        counter: Counter,
+        previous_counter: Counter,
         ciphertext: &[u8],
         sender_identity_key: &IdentityKey,
         receiver_identity_key: &IdentityKey,
@@ -103,7 +105,7 @@ impl SignalMessage {
     }
 
     #[inline]
-    pub fn message_version(&self) -> u8 {
+    pub fn message_version(&self) -> VersionType {
         self.message_version
     }
 
@@ -113,7 +115,7 @@ impl SignalMessage {
     }
 
     #[inline]
-    pub fn counter(&self) -> u32 {
+    pub fn counter(&self) -> Counter {
         self.counter
     }
 
@@ -230,7 +232,7 @@ impl TryFrom<&[u8]> for SignalMessage {
 
 #[derive(Debug, Clone)]
 pub struct PreKeySignalMessage {
-    message_version: u8,
+    message_version: VersionType,
     registration_id: u32,
     pre_key_id: Option<u32>,
     signed_pre_key_id: u32,
@@ -242,7 +244,7 @@ pub struct PreKeySignalMessage {
 
 impl PreKeySignalMessage {
     pub fn new(
-        message_version: u8,
+        message_version: VersionType,
         registration_id: u32,
         pre_key_id: Option<u32>,
         signed_pre_key_id: u32,
@@ -274,7 +276,7 @@ impl PreKeySignalMessage {
     }
 
     #[inline]
-    pub fn message_version(&self) -> u8 {
+    pub fn message_version(&self) -> VersionType {
         self.message_version
     }
 
@@ -372,10 +374,10 @@ impl TryFrom<&[u8]> for PreKeySignalMessage {
 
 #[derive(Debug, Clone)]
 pub struct SenderKeyMessage {
-    message_version: u8,
+    message_version: VersionType,
     distribution_id: Uuid,
     chain_id: u32,
-    iteration: u32,
+    iteration: Counter,
     ciphertext: Box<[u8]>,
     serialized: Box<[u8]>,
 }
@@ -386,7 +388,7 @@ impl SenderKeyMessage {
     pub fn new<R: CryptoRng + Rng>(
         distribution_id: Uuid,
         chain_id: u32,
-        iteration: u32,
+        iteration: Counter,
         ciphertext: Box<[u8]>,
         csprng: &mut R,
         signature_key: &PrivateKey,
@@ -425,7 +427,7 @@ impl SenderKeyMessage {
     }
 
     #[inline]
-    pub fn message_version(&self) -> u8 {
+    pub fn message_version(&self) -> VersionType {
         self.message_version
     }
 
@@ -440,7 +442,7 @@ impl SenderKeyMessage {
     }
 
     #[inline]
-    pub fn iteration(&self) -> u32 {
+    pub fn iteration(&self) -> Counter {
         self.iteration
     }
 
@@ -510,10 +512,10 @@ impl TryFrom<&[u8]> for SenderKeyMessage {
 
 #[derive(Debug, Clone)]
 pub struct SenderKeyDistributionMessage {
-    message_version: u8,
+    message_version: VersionType,
     distribution_id: Uuid,
     chain_id: u32,
-    iteration: u32,
+    iteration: Counter,
     chain_key: Vec<u8>,
     signing_key: PublicKey,
     serialized: Box<[u8]>,
@@ -523,7 +525,7 @@ impl SenderKeyDistributionMessage {
     pub fn new(
         distribution_id: Uuid,
         chain_id: u32,
-        iteration: u32,
+        iteration: Counter,
         chain_key: Vec<u8>,
         signing_key: PublicKey,
     ) -> Result<Self> {
@@ -551,7 +553,7 @@ impl SenderKeyDistributionMessage {
     }
 
     #[inline]
-    pub fn message_version(&self) -> u8 {
+    pub fn message_version(&self) -> VersionType {
         self.message_version
     }
 
@@ -566,7 +568,7 @@ impl SenderKeyDistributionMessage {
     }
 
     #[inline]
-    pub fn iteration(&self) -> Result<u32> {
+    pub fn iteration(&self) -> Result<Counter> {
         Ok(self.iteration)
     }
 

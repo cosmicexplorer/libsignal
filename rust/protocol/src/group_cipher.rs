@@ -1,21 +1,20 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020-2021 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-use crate::consts;
+use crate::consts::limits::MAX_FORWARD_JUMPS;
 use crate::crypto;
-
+use crate::sender_keys::{SenderKeyState, SenderMessageKey};
 use crate::{
     Context, KeyPair, ProtocolAddress, Result, SenderKeyDistributionMessage, SenderKeyMessage,
     SenderKeyRecord, SenderKeyStore, SignalProtocolError,
 };
 
-use crate::sender_keys::{SenderKeyState, SenderMessageKey};
-
 use rand::{CryptoRng, Rng};
-use std::convert::TryFrom;
 use uuid::Uuid;
+
+use std::convert::TryFrom;
 
 pub async fn group_encrypt<R: Rng + CryptoRng>(
     sender_key_store: &mut dyn SenderKeyStore,
@@ -72,7 +71,7 @@ fn get_sender_key(state: &mut SenderKeyState, iteration: u32) -> Result<SenderMe
     }
 
     let jump = (iteration - sender_chain_key.iteration()?) as usize;
-    if jump > consts::MAX_FORWARD_JUMPS {
+    if jump > MAX_FORWARD_JUMPS {
         return Err(SignalProtocolError::InvalidMessage(
             "message from too far into the future",
         ));
