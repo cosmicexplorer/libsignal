@@ -8,7 +8,7 @@
 
 //! Errors that may occur during various stages of the Signal Protocol.
 
-use crate::curve::KeyType;
+use crate::{consts::types::VersionType, curve::KeyType};
 
 use std::error::Error;
 use std::fmt;
@@ -28,8 +28,8 @@ pub enum SignalProtocolError {
     InvalidProtobufEncoding,
 
     CiphertextMessageTooShort(usize),
-    LegacyCiphertextVersion(u8),
-    UnrecognizedCiphertextVersion(u8),
+    LegacyCiphertextVersion(VersionType),
+    UnrecognizedCiphertextVersion(VersionType),
     UnrecognizedMessageVersion(u32),
 
     FingerprintIdentifierMismatch,
