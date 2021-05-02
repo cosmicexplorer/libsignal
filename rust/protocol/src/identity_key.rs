@@ -137,6 +137,8 @@ impl From<KeyPair> for IdentityKeyPair {
 mod tests {
     use super::*;
 
+    use crate::Keyed;
+
     use rand::rngs::OsRng;
 
     #[test]

@@ -1,7 +1,11 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020-2021 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
+
+//! Implementation of the [Curve25519] elliptic curve.
+//!
+//! [Curve25519]: https://en.wikipedia.org/wiki/Curve25519
 
 use curve25519_dalek::constants::ED25519_BASEPOINT_TABLE;
 use curve25519_dalek::edwards::EdwardsPoint;
@@ -12,10 +16,14 @@ use sha2::{Digest, Sha512};
 use subtle::ConstantTimeEq;
 use x25519_dalek::{PublicKey, StaticSecret};
 
-const AGREEMENT_LENGTH: usize = 32;
-const PRIVATE_KEY_LENGTH: usize = 32;
-const PUBLIC_KEY_LENGTH: usize = 32;
-const SIGNATURE_LENGTH: usize = 64;
+/// Length of an agreed-upon key after a Diffie-Hellman exchange.
+pub const AGREEMENT_LENGTH: usize = 32;
+/// Length of a private key.
+pub const PRIVATE_KEY_LENGTH: usize = 32;
+/// Length of a public key.
+pub const PUBLIC_KEY_LENGTH: usize = 32;
+/// Length of a signature.
+pub const SIGNATURE_LENGTH: usize = 64;
 
 #[derive(Debug, Clone)]
 pub struct KeyPair {
@@ -47,7 +55,7 @@ impl KeyPair {
 
     /// Calculates an XEdDSA signature using the X25519 private key directly.
     ///
-    /// Refer to https://signal.org/docs/specifications/xeddsa/#curve25519 for more details.
+    /// Refer to <https://signal.org/docs/specifications/xeddsa/#curve25519> for more details.
     ///
     /// Note that this implementation varies slightly from that paper in that the sign bit is not
     /// fixed to 0, but rather passed back in the most significant bit of the signature which would

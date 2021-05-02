@@ -727,7 +727,7 @@ pub async fn sealed_sender_encrypt_from_usmc<R: Rng + CryptoRng>(
         &our_identity.public_key().serialize(),
         &eph_keys.cipher_key().and_then(|key| {
             key.try_into().map_err(|_: TryFromSliceError| {
-                SignalProtocolError::BadKeyLength(curve::KeyType::Djb, key.len())
+                SignalProtocolError::BadKeyLength(curve::KeyType::Curve25519, key.len())
             })
         })?,
         &eph_keys.mac_key()?,
@@ -744,7 +744,7 @@ pub async fn sealed_sender_encrypt_from_usmc<R: Rng + CryptoRng>(
         usmc.serialized()?,
         &static_keys.cipher_key().and_then(|key| {
             key.try_into().map_err(|_: TryFromSliceError| {
-                SignalProtocolError::BadKeyLength(curve::KeyType::Djb, key.len())
+                SignalProtocolError::BadKeyLength(curve::KeyType::Curve25519, key.len())
             })
         })?,
         &static_keys.mac_key()?,
@@ -1029,7 +1029,7 @@ pub async fn sealed_sender_decrypt_to_usmc(
                 &encrypted_static,
                 &eph_keys.cipher_key().and_then(|key| {
                     key.try_into().map_err(|_: TryFromSliceError| {
-                        SignalProtocolError::BadKeyLength(curve::KeyType::Djb, key.len())
+                        SignalProtocolError::BadKeyLength(curve::KeyType::Curve25519, key.len())
                     })
                 })?,
                 &eph_keys.mac_key()?,
@@ -1048,7 +1048,7 @@ pub async fn sealed_sender_decrypt_to_usmc(
                 &encrypted_message,
                 &static_keys.cipher_key().and_then(|key| {
                     key.try_into().map_err(|_: TryFromSliceError| {
-                        SignalProtocolError::BadKeyLength(curve::KeyType::Djb, key.len())
+                        SignalProtocolError::BadKeyLength(curve::KeyType::Curve25519, key.len())
                     })
                 })?,
                 &static_keys.mac_key()?,
