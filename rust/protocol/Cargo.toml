@@ -28,6 +28,7 @@ hex = "0.4"
 log = "0.4"
 num_enum = "0.5.1"
 uuid = "0.8"
+internal = { path = "internal/" }
 
 [dependencies.curve25519-dalek]
 features = ["serde", "alloc"]

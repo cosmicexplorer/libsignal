@@ -13,6 +13,7 @@ pub mod curve25519;
 use curve25519::{PRIVATE_KEY_LENGTH, PUBLIC_KEY_LENGTH};
 
 use crate::{Result, SignalProtocolError};
+use internal::constant_time_ops;
 
 use std::cmp::Ordering;
 use std::convert::TryFrom;
@@ -209,7 +210,7 @@ impl Ord for PublicKey {
             return self.key_type().cmp(&other.key_type());
         }
 
-        crate::utils::constant_time_cmp(self.key_data(), other.key_data())
+        constant_time_ops::constant_time_cmp(self.key_data(), other.key_data())
     }
 }
 

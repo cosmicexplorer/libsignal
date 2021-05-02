@@ -4,6 +4,7 @@ members = [
     "rust/device-transfer",
     "rust/poksho",
     "rust/protocol",
+    "rust/protocol/internal",
     "rust/bridge/ffi",
     "rust/bridge/jni",
     "rust/bridge/node",
