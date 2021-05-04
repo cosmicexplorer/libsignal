@@ -3,21 +3,193 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
+use crate::kdf::{HKDFInitializationParams, HKDFInitializer};
 use crate::proto;
 use crate::state::{PreKeyId, SignedPreKeyId};
-use crate::{IdentityKey, PrivateKey, PublicKey, RegistrationId, Result, SignalProtocolError};
+use crate::{
+    IdentityKey, MessageVersionCompatibility, MessageVersionSpecification, PrivateKey, PublicKey,
+    RegistrationId, Result, SignalProtocolError,
+};
 
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 
+use displaydoc::Display;
 use hmac::{Hmac, Mac, NewMac};
+use num_enum::TryFromPrimitiveError;
 use prost::Message;
 use rand::{CryptoRng, Rng};
 use sha2::Sha256;
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
 
-pub const CIPHERTEXT_MESSAGE_CURRENT_VERSION: u8 = 3;
-pub const SENDERKEY_MESSAGE_CURRENT_VERSION: u8 = 3;
+/// The type of message version being checked.
+///
+/// Signal has multiple message types, and some messages may be a wrapper around others and
+/// therefore contain multiple versions to validate within a single message. This enum allows
+/// [SignalProtocolError] messages to specify which version failed to validate.
+#[derive(Debug, Display)]
+pub enum MessageVersionType {
+    /// Corresponds to [RatchetChainMessageVersion].
+    #[displaydoc("ratchet chain")]
+    RatchetChain,
+    /// Corresponds to [SenderKeyMessageVersion].
+    #[displaydoc("sender key")]
+    SenderKey,
+}
+
+/// A [u8] describing the version of the message chain format to use when starting a chain.
+#[derive(
+    Copy,
+    Clone,
+    Ord,
+    PartialOrd,
+    Eq,
+    PartialEq,
+    Debug,
+    num_enum::TryFromPrimitive,
+    num_enum::IntoPrimitive,
+)]
+#[repr(u8)]
+pub enum RatchetChainMessageVersion {
+    V2 = 2,
+    /// **\[CURRENT\]**.
+    V3 = 3,
+}
+
+impl RatchetChainMessageVersion {
+    pub fn current() -> Self {
+        Self::V3
+    }
+}
+
+impl HKDFInitializer for RatchetChainMessageVersion {
+    fn initialize(self) -> HKDFInitializationParams {
+        match self {
+            Self::V2 => HKDFInitializationParams {
+                iteration_start_offset: 0,
+            },
+            Self::V3 => HKDFInitializationParams {
+                iteration_start_offset: 1,
+            },
+        }
+    }
+}
+
+impl MessageVersionSpecification for RatchetChainMessageVersion {
+    fn deserialize_four_bit_value(value: u8) -> Result<Self> {
+        Self::try_from(value).map_err(|_| {
+            SignalProtocolError::UnrecognizedMessageVersion(
+                value.into(),
+                MessageVersionType::RatchetChain,
+            )
+        })
+    }
+
+    fn serialize_four_bit_value(self) -> u8 {
+        self.into()
+    }
+}
+
+impl TryFrom<u32> for RatchetChainMessageVersion {
+    type Error = SignalProtocolError;
+    fn try_from(value: u32) -> Result<Self> {
+        let value_u8: u8 = value.try_into().map_err(|_| {
+            SignalProtocolError::UnrecognizedMessageVersion(value, MessageVersionType::RatchetChain)
+        })?;
+        Ok(Self::try_from(value_u8)?)
+    }
+}
+
+impl From<RatchetChainMessageVersion> for u32 {
+    fn from(value: RatchetChainMessageVersion) -> u32 {
+        let value_u8: u8 = value.into();
+        value_u8 as u32
+    }
+}
+
+impl From<TryFromPrimitiveError<RatchetChainMessageVersion>> for SignalProtocolError {
+    fn from(value: TryFromPrimitiveError<RatchetChainMessageVersion>) -> SignalProtocolError {
+        SignalProtocolError::UnrecognizedMessageVersion(
+            value.number.into(),
+            MessageVersionType::RatchetChain,
+        )
+    }
+}
+
+/// A [u8] describing the version of the sender key message format to use for a group message.
+#[derive(
+    Copy,
+    Clone,
+    Ord,
+    PartialOrd,
+    Eq,
+    PartialEq,
+    Debug,
+    num_enum::TryFromPrimitive,
+    num_enum::IntoPrimitive,
+)]
+#[repr(u8)]
+pub enum SenderKeyMessageVersion {
+    /// **\[CURRENT\]**.
+    V3 = 3,
+}
+
+impl SenderKeyMessageVersion {
+    pub fn current() -> Self {
+        Self::V3
+    }
+}
+
+impl HKDFInitializer for SenderKeyMessageVersion {
+    fn initialize(self) -> HKDFInitializationParams {
+        match self {
+            Self::V3 => HKDFInitializationParams {
+                iteration_start_offset: 1,
+            },
+        }
+    }
+}
+
+impl MessageVersionSpecification for SenderKeyMessageVersion {
+    fn deserialize_four_bit_value(value: u8) -> Result<Self> {
+        Self::try_from(value).map_err(|_| {
+            SignalProtocolError::UnrecognizedMessageVersion(
+                value.into(),
+                MessageVersionType::SenderKey,
+            )
+        })
+    }
+
+    fn serialize_four_bit_value(self) -> u8 {
+        self.into()
+    }
+}
+
+impl TryFrom<u32> for SenderKeyMessageVersion {
+    type Error = SignalProtocolError;
+    fn try_from(value: u32) -> Result<Self> {
+        let value_u8: u8 = value.try_into().map_err(|_| {
+            SignalProtocolError::UnrecognizedMessageVersion(value, MessageVersionType::SenderKey)
+        })?;
+        Ok(Self::try_from(value_u8)?)
+    }
+}
+
+impl From<SenderKeyMessageVersion> for u32 {
+    fn from(value: SenderKeyMessageVersion) -> u32 {
+        let value_u8: u8 = value.into();
+        value_u8 as u32
+    }
+}
+
+impl From<TryFromPrimitiveError<SenderKeyMessageVersion>> for SignalProtocolError {
+    fn from(value: TryFromPrimitiveError<SenderKeyMessageVersion>) -> SignalProtocolError {
+        SignalProtocolError::UnrecognizedMessageVersion(
+            value.number.into(),
+            MessageVersionType::SenderKey,
+        )
+    }
+}
 
 pub enum CiphertextMessage {
     SignalMessage(SignalMessage),
@@ -57,7 +229,7 @@ impl CiphertextMessage {
 
 #[derive(Debug, Clone)]
 pub struct SignalMessage {
-    message_version: u8,
+    message_version: RatchetChainMessageVersion,
     sender_ratchet_key: PublicKey,
     counter: u32,
     #[allow(dead_code)]
@@ -70,7 +242,7 @@ impl SignalMessage {
     const MAC_LENGTH: usize = 8;
 
     pub fn new(
-        message_version: u8,
+        message_version: RatchetChainMessageVersion,
         mac_key: &[u8],
         sender_ratchet_key: PublicKey,
         counter: u32,
@@ -86,7 +258,11 @@ impl SignalMessage {
             ciphertext: Some(Vec::<u8>::from(ciphertext)),
         };
         let mut serialized = vec![0u8; 1 + message.encoded_len() + Self::MAC_LENGTH];
-        serialized[0] = ((message_version & 0xF) << 4) | CIPHERTEXT_MESSAGE_CURRENT_VERSION;
+        let compatibility = MessageVersionCompatibility {
+            required_version: message_version,
+            message_version: RatchetChainMessageVersion::current(),
+        };
+        serialized[0] = compatibility.serialize();
         message.encode(&mut &mut serialized[1..message.encoded_len() + 1])?;
         let msg_len_for_mac = serialized.len() - Self::MAC_LENGTH;
         let mac = Self::compute_mac(
@@ -108,7 +284,7 @@ impl SignalMessage {
     }
 
     #[inline]
-    pub fn message_version(&self) -> u8 {
+    pub fn message_version(&self) -> RatchetChainMessageVersion {
         self.message_version
     }
 
@@ -195,15 +371,18 @@ impl TryFrom<&[u8]> for SignalMessage {
         if value.len() < SignalMessage::MAC_LENGTH + 1 {
             return Err(SignalProtocolError::CiphertextMessageTooShort(value.len()));
         }
-        let message_version = value[0] >> 4;
-        if message_version < CIPHERTEXT_MESSAGE_CURRENT_VERSION {
+        let compatibility =
+            MessageVersionCompatibility::<RatchetChainMessageVersion>::deserialize(value[0])?;
+        if compatibility.message_version < RatchetChainMessageVersion::current() {
             return Err(SignalProtocolError::LegacyCiphertextVersion(
-                message_version,
+                compatibility.message_version.into(),
+                MessageVersionType::RatchetChain,
             ));
         }
-        if message_version > CIPHERTEXT_MESSAGE_CURRENT_VERSION {
+        if compatibility.required_version > RatchetChainMessageVersion::current() {
             return Err(SignalProtocolError::UnrecognizedCiphertextVersion(
-                message_version,
+                compatibility.required_version.into(),
+                MessageVersionType::RatchetChain,
             ));
         }
 
@@ -224,7 +403,7 @@ impl TryFrom<&[u8]> for SignalMessage {
             .into_boxed_slice();
 
         Ok(SignalMessage {
-            message_version,
+            message_version: compatibility.message_version,
             sender_ratchet_key,
             counter,
             previous_counter,
@@ -236,7 +415,7 @@ impl TryFrom<&[u8]> for SignalMessage {
 
 #[derive(Debug, Clone)]
 pub struct PreKeySignalMessage {
-    message_version: u8,
+    message_version: RatchetChainMessageVersion,
     registration_id: u32,
     pre_key_id: Option<PreKeyId>,
     signed_pre_key_id: SignedPreKeyId,
@@ -248,7 +427,7 @@ pub struct PreKeySignalMessage {
 
 impl PreKeySignalMessage {
     pub fn new(
-        message_version: u8,
+        message_version: RatchetChainMessageVersion,
         registration_id: RegistrationId,
         pre_key_id: Option<PreKeyId>,
         signed_pre_key_id: SignedPreKeyId,
@@ -266,7 +445,11 @@ impl PreKeySignalMessage {
             message: Some(Vec::from(message.as_ref())),
         };
         let mut serialized = vec![0u8; 1 + proto_message.encoded_len()];
-        serialized[0] = ((message_version & 0xF) << 4) | CIPHERTEXT_MESSAGE_CURRENT_VERSION;
+        let compatibility = MessageVersionCompatibility {
+            required_version: message_version,
+            message_version: RatchetChainMessageVersion::current(),
+        };
+        serialized[0] = compatibility.serialize();
         proto_message.encode(&mut &mut serialized[1..])?;
         Ok(Self {
             message_version,
@@ -281,7 +464,7 @@ impl PreKeySignalMessage {
     }
 
     #[inline]
-    pub fn message_version(&self) -> u8 {
+    pub fn message_version(&self) -> RatchetChainMessageVersion {
         self.message_version
     }
 
@@ -335,15 +518,18 @@ impl TryFrom<&[u8]> for PreKeySignalMessage {
             return Err(SignalProtocolError::CiphertextMessageTooShort(value.len()));
         }
 
-        let message_version = value[0] >> 4;
-        if message_version < CIPHERTEXT_MESSAGE_CURRENT_VERSION {
+        let compatibility =
+            MessageVersionCompatibility::<RatchetChainMessageVersion>::deserialize(value[0])?;
+        if compatibility.message_version < RatchetChainMessageVersion::current() {
             return Err(SignalProtocolError::LegacyCiphertextVersion(
-                message_version,
+                compatibility.message_version.into(),
+                MessageVersionType::RatchetChain,
             ));
         }
-        if message_version > CIPHERTEXT_MESSAGE_CURRENT_VERSION {
+        if compatibility.required_version > RatchetChainMessageVersion::current() {
             return Err(SignalProtocolError::UnrecognizedCiphertextVersion(
-                message_version,
+                compatibility.required_version.into(),
+                MessageVersionType::RatchetChain,
             ));
         }
 
@@ -365,7 +551,7 @@ impl TryFrom<&[u8]> for PreKeySignalMessage {
         let base_key = PublicKey::deserialize(base_key.as_ref())?;
 
         Ok(PreKeySignalMessage {
-            message_version,
+            message_version: compatibility.message_version.into(),
             registration_id: proto_structure.registration_id.unwrap_or(0),
             pre_key_id: proto_structure.pre_key_id.map(|id| id.into()),
             signed_pre_key_id: signed_pre_key_id.into(),
@@ -379,7 +565,7 @@ impl TryFrom<&[u8]> for PreKeySignalMessage {
 
 #[derive(Debug, Clone)]
 pub struct SenderKeyMessage {
-    message_version: u8,
+    message_version: SenderKeyMessageVersion,
     distribution_id: Uuid,
     chain_id: u32,
     iteration: u32,
@@ -391,7 +577,7 @@ impl SenderKeyMessage {
     const SIGNATURE_LEN: usize = 64;
 
     pub fn new<R: CryptoRng + Rng>(
-        message_version: u8,
+        message_version: SenderKeyMessageVersion,
         distribution_id: Uuid,
         chain_id: u32,
         iteration: u32,
@@ -407,13 +593,17 @@ impl SenderKeyMessage {
         };
         let proto_message_len = proto_message.encoded_len();
         let mut serialized = vec![0u8; 1 + proto_message_len + Self::SIGNATURE_LEN];
-        serialized[0] = ((message_version & 0xF) << 4) | SENDERKEY_MESSAGE_CURRENT_VERSION;
+        let compatibility = MessageVersionCompatibility {
+            required_version: message_version,
+            message_version: SenderKeyMessageVersion::current(),
+        };
+        serialized[0] = compatibility.serialize();
         proto_message.encode(&mut &mut serialized[1..1 + proto_message_len])?;
         let signature =
             signature_key.calculate_signature(&serialized[..1 + proto_message_len], csprng)?;
         serialized[1 + proto_message_len..].copy_from_slice(&signature[..]);
         Ok(Self {
-            message_version: SENDERKEY_MESSAGE_CURRENT_VERSION,
+            message_version: SenderKeyMessageVersion::current(),
             distribution_id,
             chain_id,
             iteration,
@@ -432,7 +622,7 @@ impl SenderKeyMessage {
     }
 
     #[inline]
-    pub fn message_version(&self) -> u8 {
+    pub fn message_version(&self) -> SenderKeyMessageVersion {
         self.message_version
     }
 
@@ -475,15 +665,18 @@ impl TryFrom<&[u8]> for SenderKeyMessage {
         if value.len() < 1 + Self::SIGNATURE_LEN {
             return Err(SignalProtocolError::CiphertextMessageTooShort(value.len()));
         }
-        let message_version = value[0] >> 4;
-        if message_version < SENDERKEY_MESSAGE_CURRENT_VERSION {
+        let compatibility =
+            MessageVersionCompatibility::<SenderKeyMessageVersion>::deserialize(value[0])?;
+        if compatibility.message_version < SenderKeyMessageVersion::current() {
             return Err(SignalProtocolError::LegacyCiphertextVersion(
-                message_version,
+                compatibility.message_version.into(),
+                MessageVersionType::SenderKey,
             ));
         }
-        if message_version > SENDERKEY_MESSAGE_CURRENT_VERSION {
+        if compatibility.required_version > SenderKeyMessageVersion::current() {
             return Err(SignalProtocolError::UnrecognizedCiphertextVersion(
-                message_version,
+                compatibility.required_version.into(),
+                MessageVersionType::SenderKey,
             ));
         }
         let proto_structure =
@@ -505,7 +698,7 @@ impl TryFrom<&[u8]> for SenderKeyMessage {
             .into_boxed_slice();
 
         Ok(SenderKeyMessage {
-            message_version,
+            message_version: compatibility.message_version,
             distribution_id,
             chain_id,
             iteration,
@@ -517,7 +710,7 @@ impl TryFrom<&[u8]> for SenderKeyMessage {
 
 #[derive(Debug, Clone)]
 pub struct SenderKeyDistributionMessage {
-    message_version: u8,
+    message_version: SenderKeyMessageVersion,
     distribution_id: Uuid,
     chain_id: u32,
     iteration: u32,
@@ -528,7 +721,7 @@ pub struct SenderKeyDistributionMessage {
 
 impl SenderKeyDistributionMessage {
     pub fn new(
-        message_version: u8,
+        message_version: SenderKeyMessageVersion,
         distribution_id: Uuid,
         chain_id: u32,
         iteration: u32,
@@ -543,7 +736,11 @@ impl SenderKeyDistributionMessage {
             signing_key: Some(signing_key.serialize().to_vec()),
         };
         let mut serialized = vec![0u8; 1 + proto_message.encoded_len()];
-        serialized[0] = ((message_version & 0xF) << 4) | SENDERKEY_MESSAGE_CURRENT_VERSION;
+        let compatibility = MessageVersionCompatibility {
+            required_version: message_version,
+            message_version: SenderKeyMessageVersion::current(),
+        };
+        serialized[0] = compatibility.serialize();
         proto_message.encode(&mut &mut serialized[1..])?;
 
         Ok(Self {
@@ -558,7 +755,7 @@ impl SenderKeyDistributionMessage {
     }
 
     #[inline]
-    pub fn message_version(&self) -> u8 {
+    pub fn message_version(&self) -> SenderKeyMessageVersion {
         self.message_version
     }
 
@@ -608,16 +805,19 @@ impl TryFrom<&[u8]> for SenderKeyDistributionMessage {
             return Err(SignalProtocolError::CiphertextMessageTooShort(value.len()));
         }
 
-        let message_version = value[0] >> 4;
+        let compatibility =
+            MessageVersionCompatibility::<SenderKeyMessageVersion>::deserialize(value[0])?;
 
-        if message_version < SENDERKEY_MESSAGE_CURRENT_VERSION {
+        if compatibility.message_version < SenderKeyMessageVersion::current() {
             return Err(SignalProtocolError::LegacyCiphertextVersion(
-                message_version,
+                compatibility.message_version.into(),
+                MessageVersionType::SenderKey,
             ));
         }
-        if message_version > SENDERKEY_MESSAGE_CURRENT_VERSION {
+        if compatibility.required_version > SenderKeyMessageVersion::current() {
             return Err(SignalProtocolError::UnrecognizedCiphertextVersion(
-                message_version,
+                compatibility.required_version.into(),
+                MessageVersionType::SenderKey,
             ));
         }
 
@@ -647,7 +847,7 @@ impl TryFrom<&[u8]> for SenderKeyDistributionMessage {
         let signing_key = PublicKey::deserialize(&signing_key)?;
 
         Ok(SenderKeyDistributionMessage {
-            message_version,
+            message_version: compatibility.message_version,
             distribution_id,
             chain_id,
             iteration,
@@ -714,6 +914,7 @@ impl TryFrom<&[u8]> for PlaintextContent {
         if value[0] != Self::PLAINTEXT_CONTEXT_IDENTIFIER_BYTE {
             return Err(SignalProtocolError::UnrecognizedMessageVersion(
                 value[0] as u32,
+                MessageVersionType::RatchetChain,
             ));
         }
         Ok(Self {
@@ -857,7 +1058,7 @@ mod tests {
         let receiver_identity_key_pair = KeyPair::generate(csprng);
 
         SignalMessage::new(
-            3,
+            RatchetChainMessageVersion::V3,
             &mac_key,
             sender_ratchet_key_pair.public_key,
             42,
@@ -894,7 +1095,7 @@ mod tests {
         let base_key_pair = KeyPair::generate(&mut csprng);
         let message = create_signal_message(&mut csprng)?;
         let pre_key_signal_message = PreKeySignalMessage::new(
-            3,
+            RatchetChainMessageVersion::V3,
             RegistrationId::unsafe_from_value(365),
             None,
             97.into(),
@@ -945,7 +1146,7 @@ mod tests {
         let mut csprng = OsRng;
         let signature_key_pair = KeyPair::generate(&mut csprng);
         let sender_key_message = SenderKeyMessage::new(
-            SENDERKEY_MESSAGE_CURRENT_VERSION,
+            SenderKeyMessageVersion::current(),
             Uuid::from_u128(0xd1d1d1d1_7000_11eb_b32a_33b8a8a487a6),
             42,
             7,
@@ -1004,7 +1205,7 @@ mod tests {
         }
 
         let pre_key_signal_message = PreKeySignalMessage::new(
-            3,
+            RatchetChainMessageVersion::V3,
             RegistrationId::unsafe_from_value(365),
             None,
             97.into(),
@@ -1030,7 +1231,7 @@ mod tests {
         }
 
         let sender_key_message = SenderKeyMessage::new(
-            3,
+            SenderKeyMessageVersion::V3,
             Uuid::nil(),
             1,
             2,

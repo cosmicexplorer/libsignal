@@ -4,6 +4,7 @@
 //
 
 use crate::curve::KeyType;
+use crate::MessageVersionType;
 
 use displaydoc::Display;
 
@@ -28,12 +29,12 @@ pub enum SignalProtocolError {
 
     /// ciphertext serialized bytes were too short <{0}>
     CiphertextMessageTooShort(usize),
-    /// ciphertext version was too old <{0}>
-    LegacyCiphertextVersion(u8),
-    /// ciphertext version was unrecognized <{0}>
-    UnrecognizedCiphertextVersion(u8),
-    /// unrecognized message version <{0}>
-    UnrecognizedMessageVersion(u32),
+    /// {1} ciphertext version was too old <{0}>
+    LegacyCiphertextVersion(u8, MessageVersionType),
+    /// {1} ciphertext version was unrecognized <{0}>
+    UnrecognizedCiphertextVersion(u8, MessageVersionType),
+    /// unrecognized {1} message version <{0}>
+    UnrecognizedMessageVersion(u32, MessageVersionType),
 
     /// fingerprint identifiers do not match
     FingerprintIdentifierMismatch,

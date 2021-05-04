@@ -7,8 +7,8 @@ use crate::{
     message_encrypt, CiphertextMessageType, Context, DeviceId, Direction, IdentityKey,
     IdentityKeyPair, IdentityKeyStore, KeyPair, MessageVersionCompatibility,
     MessageVersionSpecification, PreKeySignalMessage, PreKeyStore, PrivateKey, ProtocolAddress,
-    PublicKey, Result, SessionRecord, SessionStore, SignalMessage, SignalProtocolError,
-    SignedPreKeyStore, HKDF,
+    PublicKey, RatchetChainMessageVersion, Result, SessionRecord, SessionStore, SignalMessage,
+    SignalProtocolError, SignedPreKeyStore, HKDF,
 };
 
 use crate::crypto;
@@ -658,12 +658,8 @@ mod sealed_sender_v1 {
             .concat();
 
             let agreement = our_keys.calculate_agreement(their_public)?;
-            let derived_values = HKDF::new(3)?.derive_salted_secrets(
-                &agreement,
-                &ephemeral_salt,
-                &[],
-                EPHEMERAL_KEYS_KDF_LEN,
-            )?;
+            let derived_values = HKDF::initialize(RatchetChainMessageVersion::V3)
+                .derive_salted_secrets(&agreement, &ephemeral_salt, &[], EPHEMERAL_KEYS_KDF_LEN)?;
 
             Ok(Self {
                 chain_key: *array_ref![&derived_values, 0, 32],
@@ -717,12 +713,8 @@ mod sealed_sender_v1 {
             // 96 bytes are derived, but the first 32 are discarded/unused. This is intended to
             // mirror the way the EphemeralKeys are derived, even though StaticKeys does not end up
             // requiring a third "chain key".
-            let derived_values = HKDF::new(3)?.derive_salted_secrets(
-                &shared_secret,
-                &salt,
-                &[],
-                EPHEMERAL_KEYS_KDF_LEN,
-            )?;
+            let derived_values = HKDF::initialize(RatchetChainMessageVersion::V3)
+                .derive_salted_secrets(&shared_secret, &salt, &[], EPHEMERAL_KEYS_KDF_LEN)?;
 
             Ok(Self {
                 cipher_key: *array_ref![&derived_values, 32, 32],
@@ -957,7 +949,7 @@ mod sealed_sender_v2 {
     impl DerivedKeys {
         /// Derive a set of ephemeral keys from a slice of random bytes `m`.
         pub(super) fn calculate(m: &[u8]) -> DerivedKeys {
-            let kdf = HKDF::new(3).expect("valid KDF version");
+            let kdf = HKDF::initialize(RatchetChainMessageVersion::V3);
             let r = kdf
                 .derive_secrets(m, LABEL_R, 64)
                 .expect("valid use of KDF");
@@ -1000,7 +992,7 @@ mod sealed_sender_v2 {
         }
         .concat();
 
-        let mut result: [u8; MESSAGE_KEY_LEN] = HKDF::new(3)?
+        let mut result: [u8; MESSAGE_KEY_LEN] = HKDF::initialize(RatchetChainMessageVersion::V3)
             .derive_secrets(&agreement_key_input, LABEL_DH, MESSAGE_KEY_LEN)?
             .as_ref()
             .try_into()
@@ -1045,7 +1037,7 @@ mod sealed_sender_v2 {
             }
         }
 
-        Ok(HKDF::new(3)?
+        Ok(HKDF::initialize(RatchetChainMessageVersion::V3)
             .derive_secrets(&agreement_key_input, LABEL_DH_S, AUTH_TAG_LEN)?
             .as_ref()
             .try_into()

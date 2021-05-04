@@ -1,5 +1,5 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020-2021 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
@@ -13,7 +13,7 @@ use uuid::Uuid;
 use crate::consts;
 use crate::crypto::hmac_sha256;
 use crate::proto::storage as storage_proto;
-use crate::{PrivateKey, PublicKey, Result, SignalProtocolError, HKDF};
+use crate::{PrivateKey, PublicKey, Result, SenderKeyMessageVersion, SignalProtocolError, HKDF};
 
 #[derive(Debug, Clone)]
 pub struct SenderMessageKey {
@@ -25,7 +25,7 @@ pub struct SenderMessageKey {
 
 impl SenderMessageKey {
     pub fn new(iteration: u32, seed: Vec<u8>) -> Result<Self> {
-        let hkdf = HKDF::new(3)?;
+        let hkdf = HKDF::initialize(SenderKeyMessageVersion::current());
         let derived = hkdf.derive_secrets(&seed, b"WhisperGroup", 48)?;
         Ok(Self {
             iteration,

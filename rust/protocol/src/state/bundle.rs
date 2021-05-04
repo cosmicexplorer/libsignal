@@ -1,5 +1,5 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020-2021 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
@@ -14,6 +14,7 @@ pub struct PreKeyBundle {
     pre_key_public: Option<PublicKey>,
     signed_pre_key_id: SignedPreKeyId,
     signed_pre_key_public: PublicKey,
+    // TODO: make wrappers for byte strings!
     signed_pre_key_signature: Vec<u8>,
     identity_key: IdentityKey,
 }

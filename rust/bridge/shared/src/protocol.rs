@@ -7,7 +7,7 @@ use libsignal_bridge_macros::*;
 use libsignal_protocol::error::Result;
 use libsignal_protocol::*;
 use static_assertions::const_assert_eq;
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 use uuid::Uuid;
 
 // Will be unused when building for Node only.
@@ -47,8 +47,9 @@ fn HKDF_DeriveSecrets<E: Env>(
     label: Option<&[u8]>,
     salt: Option<&[u8]>,
 ) -> Result<E::Buffer> {
-    let kdf = HKDF::new(version)?;
     let label = label.unwrap_or(&[]);
+    let message_version: RatchetChainMessageVersion = version.try_into()?;
+    let kdf = HKDF::initialize(message_version);
     let buffer = match salt {
         Some(salt) => kdf.derive_salted_secrets(ikm, salt, label, output_length as usize)?,
         None => kdf.derive_secrets(ikm, label, output_length as usize)?,
@@ -65,7 +66,8 @@ fn HKDF_Derive(
     label: &[u8],
     salt: &[u8],
 ) -> Result<()> {
-    let kdf = HKDF::new(version)?;
+    let message_version: RatchetChainMessageVersion = version.try_into()?;
+    let kdf = HKDF::initialize(message_version);
     let kdf_output = kdf.derive_salted_secrets(ikm, salt, label, output.len())?;
     output.copy_from_slice(&kdf_output);
     Ok(())
@@ -243,7 +245,7 @@ fn SignalMessage_New(
     receiver_identity_key: &PublicKey,
 ) -> Result<SignalMessage> {
     SignalMessage::new(
-        message_version,
+        message_version.try_into()?,
         mac_key,
         *sender_ratchet_key,
         counter,
@@ -284,7 +286,7 @@ fn PreKeySignalMessage_New(
     signal_message: &SignalMessage,
 ) -> Result<PreKeySignalMessage> {
     PreKeySignalMessage::new(
-        message_version,
+        message_version.try_into()?,
         RegistrationId::unsafe_from_value(registration_id),
         pre_key_id.map(|id| id.into()),
         signed_pre_key_id.into(),
@@ -374,7 +376,7 @@ fn SenderKeyMessage_New(
 ) -> Result<SenderKeyMessage> {
     let mut csprng = rand::rngs::OsRng;
     SenderKeyMessage::new(
-        message_version,
+        message_version.try_into()?,
         distribution_id,
         chain_id,
         iteration,
@@ -433,7 +435,7 @@ fn SenderKeyDistributionMessage_New(
     pk: &PublicKey,
 ) -> Result<SenderKeyDistributionMessage> {
     SenderKeyDistributionMessage::new(
-        message_version,
+        message_version.try_into()?,
         distribution_id,
         chain_id,
         iteration,

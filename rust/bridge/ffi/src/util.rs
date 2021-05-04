@@ -130,12 +130,12 @@ impl From<&SignalFfiError> for SignalErrorCode {
                 SignalErrorCode::InvalidCiphertext
             }
 
-            SignalFfiError::Signal(SignalProtocolError::UnrecognizedMessageVersion(_))
+            SignalFfiError::Signal(SignalProtocolError::UnrecognizedMessageVersion(_, _))
             | SignalFfiError::Signal(SignalProtocolError::UnknownSealedSenderVersion(_)) => {
                 SignalErrorCode::UnrecognizedMessageVersion
             }
 
-            SignalFfiError::Signal(SignalProtocolError::UnrecognizedCiphertextVersion(_)) => {
+            SignalFfiError::Signal(SignalProtocolError::UnrecognizedCiphertextVersion(_, _)) => {
                 SignalErrorCode::UnknownCiphertextVersion
             }
 
@@ -145,7 +145,7 @@ impl From<&SignalFfiError> for SignalErrorCode {
                 SignalErrorCode::InvalidMessage
             }
 
-            SignalFfiError::Signal(SignalProtocolError::LegacyCiphertextVersion(_)) => {
+            SignalFfiError::Signal(SignalProtocolError::LegacyCiphertextVersion(_, _)) => {
                 SignalErrorCode::LegacyCiphertextVersion
             }
 

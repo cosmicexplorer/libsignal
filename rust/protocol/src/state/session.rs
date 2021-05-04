@@ -1,5 +1,5 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020-2021 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
@@ -7,14 +7,16 @@ use prost::Message;
 
 use crate::ratchet::{ChainKey, MessageKeys, RootKey};
 use crate::{
-    IdentityKey, KeyPair, PrivateKey, ProtocolAddress, PublicKey, RegistrationId, Result,
-    SignalProtocolError, HKDF,
+    IdentityKey, KeyPair, PrivateKey, ProtocolAddress, PublicKey, RatchetChainMessageVersion,
+    RegistrationId, Result, SignalProtocolError, HKDF,
 };
 
 use crate::consts;
 use crate::proto::storage::session_structure;
 use crate::proto::storage::{RecordStructure, SessionStructure};
 use crate::state::{PreKeyId, SignedPreKeyId};
+
+use std::convert::TryInto;
 
 #[derive(Debug, Clone)]
 pub(crate) struct UnacknowledgedPreKeyMessageItems {
@@ -121,7 +123,8 @@ impl SessionState {
         if self.session.root_key.len() != 32 {
             return Err(SignalProtocolError::InvalidProtobufEncoding);
         }
-        let hkdf = HKDF::new(self.session_version()?)?;
+        let message_version: RatchetChainMessageVersion = self.session_version()?.try_into()?;
+        let hkdf = HKDF::initialize(message_version);
         RootKey::new(hkdf, &self.session.root_key)
     }
 
@@ -197,7 +200,9 @@ impl SessionState {
                     if c.key.len() != 32 {
                         return Err(SignalProtocolError::InvalidProtobufEncoding);
                     }
-                    let hkdf = HKDF::new(self.session_version()?)?;
+                    let message_version: RatchetChainMessageVersion =
+                        self.session_version()?.try_into()?;
+                    let hkdf = HKDF::initialize(message_version);
                     Ok(Some(ChainKey::new(hkdf, &c.key, c.index)?))
                 }
             },
@@ -267,7 +272,8 @@ impl SessionState {
             SignalProtocolError::InvalidState("get_sender_chain_key", "No chain key".to_owned())
         })?;
 
-        let hkdf = HKDF::new(self.session_version()?)?;
+        let message_version: RatchetChainMessageVersion = self.session_version()?.try_into()?;
+        let hkdf = HKDF::initialize(message_version);
         ChainKey::new(hkdf, &chain_key.key, chain_key.index)
     }
 
@@ -391,7 +397,7 @@ impl SessionState {
     ) -> Result<()> {
         let signed_pre_key_id: u32 = signed_pre_key_id.into();
         let pending = session_structure::PendingPreKey {
-            pre_key_id: pre_key_id.unwrap_or(0.into()).into(),
+            pre_key_id: pre_key_id.map(|id| id.into()).unwrap_or(0),
             signed_pre_key_id: signed_pre_key_id as i32,
             base_key: base_key.serialize().to_vec(),
         };

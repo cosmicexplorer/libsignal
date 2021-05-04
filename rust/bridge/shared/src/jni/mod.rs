@@ -270,13 +270,13 @@ fn throw_error(env: &JNIEnv, error: SignalJniError) {
             "org/whispersystems/libsignal/InvalidMessageException"
         }
 
-        SignalJniError::Signal(SignalProtocolError::UnrecognizedCiphertextVersion(_))
-        | SignalJniError::Signal(SignalProtocolError::UnrecognizedMessageVersion(_))
+        SignalJniError::Signal(SignalProtocolError::UnrecognizedCiphertextVersion(_, _))
+        | SignalJniError::Signal(SignalProtocolError::UnrecognizedMessageVersion(_, _))
         | SignalJniError::Signal(SignalProtocolError::UnknownSealedSenderVersion(_)) => {
             "org/whispersystems/libsignal/InvalidVersionException"
         }
 
-        SignalJniError::Signal(SignalProtocolError::LegacyCiphertextVersion(_)) => {
+        SignalJniError::Signal(SignalProtocolError::LegacyCiphertextVersion(_, _)) => {
             "org/whispersystems/libsignal/LegacyMessageException"
         }
 

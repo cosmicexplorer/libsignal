@@ -229,7 +229,7 @@ macro_rules! bridge_get_optional_bytearray {
 ///
 /// #[bridge_fn]
 /// fn Foo_GetBar(obj: &Foo) -> Result<&str> {
-///   Foo::bar(obj)   
+///   Foo::bar(obj)
 /// }
 /// ```
 ///

@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-use crate::{Result, SignalProtocolError};
+use crate::Result;
 
 use hmac::{Hmac, Mac, NewMac};
 use sha2::Sha256;
@@ -16,21 +16,28 @@ pub struct HKDF {
     iteration_start_offset: u8,
 }
 
+pub struct HKDFInitializationParams {
+    pub iteration_start_offset: u8,
+}
+
+pub trait HKDFInitializer {
+    fn initialize(self) -> HKDFInitializationParams;
+}
+
 impl HKDF {
     const HASH_OUTPUT_SIZE: usize = 32;
 
-    pub fn new(message_version: u32) -> Result<Self> {
-        match message_version {
-            2 => Ok(HKDF {
-                iteration_start_offset: 0,
-            }),
-            3 => Ok(HKDF {
-                iteration_start_offset: 1,
-            }),
-            _ => Err(SignalProtocolError::UnrecognizedMessageVersion(
-                message_version,
-            )),
+    fn initialize_from_params(params: HKDFInitializationParams) -> Self {
+        let HKDFInitializationParams {
+            iteration_start_offset,
+        } = params;
+        Self {
+            iteration_start_offset,
         }
+    }
+
+    pub fn initialize<I: HKDFInitializer>(initializer: I) -> Self {
+        Self::initialize_from_params(initializer.initialize())
     }
 
     pub fn derive_secrets(
@@ -95,6 +102,7 @@ impl HKDF {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::RatchetChainMessageVersion;
 
     #[test]
     fn test_vector_v3() -> Result<()> {
@@ -112,7 +120,12 @@ mod tests {
             0xec, 0xc4, 0xc5, 0xbf, 0x34, 0x00, 0x72, 0x08, 0xd5, 0xb8, 0x87, 0x18, 0x58, 0x65,
         ];
 
-        let output = HKDF::new(3)?.derive_salted_secrets(&ikm, &salt, &info, okm.len())?;
+        let output = HKDF::initialize(RatchetChainMessageVersion::V3).derive_salted_secrets(
+            &ikm,
+            &salt,
+            &info,
+            okm.len(),
+        )?;
 
         assert_eq!(&okm[..], &output[..]);
 
@@ -154,7 +167,12 @@ mod tests {
             0x3e, 0x87, 0xc1, 0x4c, 0x01, 0xd5, 0xc1, 0xf3, 0x43, 0x4f, 0x1d, 0x87,
         ];
 
-        let output = HKDF::new(3)?.derive_salted_secrets(&ikm, &salt, &info, okm.len())?;
+        let output = HKDF::initialize(RatchetChainMessageVersion::V3).derive_salted_secrets(
+            &ikm,
+            &salt,
+            &info,
+            okm.len(),
+        )?;
 
         assert_eq!(&okm[..], &output[..]);
 
@@ -179,7 +197,12 @@ mod tests {
             0x4a, 0xa9, 0xfd, 0xa8, 0x99, 0xda, 0xeb, 0xec,
         ];
 
-        let output = HKDF::new(2)?.derive_salted_secrets(&ikm, &salt, &info, okm.len())?;
+        let output = HKDF::initialize(RatchetChainMessageVersion::V2).derive_salted_secrets(
+            &ikm,
+            &salt,
+            &info,
+            okm.len(),
+        )?;
 
         assert_eq!(&okm[..], &output[..]);
 

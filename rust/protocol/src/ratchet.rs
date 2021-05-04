@@ -1,5 +1,5 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020-2021 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
@@ -9,13 +9,13 @@ mod params;
 pub use self::keys::{ChainKey, MessageKeys, RootKey};
 pub use self::params::{AliceSignalProtocolParameters, BobSignalProtocolParameters};
 use crate::proto::storage::SessionStructure;
-use crate::protocol::CIPHERTEXT_MESSAGE_CURRENT_VERSION;
+use crate::protocol::RatchetChainMessageVersion;
 use crate::state::SessionState;
 use crate::{KeyPair, Result, SessionRecord};
 use rand::{CryptoRng, Rng};
 
 fn derive_keys(secret_input: &[u8]) -> Result<(RootKey, ChainKey)> {
-    let kdf = crate::kdf::HKDF::new(3)?;
+    let kdf = crate::kdf::HKDF::initialize(RatchetChainMessageVersion::V3);
 
     let secrets = kdf.derive_secrets(secret_input, b"WhisperText", 64)?;
 
@@ -67,7 +67,7 @@ pub(crate) fn initialize_alice_session<R: Rng + CryptoRng>(
     )?;
 
     let session = SessionStructure {
-        session_version: CIPHERTEXT_MESSAGE_CURRENT_VERSION as u32,
+        session_version: RatchetChainMessageVersion::current() as u32,
         local_identity_public: local_identity.public_key().serialize().to_vec(),
         remote_identity_public: parameters.their_identity_key().serialize().to_vec(),
         root_key: sending_chain_root_key.key().to_vec(),
@@ -130,7 +130,7 @@ pub(crate) fn initialize_bob_session(
     let (root_key, chain_key) = derive_keys(&secrets)?;
 
     let session = SessionStructure {
-        session_version: CIPHERTEXT_MESSAGE_CURRENT_VERSION as u32,
+        session_version: RatchetChainMessageVersion::current() as u32,
         local_identity_public: local_identity.public_key().serialize().to_vec(),
         remote_identity_public: parameters.their_identity_key().serialize().to_vec(),
         root_key: root_key.key().to_vec(),
