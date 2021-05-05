@@ -8,13 +8,11 @@
 // TODO
 // #![warn(missing_docs)]
 
+use crate::storage::traits;
+use crate::storage::Context;
 use crate::{
-    address::ProtocolAddress,
-    error::{Result, SignalProtocolError},
-    sender_keys::SenderKeyRecord,
-    state::{PreKeyId, PreKeyRecord, SessionRecord, SignedPreKeyId, SignedPreKeyRecord},
-    storage::traits::{self, Context},
-    IdentityKey, IdentityKeyPair,
+    IdentityKey, IdentityKeyPair, PreKeyId, PreKeyRecord, ProtocolAddress, Result, SenderKeyRecord,
+    SessionRecord, SessionSeed, SignalProtocolError, SignedPreKeyId, SignedPreKeyRecord,
 };
 
 use async_trait::async_trait;
@@ -26,7 +24,7 @@ use uuid::Uuid;
 #[derive(Clone)]
 pub struct InMemIdentityKeyStore {
     key_pair: IdentityKeyPair,
-    id: u32,
+    id: SessionSeed,
     known_keys: HashMap<ProtocolAddress, IdentityKey>,
 }
 
@@ -35,7 +33,7 @@ impl InMemIdentityKeyStore {
     ///
     /// `key_pair` corresponds to [traits::IdentityKeyStore::get_identity_key_pair], and `id`
     /// corresponds to [traits::IdentityKeyStore::get_local_registration_id].
-    pub fn new(key_pair: IdentityKeyPair, id: u32) -> Self {
+    pub fn new(key_pair: IdentityKeyPair, id: SessionSeed) -> Self {
         Self {
             key_pair,
             id,
@@ -50,7 +48,7 @@ impl traits::IdentityKeyStore for InMemIdentityKeyStore {
         Ok(self.key_pair)
     }
 
-    async fn get_local_registration_id(&self, _ctx: Context) -> Result<u32> {
+    async fn get_local_registration_id(&self, _ctx: Context) -> Result<SessionSeed> {
         Ok(self.id)
     }
 
@@ -302,7 +300,7 @@ pub struct InMemSignalProtocolStore {
 }
 
 impl InMemSignalProtocolStore {
-    pub fn new(key_pair: IdentityKeyPair, registration_id: u32) -> Result<Self> {
+    pub fn new(key_pair: IdentityKeyPair, registration_id: SessionSeed) -> Result<Self> {
         Ok(Self {
             session_store: InMemSessionStore::new(),
             pre_key_store: InMemPreKeyStore::new(),
@@ -319,7 +317,7 @@ impl traits::IdentityKeyStore for InMemSignalProtocolStore {
         self.identity_store.get_identity_key_pair(ctx).await
     }
 
-    async fn get_local_registration_id(&self, ctx: Context) -> Result<u32> {
+    async fn get_local_registration_id(&self, ctx: Context) -> Result<SessionSeed> {
         self.identity_store.get_local_registration_id(ctx).await
     }
 

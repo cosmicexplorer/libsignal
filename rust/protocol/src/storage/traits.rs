@@ -35,6 +35,22 @@ pub enum Direction {
     Receiving,
 }
 
+/// A locally-generated random number used to construct the initial value of a message chain.
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, PartialOrd, Ord)]
+pub struct SessionSeed(u32);
+
+impl From<u32> for SessionSeed {
+    fn from(value: u32) -> Self {
+        Self(value)
+    }
+}
+
+impl From<SessionSeed> for u32 {
+    fn from(value: SessionSeed) -> Self {
+        value.0
+    }
+}
+
 /// Interface defining the identity store, which may be in-memory, on-disk, etc.
 ///
 /// Signal clients usually use the identity store in a [TOFU] manner, but this is not at
@@ -46,11 +62,11 @@ pub trait IdentityKeyStore {
     /// Return the single specific identity the store is assumed to represent, with private key.
     async fn get_identity_key_pair(&self, ctx: Context) -> Result<IdentityKeyPair>;
 
-    /// Return a [u32] specific to this store instance.
+    /// Return an id specific to this store instance.
     ///
     /// This local registration id is the same per-device identifier used in [ProtocolAddress] and
     /// should not change run over run.
-    async fn get_local_registration_id(&self, ctx: Context) -> Result<u32>;
+    async fn get_local_registration_id(&self, ctx: Context) -> Result<SessionSeed>;
 
     /// Record an identity into the store. The identity is then considered "trusted".
     ///

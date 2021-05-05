@@ -18,6 +18,6 @@ pub use {
     },
     traits::{
         Context, Direction, IdentityKeyStore, PreKeyStore, ProtocolStore, SenderKeyStore,
-        SessionStore, SignedPreKeyStore,
+        SessionSeed, SessionStore, SignedPreKeyStore,
     },
 };
