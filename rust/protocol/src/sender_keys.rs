@@ -22,7 +22,7 @@ pub struct SenderMessageKey {
 
 impl SenderMessageKey {
     pub fn new(iteration: u32, seed: Vec<u8>) -> Result<Self> {
-        let hkdf = HKDF::new(3)?;
+        let hkdf = HKDF::new()?;
         let derived = hkdf.derive_secrets(&seed, b"WhisperGroup", 48)?;
         Ok(Self {
             iteration,
