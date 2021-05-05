@@ -311,7 +311,7 @@ fn group_sealed_sender() -> Result<(), SignalProtocolError> {
             alice_uuid.clone(),
             Some(alice_e164.clone()),
             alice_pubkey,
-            alice_device_id,
+            alice_device_id.into(),
             expires,
             server_cert,
             &server_key.private_key,

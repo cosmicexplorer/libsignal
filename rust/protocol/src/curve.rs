@@ -45,11 +45,17 @@ impl TryFrom<u8> for KeyType {
     }
 }
 
+/// Interface for structs carrying data that conforms to [KeyType].
+pub trait Keyed {
+    fn key_type(&self) -> KeyType;
+}
+
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 enum PublicKeyData {
     DjbPublicKey([u8; curve25519::PUBLIC_KEY_LENGTH]),
 }
 
+/// Public key half of a [KeyPair].
 #[derive(Clone, Copy, Eq, Hash)]
 pub struct PublicKey {
     key: PublicKeyData,
@@ -69,7 +75,12 @@ impl PublicKey {
             KeyType::Djb => {
                 // We allow trailing data after the public key (why?)
                 if value.len() < curve25519::PUBLIC_KEY_LENGTH + 1 {
-                    return Err(SignalProtocolError::BadKeyLength(KeyType::Djb, value.len()));
+                    return Err(SignalProtocolError::BadKeyLength(
+                        KeyType::Djb,
+                        curve25519::PUBLIC_KEY_LENGTH + 1,
+                        value.len(),
+                        "public key deserialize".to_string(),
+                    ));
                 }
                 let mut key = [0u8; curve25519::PUBLIC_KEY_LENGTH];
                 key.copy_from_slice(&value[1..][..curve25519::PUBLIC_KEY_LENGTH]);
@@ -88,7 +99,12 @@ impl PublicKey {
 
     pub fn from_djb_public_key_bytes(bytes: &[u8]) -> Result<Self> {
         match <[u8; curve25519::PUBLIC_KEY_LENGTH]>::try_from(bytes) {
-            Err(_) => Err(SignalProtocolError::BadKeyLength(KeyType::Djb, bytes.len())),
+            Err(_) => Err(SignalProtocolError::BadKeyLength(
+                KeyType::Djb,
+                curve25519::PUBLIC_KEY_LENGTH,
+                bytes.len(),
+                "from_djb_public_key_bytes".to_string(),
+            )),
             Ok(key) => Ok(PublicKey {
                 key: PublicKeyData::DjbPublicKey(key),
             }),
@@ -208,6 +224,7 @@ enum PrivateKeyData {
     DjbPrivateKey([u8; curve25519::PRIVATE_KEY_LENGTH]),
 }
 
+/// Private key half of a [KeyPair].
 #[derive(Clone, Copy, Eq, Hash)]
 pub struct PrivateKey {
     key: PrivateKeyData,
@@ -216,7 +233,12 @@ pub struct PrivateKey {
 impl PrivateKey {
     pub fn deserialize(value: &[u8]) -> Result<Self> {
         if value.len() != curve25519::PRIVATE_KEY_LENGTH {
-            Err(SignalProtocolError::BadKeyLength(KeyType::Djb, value.len()))
+            Err(SignalProtocolError::BadKeyLength(
+                KeyType::Djb,
+                curve25519::PRIVATE_KEY_LENGTH,
+                value.len(),
+                format!("private key {:?} deserialize", value),
+            ))
         } else {
             let mut key = [0u8; curve25519::PRIVATE_KEY_LENGTH];
             key.copy_from_slice(&value[..curve25519::PRIVATE_KEY_LENGTH]);
@@ -349,7 +371,8 @@ impl fmt::Debug for PrivateKey {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash)]
+/// A matching public and private key.
+#[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash, Debug)]
 pub struct KeyPair {
     pub public_key: PublicKey,
     pub private_key: PrivateKey,

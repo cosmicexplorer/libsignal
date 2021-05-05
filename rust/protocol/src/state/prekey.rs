@@ -47,7 +47,18 @@ impl PreKeyRecord {
     }
 
     pub fn private_key(&self) -> Result<PrivateKey> {
-        PrivateKey::deserialize(&self.pre_key.private_key)
+        PrivateKey::deserialize(&self.pre_key.private_key).map_err(|e: SignalProtocolError| match e
+        {
+            SignalProtocolError::BadKeyLength(kt, expected, provided, msg) => {
+                SignalProtocolError::BadKeyLength(
+                    kt,
+                    expected,
+                    provided,
+                    format!("in PreKeyRecord.private_key(): {}", msg),
+                )
+            }
+            _ => unreachable!(),
+        })
     }
 
     pub fn serialize(&self) -> Result<Vec<u8>> {

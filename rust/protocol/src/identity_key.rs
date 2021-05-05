@@ -15,6 +15,7 @@ use prost::Message;
 const ALTERNATE_IDENTITY_SIGNATURE_PREFIX_1: &[u8] = &[0xFF; 32];
 const ALTERNATE_IDENTITY_SIGNATURE_PREFIX_2: &[u8] = b"Signal_PNI_Signature";
 
+/// Wrapper for [PublicKey].
 #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct IdentityKey {
     public_key: PublicKey,
@@ -72,7 +73,8 @@ impl From<IdentityKey> for PublicKey {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash)]
+/// Wrapper for [KeyPair].
+#[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub struct IdentityKeyPair {
     identity_key: IdentityKey,
     private_key: PrivateKey,
@@ -144,7 +146,19 @@ impl TryFrom<&[u8]> for IdentityKeyPair {
             .map_err(|_| SignalProtocolError::InvalidProtobufEncoding)?;
         Ok(Self {
             identity_key: IdentityKey::try_from(&structure.public_key[..])?,
-            private_key: PrivateKey::deserialize(&structure.private_key)?,
+            private_key: PrivateKey::deserialize(&structure.private_key).map_err(
+                |e: SignalProtocolError| match e {
+                    SignalProtocolError::BadKeyLength(kt, expected, provided, msg) => {
+                        SignalProtocolError::BadKeyLength(
+                            kt,
+                            expected,
+                            provided,
+                            format!("in IdentityKeyPair::try_from(): {}", msg),
+                        )
+                    }
+                    _ => unreachable!(),
+                },
+            )?,
         })
     }
 }

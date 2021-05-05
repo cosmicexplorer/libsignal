@@ -54,7 +54,19 @@ impl SignedPreKeyRecord {
     }
 
     pub fn private_key(&self) -> Result<PrivateKey> {
-        PrivateKey::deserialize(&self.signed_pre_key.private_key)
+        PrivateKey::deserialize(&self.signed_pre_key.private_key).map_err(
+            |e: SignalProtocolError| match e {
+                SignalProtocolError::BadKeyLength(kt, expected, provided, msg) => {
+                    SignalProtocolError::BadKeyLength(
+                        kt,
+                        expected,
+                        provided,
+                        format!("in SignedPreKeyRecord.private_key(): {}", msg),
+                    )
+                }
+                _ => unreachable!(),
+            },
+        )
     }
 
     pub fn key_pair(&self) -> Result<KeyPair> {

@@ -233,7 +233,7 @@ fn throw_error(env: &JNIEnv, error: SignalJniError) {
         SignalJniError::Signal(SignalProtocolError::NoKeyTypeIdentifier)
         | SignalJniError::Signal(SignalProtocolError::SignatureValidationFailed)
         | SignalJniError::Signal(SignalProtocolError::BadKeyType(_))
-        | SignalJniError::Signal(SignalProtocolError::BadKeyLength(_, _))
+        | SignalJniError::Signal(SignalProtocolError::BadKeyLength(_, _, _))
         | SignalJniError::Signal(SignalProtocolError::InvalidMacKeyLength(_))
         | SignalJniError::SignalCrypto(SignalCryptoError::InvalidKeySize) => {
             jni_class_name!(org.signal.libsignal.protocol.InvalidKeyException)

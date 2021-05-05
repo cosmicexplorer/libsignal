@@ -41,8 +41,8 @@ pub enum SignalProtocolError {
     NoKeyTypeIdentifier,
     /// bad key type <{0:#04x}>
     BadKeyType(u8),
-    /// bad key length <{1}> for key with type <{0}>
-    BadKeyLength(KeyType, usize),
+    /// bad key length <{1}> for key with type <{0}>: should be <{2}> (context: <{3}>)
+    BadKeyLength(KeyType, usize, usize, String),
 
     /// invalid signature detected
     SignatureValidationFailed,

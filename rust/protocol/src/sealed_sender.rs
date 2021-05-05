@@ -24,9 +24,9 @@ use rand::{CryptoRng, Rng};
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
 
-use proto::sealed_sender::unidentified_sender_message::message::Type as ProtoMessageType;
-
 use std::convert::{TryFrom, TryInto};
+
+use proto::sealed_sender::unidentified_sender_message::message::Type as ProtoMessageType;
 
 #[derive(Debug, Clone)]
 pub struct ServerCertificate {
@@ -397,6 +397,8 @@ impl From<ContentHint> for u32 {
         hint.to_u32()
     }
 }
+
+#[derive(Debug)]
 pub struct UnidentifiedSenderMessageContent {
     serialized: Vec<u8>,
     contents: Vec<u8>,
@@ -1640,7 +1642,7 @@ pub async fn sealed_sender_decrypt(
 
     let remote_address = ProtocolAddress::new(
         usmc.sender()?.sender_uuid()?.to_string(),
-        usmc.sender()?.sender_device_id()?,
+        usmc.sender()?.sender_device_id()?.into(),
     );
 
     let message = match usmc.msg_type()? {
