@@ -68,13 +68,13 @@ pub trait Keyed {
     fn key_type(&self) -> KeyType;
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 enum PublicKeyData {
     Curve25519PublicKey([u8; PUBLIC_KEY_LENGTH]),
 }
 
 /// Public key half of a [KeyPair].
-#[derive(Clone, Copy, Eq)]
+#[derive(Clone, Copy, Eq, Hash)]
 pub struct PublicKey {
     key: PublicKeyData,
 }
@@ -96,7 +96,9 @@ impl PublicKey {
                 if value.len() < PUBLIC_KEY_LENGTH + 1 {
                     return Err(SignalProtocolError::BadKeyLength(
                         KeyType::Curve25519,
+                        PUBLIC_KEY_LENGTH + 1,
                         value.len(),
+                        "public key deserialize".to_string(),
                     ));
                 }
                 let mut key = [0u8; PUBLIC_KEY_LENGTH];
@@ -120,7 +122,9 @@ impl PublicKey {
         match <[u8; PUBLIC_KEY_LENGTH]>::try_from(bytes) {
             Err(_) => Err(SignalProtocolError::BadKeyLength(
                 KeyType::Curve25519,
+                PUBLIC_KEY_LENGTH,
                 bytes.len(),
+                "from_djb_public_key_bytes".to_string(),
             )),
             Ok(key) => Ok(PublicKey {
                 key: PublicKeyData::Curve25519PublicKey(key),
@@ -230,23 +234,77 @@ impl fmt::Debug for PublicKey {
     }
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 enum PrivateKeyData {
     Curve25519PrivateKey([u8; PRIVATE_KEY_LENGTH]),
 }
 
 /// Private key half of a [KeyPair].
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(Clone, Copy, Eq, Hash)]
 pub struct PrivateKey {
     key: PrivateKeyData,
 }
 
+impl subtle::ConstantTimeEq for PrivateKey {
+    /// A constant-time comparison as long as the two keys have a matching type.
+    ///
+    /// If the two keys have different types, the comparison short-circuits,
+    /// much like comparing two slices of different lengths.
+    fn ct_eq(&self, other: &PrivateKey) -> subtle::Choice {
+        if self.key_type() != other.key_type() {
+            return 0.ct_eq(&1);
+        }
+        self.key_data().ct_eq(other.key_data())
+    }
+}
+
+impl PartialEq for PrivateKey {
+    fn eq(&self, other: &PrivateKey) -> bool {
+        bool::from(self.ct_eq(other))
+    }
+}
+
+impl Ord for PrivateKey {
+    fn cmp(&self, other: &Self) -> Ordering {
+        if self.key_type() != other.key_type() {
+            return self.key_type().cmp(&other.key_type());
+        }
+
+        crate::utils::constant_time_cmp(self.key_data(), other.key_data())
+    }
+}
+
+impl PartialOrd for PrivateKey {
+    fn partial_cmp(&self, other: &PrivateKey) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl fmt::Debug for PrivateKey {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "PrivateKey {{ key_type={}, serialize={:?} }}",
+            self.key_type(),
+            self.serialize()
+        )
+    }
+}
+
 impl PrivateKey {
+    fn key_data(&self) -> &[u8] {
+        match self.key {
+            PrivateKeyData::Curve25519PrivateKey(ref k) => k.as_ref(),
+        }
+    }
+
     pub fn deserialize(value: &[u8]) -> Result<Self> {
         if value.len() != PRIVATE_KEY_LENGTH {
             Err(SignalProtocolError::BadKeyLength(
                 KeyType::Curve25519,
+                PRIVATE_KEY_LENGTH,
                 value.len(),
+                format!("private key {:?} deserialize", value),
             ))
         } else {
             let mut key = [0u8; PRIVATE_KEY_LENGTH];
@@ -330,7 +388,7 @@ impl TryFrom<&[u8]> for PrivateKey {
 }
 
 /// A matching public and private key.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash, Debug)]
 pub struct KeyPair {
     pub public_key: PublicKey,
     pub private_key: PrivateKey,

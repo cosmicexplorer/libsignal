@@ -48,7 +48,7 @@ use error::Result;
 
 pub use {
     address::{DeviceId, ProtocolAddress},
-    curve::{KeyPair, PrivateKey, PublicKey, Keyed},
+    curve::{KeyPair, KeyType, Keyed, PrivateKey, PublicKey},
     error::SignalProtocolError,
     fingerprint::{DisplayableFingerprint, Fingerprint, ScannableFingerprint},
     group_cipher::{
@@ -71,7 +71,7 @@ pub use {
         sealed_sender_multi_recipient_fan_out, ContentHint, SealedSenderDecryptionResult,
         SenderCertificate, ServerCertificate, UnidentifiedSenderMessageContent,
     },
-    sender_keys::SenderKeyRecord,
+    sender_keys::{SenderKeyRecord, SenderKeyState, SenderMessageKey},
     session::{process_prekey, process_prekey_bundle},
     session_cipher::{
         message_decrypt, message_decrypt_prekey, message_decrypt_signal, message_encrypt,

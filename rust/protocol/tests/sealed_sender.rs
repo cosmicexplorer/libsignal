@@ -43,7 +43,7 @@ fn test_server_cert() -> Result<(), SignalProtocolError> {
                 SignalProtocolError::InvalidProtobufEncoding
                 | SignalProtocolError::ProtobufDecodingError(_)
                 | SignalProtocolError::BadKeyType(_)
-                | SignalProtocolError::BadKeyLength(_, _) => {}
+                | SignalProtocolError::BadKeyLength(_, _, _, _) => {}
 
                 unexpected_err => {
                     panic!("unexpected error {:?}", unexpected_err)
@@ -96,7 +96,7 @@ fn test_sender_cert() -> Result<(), SignalProtocolError> {
         "9d0652a3-dcc3-4d11-975f-74d61598733f".to_string(),
         Some("+14152222222".to_string()),
         key.public_key,
-        device_id,
+        device_id.into(),
         expires,
         server_cert,
         &server_key.private_key,
@@ -124,7 +124,7 @@ fn test_sender_cert() -> Result<(), SignalProtocolError> {
             Err(e) => match e {
                 SignalProtocolError::InvalidProtobufEncoding
                 | SignalProtocolError::ProtobufDecodingError(_)
-                | SignalProtocolError::BadKeyLength(_, _)
+                | SignalProtocolError::BadKeyLength(_, _, _, _)
                 | SignalProtocolError::BadKeyType(_) => {}
 
                 unexpected_err => {
@@ -182,7 +182,7 @@ fn test_sealed_sender() -> Result<(), SignalProtocolError> {
             alice_uuid.clone(),
             Some(alice_e164.clone()),
             alice_pubkey,
-            alice_device_id,
+            alice_device_id.into(),
             expires,
             server_cert,
             &server_key.private_key,
@@ -207,7 +207,7 @@ fn test_sealed_sender() -> Result<(), SignalProtocolError> {
             expires - 1,
             Some(bob_e164.clone()),
             bob_uuid.clone(),
-            bob_device_id,
+            bob_device_id.into(),
             &mut bob_store.identity_store,
             &mut bob_store.session_store,
             &mut bob_store.pre_key_store,
@@ -219,7 +219,7 @@ fn test_sealed_sender() -> Result<(), SignalProtocolError> {
         assert_eq!(bob_ptext.message, alice_ptext);
         assert_eq!(bob_ptext.sender_uuid, alice_uuid);
         assert_eq!(bob_ptext.sender_e164, Some(alice_e164));
-        assert_eq!(bob_ptext.device_id, alice_device_id);
+        assert_eq!(bob_ptext.device_id, alice_device_id.into());
 
         // Now test but with an expired cert:
 
@@ -240,7 +240,7 @@ fn test_sealed_sender() -> Result<(), SignalProtocolError> {
             expires + 11,
             Some(bob_e164.clone()),
             bob_uuid.clone(),
-            bob_device_id,
+            bob_device_id.into(),
             &mut bob_store.identity_store,
             &mut bob_store.session_store,
             &mut bob_store.pre_key_store,
@@ -280,7 +280,7 @@ fn test_sealed_sender() -> Result<(), SignalProtocolError> {
             expires - 1,
             Some(bob_e164.clone()),
             bob_uuid.clone(),
-            bob_device_id,
+            bob_device_id.into(),
             &mut bob_store.identity_store,
             &mut bob_store.session_store,
             &mut bob_store.pre_key_store,
@@ -351,7 +351,7 @@ fn test_sender_key_in_sealed_sender() -> Result<(), SignalProtocolError> {
             alice_uuid.clone(),
             Some(alice_e164.clone()),
             alice_pubkey,
-            alice_device_id,
+            alice_device_id.into(),
             expires,
             server_cert,
             &server_key.private_key,
@@ -472,7 +472,7 @@ fn test_sealed_sender_multi_recipient() -> Result<(), SignalProtocolError> {
             alice_uuid.clone(),
             Some(alice_e164.clone()),
             alice_pubkey,
-            alice_device_id,
+            alice_device_id.into(),
             expires,
             server_cert,
             &server_key.private_key,
@@ -515,7 +515,7 @@ fn test_sealed_sender_multi_recipient() -> Result<(), SignalProtocolError> {
             expires - 1,
             Some(bob_e164.clone()),
             bob_uuid.clone(),
-            bob_device_id,
+            bob_device_id.into(),
             &mut bob_store.identity_store,
             &mut bob_store.session_store,
             &mut bob_store.pre_key_store,
@@ -527,7 +527,7 @@ fn test_sealed_sender_multi_recipient() -> Result<(), SignalProtocolError> {
         assert_eq!(bob_ptext.message, alice_ptext);
         assert_eq!(bob_ptext.sender_uuid, alice_uuid);
         assert_eq!(bob_ptext.sender_e164, Some(alice_e164));
-        assert_eq!(bob_ptext.device_id, alice_device_id);
+        assert_eq!(bob_ptext.device_id, alice_device_id.into());
 
         // Now test but with an expired cert:
         let alice_message = message_encrypt(
@@ -565,7 +565,7 @@ fn test_sealed_sender_multi_recipient() -> Result<(), SignalProtocolError> {
             expires + 11,
             Some(bob_e164.clone()),
             bob_uuid.clone(),
-            bob_device_id,
+            bob_device_id.into(),
             &mut bob_store.identity_store,
             &mut bob_store.session_store,
             &mut bob_store.pre_key_store,
@@ -623,7 +623,7 @@ fn test_sealed_sender_multi_recipient() -> Result<(), SignalProtocolError> {
             expires - 1,
             Some(bob_e164.clone()),
             bob_uuid.clone(),
-            bob_device_id,
+            bob_device_id.into(),
             &mut bob_store.identity_store,
             &mut bob_store.session_store,
             &mut bob_store.pre_key_store,

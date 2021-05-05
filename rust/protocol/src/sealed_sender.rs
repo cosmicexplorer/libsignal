@@ -3,25 +3,22 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-use crate::crypto;
-use crate::curve;
-use crate::proto;
-use crate::session_cipher;
 use crate::{
-    message_encrypt, CiphertextMessageType, Context, DeviceId, Direction, IdentityKeyStore,
-    KeyPair, PreKeySignalMessage, PreKeyStore, PrivateKey, ProtocolAddress, PublicKey, Result,
-    SessionStore, SignalMessage, SignalProtocolError, SignedPreKeyStore, HKDF,
+    message_encrypt, CiphertextMessageType, Context, Direction, IdentityKeyStore, KeyPair,
+    PreKeySignalMessage, PreKeyStore, PrivateKey, ProtocolAddress, PublicKey, Result, SessionStore,
+    SignalMessage, SignalProtocolError, SignedPreKeyStore, HKDF,
 };
 
+use crate::crypto;
+use crate::proto;
+use crate::session_cipher;
 use curve25519_dalek::scalar::Scalar;
 use prost::Message;
 use rand::{CryptoRng, Rng};
 use signal_crypto::Aes256GcmSiv;
+use std::convert::{TryFrom, TryInto};
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
-
-use std::array::TryFromSliceError;
-use std::convert::{TryFrom, TryInto};
 
 use proto::sealed_sender::unidentified_sender_message::message::Type as ProtoMessageType;
 
@@ -153,7 +150,7 @@ impl ServerCertificate {
 pub struct SenderCertificate {
     signer: ServerCertificate,
     key: PublicKey,
-    sender_device_id: DeviceId,
+    sender_device_id: u32,
     sender_uuid: String,
     sender_e164: Option<String>,
     expiration: u64,
@@ -174,10 +171,9 @@ impl SenderCertificate {
         let certificate_data =
             proto::sealed_sender::sender_certificate::Certificate::decode(certificate.as_ref())?;
 
-        let sender_device_id: DeviceId = certificate_data
+        let sender_device_id = certificate_data
             .sender_device
-            .ok_or(SignalProtocolError::InvalidProtobufEncoding)?
-            .into();
+            .ok_or(SignalProtocolError::InvalidProtobufEncoding)?;
         let expiration = certificate_data
             .expires
             .ok_or(SignalProtocolError::InvalidProtobufEncoding)?;
@@ -216,7 +212,7 @@ impl SenderCertificate {
         sender_uuid: String,
         sender_e164: Option<String>,
         key: PublicKey,
-        sender_device_id: DeviceId,
+        sender_device_id: u32,
         expiration: u64,
         signer: ServerCertificate,
         signer_key: &PrivateKey,
@@ -225,7 +221,7 @@ impl SenderCertificate {
         let certificate_pb = proto::sealed_sender::sender_certificate::Certificate {
             sender_uuid: Some(sender_uuid.clone()),
             sender_e164: sender_e164.clone(),
-            sender_device: Some(sender_device_id.into()),
+            sender_device: Some(sender_device_id),
             expires: Some(expiration),
             identity_key: Some(key.serialize().to_vec()),
             signer: Some(signer.to_protobuf()?),
@@ -304,7 +300,7 @@ impl SenderCertificate {
         Ok(self.key)
     }
 
-    pub fn sender_device_id(&self) -> Result<DeviceId> {
+    pub fn sender_device_id(&self) -> Result<u32> {
         Ok(self.sender_device_id)
     }
 
@@ -405,6 +401,8 @@ impl From<ContentHint> for u32 {
         hint.to_u32()
     }
 }
+
+#[derive(Debug)]
 pub struct UnidentifiedSenderMessageContent {
     serialized: Vec<u8>,
     contents: Vec<u8>,
@@ -724,13 +722,21 @@ pub async fn sealed_sender_encrypt_from_usmc<R: Rng + CryptoRng>(
         true,
     )?;
 
+    use std::array::TryFromSliceError;
+
     let static_key_ctext = crypto::aes256_ctr_hmacsha256_encrypt(
         &our_identity.public_key().serialize(),
-        &eph_keys.cipher_key().and_then(|key| {
-            key.try_into().map_err(|_: TryFromSliceError| {
-                SignalProtocolError::BadKeyLength(curve::KeyType::Curve25519, key.len())
-            })
-        })?,
+        &eph_keys
+            .cipher_key()?
+            .try_into()
+            .map_err(|_: TryFromSliceError| {
+                SignalProtocolError::BadKeyLength(
+                    crate::KeyType::Curve25519,
+                    crate::crypto::AES_256_KEY_SIZE,
+                    eph_keys.cipher_key().unwrap().len(),
+                    "static_key_ctext".to_string(),
+                )
+            })?,
         &eph_keys.mac_key()?,
     )?;
 
@@ -743,11 +749,17 @@ pub async fn sealed_sender_encrypt_from_usmc<R: Rng + CryptoRng>(
 
     let message_data = crypto::aes256_ctr_hmacsha256_encrypt(
         usmc.serialized()?,
-        &static_keys.cipher_key().and_then(|key| {
-            key.try_into().map_err(|_: TryFromSliceError| {
-                SignalProtocolError::BadKeyLength(curve::KeyType::Curve25519, key.len())
-            })
-        })?,
+        &static_keys
+            .cipher_key()?
+            .try_into()
+            .map_err(|_: TryFromSliceError| {
+                SignalProtocolError::BadKeyLength(
+                    crate::KeyType::Curve25519,
+                    crate::crypto::AES_256_KEY_SIZE,
+                    static_keys.cipher_key().unwrap().len(),
+                    "message_data".to_string(),
+                )
+            })?,
         &static_keys.mac_key()?,
     )?;
 
@@ -1027,13 +1039,21 @@ pub async fn sealed_sender_decrypt_to_usmc(
                 false,
             )?;
 
+            use std::array::TryFromSliceError;
+
             let message_key_bytes = crypto::aes256_ctr_hmacsha256_decrypt(
                 &encrypted_static,
-                &eph_keys.cipher_key().and_then(|key| {
-                    key.try_into().map_err(|_: TryFromSliceError| {
-                        SignalProtocolError::BadKeyLength(curve::KeyType::Curve25519, key.len())
-                    })
-                })?,
+                &eph_keys
+                    .cipher_key()?
+                    .try_into()
+                    .map_err(|_: TryFromSliceError| {
+                        SignalProtocolError::BadKeyLength(
+                            crate::KeyType::Curve25519,
+                            crate::crypto::AES_256_KEY_SIZE,
+                            eph_keys.cipher_key().unwrap().len(),
+                            "message_key_bytes".to_string(),
+                        )
+                    })?,
                 &eph_keys.mac_key()?,
             )?;
 
@@ -1048,11 +1068,17 @@ pub async fn sealed_sender_decrypt_to_usmc(
 
             let message_bytes = crypto::aes256_ctr_hmacsha256_decrypt(
                 &encrypted_message,
-                &static_keys.cipher_key().and_then(|key| {
-                    key.try_into().map_err(|_: TryFromSliceError| {
-                        SignalProtocolError::BadKeyLength(curve::KeyType::Curve25519, key.len())
-                    })
-                })?,
+                &static_keys
+                    .cipher_key()?
+                    .try_into()
+                    .map_err(|_: TryFromSliceError| {
+                        SignalProtocolError::BadKeyLength(
+                            crate::KeyType::Curve25519,
+                            crate::crypto::AES_256_KEY_SIZE,
+                            static_keys.cipher_key().unwrap().len(),
+                            "message_bytes2".to_string(),
+                        )
+                    })?,
                 &static_keys.mac_key()?,
             )?;
 
@@ -1080,10 +1106,13 @@ pub async fn sealed_sender_decrypt_to_usmc(
             )?;
 
             let keys = sealed_sender_v2::DerivedKeys::calculate(&m);
-            if !bool::from(keys.e.public_key()?.ct_eq(&ephemeral_public)) {
-                return Err(SignalProtocolError::InvalidSealedSenderMessage(
-                    "derived ephemeral key did not match key provided in message".to_string(),
-                ));
+            if keys.e.public_key()? != ephemeral_public {
+                return Err(SignalProtocolError::InvalidSealedSenderMessage(format!(
+                    "derived ephemeral key {:?} did not match key {:?} provided in message {:?}",
+                    keys.e.public_key()?,
+                    &ephemeral_public,
+                    encrypted_message,
+                )));
             }
 
             let mut message_bytes = encrypted_message.into_vec();
@@ -1127,7 +1156,7 @@ pub async fn sealed_sender_decrypt_to_usmc(
 pub struct SealedSenderDecryptionResult {
     pub sender_uuid: String,
     pub sender_e164: Option<String>,
-    pub device_id: DeviceId,
+    pub device_id: u32,
     pub message: Vec<u8>,
 }
 
@@ -1140,7 +1169,7 @@ impl SealedSenderDecryptionResult {
         Ok(self.sender_e164.as_deref())
     }
 
-    pub fn device_id(&self) -> Result<DeviceId> {
+    pub fn device_id(&self) -> Result<u32> {
         Ok(self.device_id)
     }
 
@@ -1156,7 +1185,7 @@ pub async fn sealed_sender_decrypt(
     timestamp: u64,
     local_e164: Option<String>,
     local_uuid: String,
-    local_device_id: DeviceId,
+    local_device_id: u32,
     identity_store: &mut dyn IdentityKeyStore,
     session_store: &mut dyn SessionStore,
     pre_key_store: &mut dyn PreKeyStore,
@@ -1186,7 +1215,7 @@ pub async fn sealed_sender_decrypt(
 
     let remote_address = ProtocolAddress::new(
         usmc.sender()?.sender_uuid()?.to_string(),
-        usmc.sender()?.sender_device_id()?,
+        usmc.sender()?.sender_device_id()?.into(),
     );
 
     let message = match usmc.msg_type()? {

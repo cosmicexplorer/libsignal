@@ -146,7 +146,19 @@ impl SessionState {
     pub(crate) fn sender_ratchet_private_key(&self) -> Result<PrivateKey> {
         match self.session.sender_chain {
             None => Err(SignalProtocolError::InvalidProtobufEncoding),
-            Some(ref c) => PrivateKey::deserialize(&c.sender_ratchet_key_private),
+            Some(ref c) => PrivateKey::deserialize(&c.sender_ratchet_key_private).map_err(
+                |e: SignalProtocolError| match e {
+                    SignalProtocolError::BadKeyLength(kt, expected, provided, msg) => {
+                        SignalProtocolError::BadKeyLength(
+                            kt,
+                            expected,
+                            provided,
+                            format!("in SessionState.sender_ratchet_private_key: {}", msg),
+                        )
+                    }
+                    _ => unreachable!(),
+                },
+            ),
         }
     }
 

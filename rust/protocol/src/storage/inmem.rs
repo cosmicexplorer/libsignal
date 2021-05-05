@@ -21,11 +21,11 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 /// Reference implementation of [traits::IdentityKeyStore].
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct InMemIdentityKeyStore {
-    key_pair: IdentityKeyPair,
-    id: SessionSeed,
-    known_keys: HashMap<ProtocolAddress, IdentityKey>,
+    pub key_pair: IdentityKeyPair,
+    pub id: SessionSeed,
+    pub known_keys: HashMap<ProtocolAddress, IdentityKey>,
 }
 
 impl InMemIdentityKeyStore {
@@ -38,6 +38,18 @@ impl InMemIdentityKeyStore {
             key_pair,
             id,
             known_keys: HashMap::new(),
+        }
+    }
+
+    pub fn new_with_known_keys(
+        key_pair: IdentityKeyPair,
+        id: SessionSeed,
+        known_keys: HashMap<ProtocolAddress, IdentityKey>,
+    ) -> Self {
+        Self {
+            key_pair,
+            id,
+            known_keys,
         }
     }
 }
@@ -101,9 +113,9 @@ impl traits::IdentityKeyStore for InMemIdentityKeyStore {
 }
 
 /// Reference implementation of [traits::PreKeyStore].
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct InMemPreKeyStore {
-    pre_keys: HashMap<PreKeyId, PreKeyRecord>,
+    pub pre_keys: HashMap<PreKeyId, PreKeyRecord>,
 }
 
 impl InMemPreKeyStore {
@@ -149,9 +161,9 @@ impl traits::PreKeyStore for InMemPreKeyStore {
 }
 
 /// Reference implementation of [traits::SignedPreKeyStore].
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct InMemSignedPreKeyStore {
-    signed_pre_keys: HashMap<SignedPreKeyId, SignedPreKeyRecord>,
+    pub signed_pre_keys: HashMap<SignedPreKeyId, SignedPreKeyRecord>,
 }
 
 impl InMemSignedPreKeyStore {
@@ -195,9 +207,9 @@ impl traits::SignedPreKeyStore for InMemSignedPreKeyStore {
 }
 
 /// Reference implementation of [traits::SessionStore].
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct InMemSessionStore {
-    sessions: HashMap<ProtocolAddress, SessionRecord>,
+    pub sessions: HashMap<ProtocolAddress, SessionRecord>,
 }
 
 impl InMemSessionStore {
@@ -239,11 +251,11 @@ impl traits::SessionStore for InMemSessionStore {
 }
 
 /// Reference implementation of [traits::SenderKeyStore].
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct InMemSenderKeyStore {
     // We use Cow keys in order to store owned values but compare to referenced ones.
     // See https://users.rust-lang.org/t/hashmap-with-tuple-keys/12711/6.
-    keys: HashMap<(Cow<'static, ProtocolAddress>, Uuid), SenderKeyRecord>,
+    pub keys: HashMap<(Cow<'static, ProtocolAddress>, Uuid), SenderKeyRecord>,
 }
 
 impl InMemSenderKeyStore {
@@ -290,7 +302,7 @@ impl traits::SenderKeyStore for InMemSenderKeyStore {
 }
 
 /// Reference implementation of [traits::ProtocolStore].
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct InMemSignalProtocolStore {
     pub session_store: InMemSessionStore,
     pub pre_key_store: InMemPreKeyStore,

@@ -17,7 +17,7 @@ use std::convert::TryFrom;
 use prost::Message;
 
 /// Wrapper for [PublicKey].
-#[derive(Debug, PartialOrd, Ord, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialOrd, Ord, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct IdentityKey {
     public_key: PublicKey,
 }
@@ -58,7 +58,7 @@ impl From<PublicKey> for IdentityKey {
 }
 
 /// Wrapper for [KeyPair].
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub struct IdentityKeyPair {
     identity_key: IdentityKey,
     private_key: PrivateKey,
@@ -119,7 +119,19 @@ impl TryFrom<&[u8]> for IdentityKeyPair {
         let structure = proto::storage::IdentityKeyPairStructure::decode(value)?;
         Ok(Self {
             identity_key: IdentityKey::try_from(&structure.public_key[..])?,
-            private_key: PrivateKey::deserialize(&structure.private_key)?,
+            private_key: PrivateKey::deserialize(&structure.private_key).map_err(
+                |e: SignalProtocolError| match e {
+                    SignalProtocolError::BadKeyLength(kt, expected, provided, msg) => {
+                        SignalProtocolError::BadKeyLength(
+                            kt,
+                            expected,
+                            provided,
+                            format!("in IdentityKeyPair::try_from(): {}", msg),
+                        )
+                    }
+                    _ => unreachable!(),
+                },
+            )?,
         })
     }
 }
@@ -138,6 +150,19 @@ impl From<KeyPair> for IdentityKeyPair {
         Self {
             identity_key: value.public_key.into(),
             private_key: value.private_key,
+        }
+    }
+}
+
+impl From<IdentityKeyPair> for KeyPair {
+    fn from(value: IdentityKeyPair) -> Self {
+        let IdentityKeyPair {
+            identity_key,
+            private_key,
+        } = value;
+        KeyPair {
+            public_key: *identity_key.public_key(),
+            private_key,
         }
     }
 }

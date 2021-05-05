@@ -3,10 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-use crate::consts::{
-    types::{Counter, VersionType},
-    CIPHERTEXT_MESSAGE_CURRENT_VERSION,
-};
+use crate::consts::{types::Counter, CIPHERTEXT_MESSAGE_CURRENT_VERSION};
 use crate::proto;
 use crate::state::{PreKeyId, SignedPreKeyId};
 use crate::{DeviceId, IdentityKey, PrivateKey, PublicKey, Result, SignalProtocolError};
@@ -21,8 +18,6 @@ use rand::{CryptoRng, Rng};
 use sha2::Sha256;
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
-
-pub const CIPHERTEXT_MESSAGE_CURRENT_VERSION: u8 = 3;
 
 /// A [u8] describing the version of the message chain format to use when starting a chain.
 #[derive(Copy, Clone, Eq, PartialEq, Debug, num_enum::TryFromPrimitive, num_enum::IntoPrimitive)]

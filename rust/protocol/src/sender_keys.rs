@@ -194,7 +194,22 @@ impl SenderKeyState {
 
     pub fn signing_key_private(&self) -> Result<PrivateKey> {
         if let Some(ref signing_key) = self.state.sender_signing_key {
-            Ok(PrivateKey::deserialize(&signing_key.private)?)
+            Ok(PrivateKey::deserialize(&signing_key.private).map_err(
+                |e: SignalProtocolError| match e {
+                    SignalProtocolError::BadKeyLength(kt, expected, provided, msg) => {
+                        SignalProtocolError::BadKeyLength(
+                            kt,
+                            expected,
+                            provided,
+                            format!(
+                                "in .signing_key_private for signing_key {:?}: {}",
+                                signing_key, msg
+                            ),
+                        )
+                    }
+                    _ => unreachable!(),
+                },
+            )?)
         } else {
             Err(SignalProtocolError::InvalidProtobufEncoding)
         }
