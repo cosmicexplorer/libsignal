@@ -575,7 +575,8 @@ impl UnidentifiedSenderMessage {
                 if remaining.len() < 32 + 16 + 32 {
                     return Err(SignalProtocolError::InvalidProtobufEncoding);
                 }
-                let (encrypted_message_key, remaining) = remaining.split_at(32);
+                let (encrypted_message_key, remaining) = remaining.split_at(32 + 1);
+                let encrypted_message_key = &encrypted_message_key[1..];
                 let (encrypted_authentication_tag, remaining) = remaining.split_at(16);
                 let (ephemeral_public, encrypted_message) = remaining.split_at(32);
 
@@ -958,10 +959,10 @@ pub async fn sealed_sender_multi_recipient_encrypt<R: Rng + CryptoRng>(
             &c_i,
         )?;
 
-        serialized.extend_from_slice(their_uuid.as_bytes());
-        let device_id: u32 = destination.device_id().into();
-        prost::encode_length_delimiter(device_id as usize, &mut serialized)
-            .expect("cannot fail encoding to Vec");
+        /* serialized.extend_from_slice(their_uuid.as_bytes()); */
+        /* let device_id: u32 = destination.device_id().into(); */
+        /* prost::encode_length_delimiter(device_id as usize, &mut serialized) */
+        /*     .expect("cannot fail encoding to Vec"); */
         serialized.extend_from_slice(&c_i);
         serialized.extend_from_slice(&at_i);
     }
