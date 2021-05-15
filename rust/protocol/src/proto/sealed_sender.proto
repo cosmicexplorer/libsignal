@@ -1,7 +1,7 @@
 syntax = "proto2";
 
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020-2021 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
@@ -40,6 +40,7 @@ message UnidentifiedSenderMessage {
             // Further cases should line up with Envelope.Type, even though old cases don't.
             reserved 3 to 6;
             SENDERKEY_MESSAGE      = 7;
+            ENCRYPTED_PREKEY_BUNDLE_MESSAGE = 8;
         }
 
         enum ContentHint {

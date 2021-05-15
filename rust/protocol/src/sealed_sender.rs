@@ -335,6 +335,7 @@ impl From<ProtoMessageType> for CiphertextMessageType {
             ProtoMessageType::Message => Self::Whisper,
             ProtoMessageType::PrekeyMessage => Self::PreKey,
             ProtoMessageType::SenderkeyMessage => Self::SenderKey,
+            ProtoMessageType::EncryptedPrekeyBundleMessage => Self::EncryptedPreKeyBundle,
         };
         // Keep raw values in sync from now on, for efficient codegen.
         assert!(result == Self::PreKey || message_type as i32 == result as i32);
@@ -348,6 +349,7 @@ impl From<CiphertextMessageType> for ProtoMessageType {
             CiphertextMessageType::PreKey => Self::PrekeyMessage,
             CiphertextMessageType::Whisper => Self::Message,
             CiphertextMessageType::SenderKey => Self::SenderkeyMessage,
+            CiphertextMessageType::EncryptedPreKeyBundle => Self::EncryptedPrekeyBundleMessage,
         };
         // Keep raw values in sync from now on, for efficient codegen.
         assert!(result == Self::PrekeyMessage || message_type as i32 == result as i32);
@@ -1247,6 +1249,32 @@ pub async fn sealed_sender_decrypt(
             )
             .await?
         }
+        CiphertextMessageType::EncryptedPreKeyBundle => {
+            let encrypted_keys_and_ctext = usmc.contents()?;
+            let (encrypted_secret_key, rest) = encrypted_keys_and_ctext.split_at(32);
+            let (public_secret_key, rest) = rest.split_at(32);
+            let public_secret_key = PublicKey::from_djb_public_key_bytes(public_secret_key)?;
+            let (encrypted_iv, rest) = rest.split_at(32);
+            let (public_iv_key, ciphertext) = rest.split_at(32);
+            let public_iv_key = PublicKey::from_djb_public_key_bytes(public_iv_key)?;
+
+            let our_identity = identity_store.get_identity_key_pair(None).await?;
+
+            let secret_key = sealed_sender_v2::apply_agreement_xor(
+                our_identity.private_key(),
+                &public_secret_key,
+                Direction::Receiving,
+                encrypted_secret_key,
+            )?;
+            let secret_iv = sealed_sender_v2::apply_agreement_xor(
+                our_identity.private_key(),
+                &public_iv_key,
+                Direction::Receiving,
+                encrypted_iv,
+            )?;
+
+            crypto::aes_256_cbc_decrypt(ciphertext, &secret_key, &secret_iv[..16])?
+        }
         msg_type => {
             return Err(SignalProtocolError::InvalidSealedSenderMessage(format!(
                 "Unexpected message type {}",
@@ -1327,6 +1355,53 @@ fn test_lossless_round_trip() -> Result<()> {
     let sender_certificate = SenderCertificate::from_protobuf(&sender_certificate_data)?;
     assert!(sender_certificate.validate(&trust_root.public_key()?, 31336)?);
     Ok(())
+}
+
+pub async fn encrypt_pre_key_bundle_message<R: CryptoRng + Rng>(
+    destination: &ProtocolAddress,
+    plaintext: Vec<u8>,
+    id_store: &mut dyn IdentityKeyStore,
+    csprng: &mut R,
+) -> Result<Vec<u8>> {
+    let dest_pubkey = id_store
+        .get_identity(&destination, None)
+        .await?
+        .ok_or_else(|| SignalProtocolError::SessionNotFound(format!("{}", destination)))?;
+
+    let (secret_key, encrypted_secret_key, public_secret_key): ([u8; 32], Box<[u8]>, PublicKey) = {
+        let m: [u8; 32] = csprng.gen();
+        let keys = sealed_sender_v2::DerivedKeys::calculate(&m);
+        let send = sealed_sender_v2::apply_agreement_xor(
+            &keys.e,
+            dest_pubkey.public_key(),
+            Direction::Sending,
+            m.as_ref(),
+        )?;
+        (m, send, keys.e.public_key()?)
+    };
+    /* This will be cut down to 16 bytes. */
+    let (iv, encrypted_iv, public_iv_key): ([u8; 32], Box<[u8]>, PublicKey) = {
+        let m: [u8; 32] = csprng.gen();
+        let keys = sealed_sender_v2::DerivedKeys::calculate(&m);
+        let send = sealed_sender_v2::apply_agreement_xor(
+            &keys.e,
+            dest_pubkey.public_key(),
+            Direction::Sending,
+            m.as_ref(),
+        )?;
+        (m, send, keys.e.public_key()?)
+    };
+
+    let ciphertext = crypto::aes_256_cbc_encrypt(&plaintext, &secret_key, &iv[..16])?;
+
+    let result: Vec<u8> = encrypted_secret_key.iter()
+        .chain(public_secret_key.public_key_bytes()?)
+        .chain(encrypted_iv.as_ref())
+        .chain(public_iv_key.public_key_bytes()?)
+        .chain(&ciphertext)
+        .cloned()
+        .collect();
+    Ok(result)
 }
 
 #[test]

@@ -70,6 +70,7 @@ pub enum CiphertextMessageType {
     PreKey = 3,
     // Further cases should line up with Envelope.Type (proto), even though old cases don't.
     SenderKey = 7,
+    EncryptedPreKeyBundle = 8,
 }
 
 impl CiphertextMessage {
