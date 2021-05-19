@@ -372,7 +372,7 @@ impl ContentHint {
         }
     }
 
-    pub const fn to_u32(self) -> u32 {
+    pub fn to_u32(self) -> u32 {
         use proto::sealed_sender::unidentified_sender_message::message::ContentHint as ProtoContentHint;
         match self {
             ContentHint::Default => 0,
@@ -814,13 +814,13 @@ mod sealed_sender_v2 {
     const LABEL_DH: &[u8] = b"Sealed Sender v2: DH";
     const LABEL_DH_S: &[u8] = b"Sealed Sender v2: DH-sender";
 
-    pub(super) struct DerivedKeys {
-        pub(super) e: PrivateKey,
-        pub(super) k: Box<[u8]>,
+    pub struct DerivedKeys {
+        pub e: PrivateKey,
+        pub k: Box<[u8]>,
     }
 
     impl DerivedKeys {
-        pub(super) fn calculate(m: &[u8]) -> DerivedKeys {
+        pub fn calculate(m: &[u8]) -> DerivedKeys {
             let kdf = HKDF::new().expect("valid KDF version");
             let r = kdf
                 .derive_secrets(&m, LABEL_R, 64)
@@ -835,7 +835,7 @@ mod sealed_sender_v2 {
         }
     }
 
-    pub(super) fn apply_agreement_xor(
+    pub fn apply_agreement_xor(
         priv_key: &PrivateKey,
         pub_key: &PublicKey,
         direction: Direction,
@@ -891,6 +891,7 @@ mod sealed_sender_v2 {
         HKDF::new()?.derive_secrets(&agreement_key_input, LABEL_DH_S, 16)
     }
 }
+pub use sealed_sender_v2::{apply_agreement_xor, DerivedKeys};
 
 pub async fn sealed_sender_multi_recipient_encrypt<R: Rng + CryptoRng>(
     destinations: &[&ProtocolAddress],
@@ -1332,17 +1333,17 @@ fn test_lossless_round_trip() -> Result<()> {
 fn test_agreement_xor() -> Result<()> {
     let m: [u8; 32] = (&mut rand::thread_rng()).gen();
 
-    let keys = sealed_sender_v2::DerivedKeys::calculate(&m);
+    let keys = DerivedKeys::calculate(&m);
 
     let a = KeyPair::generate(&mut rand::thread_rng());
 
-    let send_a_b = sealed_sender_v2::apply_agreement_xor(
+    let send_a_b = apply_agreement_xor(
         &keys.e,
         &a.public_key,
         Direction::Sending,
         m.as_ref(),
     )?;
-    let recv_a_b = sealed_sender_v2::apply_agreement_xor(
+    let recv_a_b = apply_agreement_xor(
         &a.private_key,
         &keys.e.public_key()?,
         Direction::Receiving,
