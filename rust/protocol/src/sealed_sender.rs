@@ -828,8 +828,8 @@ mod sealed_sender_v2 {
             let k = kdf
                 .derive_secrets(&m, LABEL_K, 32)
                 .expect("valid use of KDF");
-            let e_raw =
-                Scalar::from_bytes_mod_order_wide(r.as_ref().try_into().expect("64-byte slice"));
+            let r64: [u8; 64] = *arrayref::array_ref![r.as_ref(), 0, 64];
+            let e_raw = Scalar::from_bytes_mod_order_wide(&r64);
             let e = PrivateKey::try_from(&e_raw.as_bytes()[..]).expect("valid PrivateKey");
             DerivedKeys { e, k }
         }
@@ -1337,12 +1337,7 @@ fn test_agreement_xor() -> Result<()> {
 
     let a = KeyPair::generate(&mut rand::thread_rng());
 
-    let send_a_b = apply_agreement_xor(
-        &keys.e,
-        &a.public_key,
-        Direction::Sending,
-        m.as_ref(),
-    )?;
+    let send_a_b = apply_agreement_xor(&keys.e, &a.public_key, Direction::Sending, m.as_ref())?;
     let recv_a_b = apply_agreement_xor(
         &a.private_key,
         &keys.e.public_key()?,
