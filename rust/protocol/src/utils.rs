@@ -1,5 +1,5 @@
 //
-// Copyright 2020, 2021 Signal Messenger, LLC.
+// Copyright 2020-2021 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
@@ -36,18 +36,6 @@ fn ct_select(mask: u8, a: u8, b: u8) -> u8 {
 ///
 /// The primary goal of this function is to **not leak any additional information, besides the
 /// ordering, about the value of the two keys**, say due to an early exit of the loop.
-///
-/// ### Example usage
-///```
-/// # use libsignal_protocol::utils_unstable::*;
-/// use std::cmp::Ordering;
-///
-/// // Equality checking is the most significant use case for this function.
-/// assert!(Ordering::Equal == constant_time_cmp(b"abc", b"abc"));
-/// // But we can also use it to order keys lexicographically.
-/// assert!(Ordering::Less == constant_time_cmp(b"ab", b"bc"));
-/// assert!(Ordering::Greater == constant_time_cmp(b"c", b"a"));
-///```
 ///
 /// ### Implementation Notes
 /// #### Leaked Information
