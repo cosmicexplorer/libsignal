@@ -4,7 +4,7 @@
 //
 
 use crate::{
-    message_encrypt, CiphertextMessageType, Context, Direction, IdentityKeyStore, KeyPair,
+    message_encrypt, CiphertextMessageType, Context, Direction, IdentityKeyStore, KeyPair, KeyType,
     PreKeySignalMessage, PreKeyStore, PrivateKey, ProtocolAddress, PublicKey, Result,
     SessionRecord, SessionStore, SignalMessage, SignalProtocolError, SignedPreKeyStore, HKDF,
 };
@@ -16,7 +16,10 @@ use curve25519_dalek::scalar::Scalar;
 use prost::Message;
 use rand::{CryptoRng, Rng};
 use signal_crypto::Aes256GcmSiv;
-use std::convert::{TryFrom, TryInto};
+use std::{
+    array::TryFromSliceError,
+    convert::{TryFrom, TryInto},
+};
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
 
@@ -724,20 +727,53 @@ pub async fn sealed_sender_encrypt_from_usmc<R: Rng + CryptoRng>(
 
     let static_key_ctext = crypto::aes256_ctr_hmacsha256_encrypt(
         &our_identity.public_key().serialize(),
-        &eph_keys.cipher_key()?,
+        &eph_keys
+            .cipher_key()?
+            .try_into()
+            .map_err(|_: TryFromSliceError| {
+                SignalProtocolError::BadKeyLength(
+                    KeyType::Djb,
+                    eph_keys
+                        .cipher_key()
+                        .expect("just accessed the same field")
+                        .len(),
+                )
+            })?,
         &eph_keys.mac_key()?,
     )?;
 
+    let chain_key: [u8; crypto::AES_256_KEY_SIZE] =
+        eph_keys
+            .chain_key()?
+            .try_into()
+            .map_err(|_: TryFromSliceError| {
+                SignalProtocolError::BadKeyLength(
+                    KeyType::Djb,
+                    eph_keys.chain_key().expect("just accessed this key").len(),
+                )
+            })?;
     let static_keys = sealed_sender_v1::StaticKeys::calculate(
         their_identity.public_key(),
         our_identity.private_key(),
-        eph_keys.chain_key()?,
+        &chain_key,
         &static_key_ctext,
     )?;
 
+    let cipher_key: &[u8; crypto::AES_256_KEY_SIZE] = &static_keys
+        .cipher_key()?
+        .try_into()
+        .map_err(|_: TryFromSliceError| {
+            SignalProtocolError::BadKeyLength(
+                KeyType::Djb,
+                static_keys
+                    .cipher_key()
+                    .expect("just accessed this key")
+                    .len(),
+            )
+        })?;
     let message_data = crypto::aes256_ctr_hmacsha256_encrypt(
         usmc.serialized()?,
-        &static_keys.cipher_key()?,
+        cipher_key,
         &static_keys.mac_key()?,
     )?;
 
@@ -1037,9 +1073,18 @@ pub async fn sealed_sender_decrypt_to_usmc(
                 false,
             )?;
 
+            let cipher_key: &[u8; crypto::AES_256_KEY_SIZE] = &eph_keys
+                .cipher_key()?
+                .try_into()
+                .map_err(|_: TryFromSliceError| {
+                    SignalProtocolError::BadKeyLength(
+                        KeyType::Djb,
+                        eph_keys.cipher_key().expect("just accessed this key").len(),
+                    )
+                })?;
             let message_key_bytes = crypto::aes256_ctr_hmacsha256_decrypt(
                 &encrypted_static,
-                &eph_keys.cipher_key()?,
+                cipher_key,
                 &eph_keys.mac_key()?,
             )?;
 
@@ -1052,9 +1097,21 @@ pub async fn sealed_sender_decrypt_to_usmc(
                 &encrypted_static,
             )?;
 
+            let cipher_key: &[u8; crypto::AES_256_KEY_SIZE] = &static_keys
+                .cipher_key()?
+                .try_into()
+                .map_err(|_: TryFromSliceError| {
+                    SignalProtocolError::BadKeyLength(
+                        KeyType::Djb,
+                        static_keys
+                            .cipher_key()
+                            .expect("just accessed this key")
+                            .len(),
+                    )
+                })?;
             let message_bytes = crypto::aes256_ctr_hmacsha256_decrypt(
                 &encrypted_message,
-                &static_keys.cipher_key()?,
+                cipher_key,
                 &static_keys.mac_key()?,
             )?;
 

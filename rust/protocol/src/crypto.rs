@@ -1,7 +1,14 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020-2021 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
+
+//! Application of cryptographic primitives, including [HMAC] and [AES].
+//!
+//! [HMAC]: https://en.wikipedia.org/wiki/HMAC
+//! [AES]: https://en.wikipedia.org/wiki/Advanced_Encryption_Standard
+
+#![warn(missing_docs)]
 
 use crate::{error::Result, SignalProtocolError};
 
@@ -13,14 +20,29 @@ use hmac::{Hmac, Mac, NewMac};
 use sha2::Sha256;
 use subtle::ConstantTimeEq;
 
-pub fn aes_256_ctr_encrypt(ptext: &[u8], key: &[u8]) -> Result<Vec<u8>> {
-    if key.len() != 32 {
-        return Err(SignalProtocolError::InvalidCipherCryptographicParameters(
-            32, 0,
-        ));
-    }
+/// TODO: Could be nice to have a type-safe library for manipulating units of bytes safely.
+const BITS_PER_BYTE: usize = std::mem::size_of::<u8>() * 8;
 
-    let zero_nonce = [0u8; 16];
+/// The length of the key we use for [AES] encryption in this crate.
+///
+/// Used in [aes_256_ctr_encrypt] and [aes_256_ctr_decrypt].
+///
+/// [AES]: https://en.wikipedia.org/wiki/Advanced_Encryption_Standard
+pub const AES_256_KEY_SIZE: usize = 256 / BITS_PER_BYTE;
+
+/// The size of the generated nonce we use for [AES] encryption in this crate.
+///
+/// Used in [aes_256_ctr_encrypt] and [aes_256_ctr_decrypt].
+///
+/// [AES]: https://en.wikipedia.org/wiki/Advanced_Encryption_Standard
+pub const AES_NONCE_SIZE: usize = 128 / BITS_PER_BYTE;
+
+/// Encrypt plaintext `ptext` using key `key` with [AES]-256 in [CTR] mode.
+///
+/// [AES]: https://en.wikipedia.org/wiki/Advanced_Encryption_Standard
+/// [CTR]: https://en.wikipedia.org/wiki/Block_cipher_mode_of_operation#CTR
+pub fn aes_256_ctr_encrypt(ptext: &[u8], key: &[u8; AES_256_KEY_SIZE]) -> Result<Vec<u8>> {
+    let zero_nonce = [0u8; AES_NONCE_SIZE];
     let mut cipher = Ctr128::<Aes256>::new(key.into(), (&zero_nonce).into());
 
     let mut ctext = ptext.to_vec();
@@ -28,10 +50,19 @@ pub fn aes_256_ctr_encrypt(ptext: &[u8], key: &[u8]) -> Result<Vec<u8>> {
     Ok(ctext)
 }
 
-pub fn aes_256_ctr_decrypt(ctext: &[u8], key: &[u8]) -> Result<Vec<u8>> {
+/// Decrypt ciphertext `ctext` using key `key` with [AES]-256 in [CTR] mode.
+///
+/// [AES]: https://en.wikipedia.org/wiki/Advanced_Encryption_Standard
+/// [CTR]: https://en.wikipedia.org/wiki/Block_cipher_mode_of_operation#CTR
+pub fn aes_256_ctr_decrypt(ctext: &[u8], key: &[u8; AES_256_KEY_SIZE]) -> Result<Vec<u8>> {
     aes_256_ctr_encrypt(ctext, key)
 }
 
+/// Encrypt plaintext `ptext` using key `key` and initialization vector `iv` with [AES]-256 in
+/// [CBC] mode.
+///
+/// [AES]: https://en.wikipedia.org/wiki/Advanced_Encryption_Standard
+/// [CBC]: https://en.wikipedia.org/wiki/Block_cipher_mode_of_operation#CBC
 pub fn aes_256_cbc_encrypt(ptext: &[u8], key: &[u8], iv: &[u8]) -> Result<Vec<u8>> {
     match Cbc::<Aes256, Pkcs7>::new_var(key, iv) {
         Ok(mode) => Ok(mode.encrypt_vec(&ptext)),
@@ -41,6 +72,11 @@ pub fn aes_256_cbc_encrypt(ptext: &[u8], key: &[u8], iv: &[u8]) -> Result<Vec<u8
     }
 }
 
+/// Decrypt ciphertext `ctext` using key `key` and initialization vector `iv` with [AES]-256 in
+/// [CBC] mode.
+///
+/// [AES]: https://en.wikipedia.org/wiki/Advanced_Encryption_Standard
+/// [CBC]: https://en.wikipedia.org/wiki/Block_cipher_mode_of_operation#CBC
 pub fn aes_256_cbc_decrypt(ctext: &[u8], key: &[u8], iv: &[u8]) -> Result<Vec<u8>> {
     if ctext.is_empty() || ctext.len() % 16 != 0 {
         return Err(SignalProtocolError::InvalidCiphertext);
@@ -61,36 +97,63 @@ pub fn aes_256_cbc_decrypt(ctext: &[u8], key: &[u8], iv: &[u8]) -> Result<Vec<u8
         .map_err(|_| SignalProtocolError::InvalidCiphertext)?)
 }
 
-pub fn hmac_sha256(key: &[u8], input: &[u8]) -> Result<[u8; 32]> {
+/// The statically-known size of the output of [hmac_sha256].
+pub const HMAC_OUTPUT_SIZE: usize = 256 / BITS_PER_BYTE;
+
+/// Calculate the [HMAC]-SHA256 code over `input` using `key`.
+///
+/// [HMAC]: https://en.wikipedia.org/wiki/HMAC
+pub fn hmac_sha256(key: &[u8], input: &[u8]) -> Result<[u8; HMAC_OUTPUT_SIZE]> {
     let mut hmac = Hmac::<Sha256>::new_varkey(key).expect("HMAC-SHA256 should accept any size key");
     hmac.update(input);
     Ok(hmac.finalize().into_bytes().into())
 }
 
+/// Length in bytes of the [HMAC] key used for [aes256_ctr_hmacsha256_encrypt] and
+/// [aes256_ctr_hmacsha256_decrypt].
+///
+/// [HMAC]: https://en.wikipedia.org/wiki/HMAC
+pub const MAC_KEY_LENGTH: usize = 10;
+
+/// Encrypt plaintext `msg` with [AES]-256 and embed a computed [HMAC] into the returned bytes.
+///
+/// *Implementation note: within the body of this method, only the first [MAC_KEY_LENGTH] bytes of
+/// the computed MAC are used.*
+///
+/// [AES]: https://en.wikipedia.org/wiki/Advanced_Encryption_Standard
+/// [HMAC]: https://en.wikipedia.org/wiki/HMAC
 pub fn aes256_ctr_hmacsha256_encrypt(
     msg: &[u8],
-    cipher_key: &[u8],
+    cipher_key: &[u8; AES_256_KEY_SIZE],
     mac_key: &[u8],
 ) -> Result<Vec<u8>> {
     let ctext = aes_256_ctr_encrypt(msg, cipher_key)?;
     let mac = hmac_sha256(mac_key, &ctext)?;
-    let mut result = Vec::with_capacity(ctext.len() + 10);
+    let mut result = Vec::with_capacity(ctext.len() + MAC_KEY_LENGTH);
     result.extend_from_slice(&ctext);
-    result.extend_from_slice(&mac[..10]);
+    result.extend_from_slice(&mac[..MAC_KEY_LENGTH]);
     Ok(result)
 }
 
+/// Validate the [HMAC] `mac_key` against the ciphertext `ctext`, then decrypt `ctext` using
+/// [AES]-256 with `cipher_key` and [aes_256_ctr_decrypt].
+///
+/// *Implementation note: the last [MAC_KEY_LENGTH] bytes of the `ctext` slice represent the
+/// truncated [HMAC] of the rest of the message, as generated by [aes256_ctr_hmacsha256_encrypt].*
+///
+/// [AES]: https://en.wikipedia.org/wiki/Advanced_Encryption_Standard
+/// [HMAC]: https://en.wikipedia.org/wiki/HMAC
 pub fn aes256_ctr_hmacsha256_decrypt(
     ctext: &[u8],
-    cipher_key: &[u8],
+    cipher_key: &[u8; AES_256_KEY_SIZE],
     mac_key: &[u8],
 ) -> Result<Vec<u8>> {
-    if ctext.len() < 10 {
+    if ctext.len() < MAC_KEY_LENGTH {
         return Err(SignalProtocolError::InvalidCiphertext);
     }
-    let ptext_len = ctext.len() - 10;
+    let ptext_len = ctext.len() - MAC_KEY_LENGTH;
     let our_mac = hmac_sha256(mac_key, &ctext[..ptext_len])?;
-    let same: bool = our_mac[..10].ct_eq(&ctext[ptext_len..]).into();
+    let same: bool = our_mac[..MAC_KEY_LENGTH].ct_eq(&ctext[ptext_len..]).into();
     if !same {
         return Err(SignalProtocolError::InvalidCiphertext);
     }
@@ -100,6 +163,7 @@ pub fn aes256_ctr_hmacsha256_decrypt(
 #[cfg(test)]
 mod test {
     use super::Result;
+    use std::convert::TryInto;
 
     #[test]
     fn aes_cbc_test() -> Result<()> {
@@ -136,7 +200,11 @@ mod test {
             .expect("valid hex");
         let ptext = [0u8; 35];
 
-        let ctext = super::aes_256_ctr_encrypt(&ptext, &key)?;
+        let ctext = super::aes_256_ctr_encrypt(
+            &ptext,
+            &key.try_into()
+                .expect("failed to encrypt with valid hex string"),
+        )?;
         assert_eq!(
             hex::encode(ctext),
             "e568f68194cf76d6174d4cc04310a85491151e5d0b7a1f1bc0d7acd0ae3e51e4170e23"
