@@ -52,7 +52,7 @@ impl From<PublicKey> for IdentityKey {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct IdentityKeyPair {
     identity_key: IdentityKey,
     private_key: PrivateKey,

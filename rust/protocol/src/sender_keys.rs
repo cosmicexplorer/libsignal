@@ -6,7 +6,7 @@
 use crate::consts;
 use crate::crypto::hmac_sha256;
 use crate::proto::storage as storage_proto;
-use crate::{PrivateKey, PublicKey, Result, SignalProtocolError, HKDF};
+use crate::{AsymmetricRole, KeyType, PrivateKey, PublicKey, Result, SignalProtocolError, HKDF};
 
 use prost::Message;
 use std::collections::VecDeque;
@@ -36,7 +36,16 @@ impl SenderMessageKey {
     pub fn from_protobuf(
         smk: storage_proto::sender_key_state_structure::SenderMessageKey,
     ) -> Result<Self> {
-        Self::new(smk.iteration, smk.seed)
+        Self::new(
+            smk.iteration,
+            smk.seed.try_into().map_err(|e: Vec<u8>| {
+                SignalProtocolError::BadKeyLength(
+                    KeyType::Curve25519,
+                    AsymmetricRole::Hmac,
+                    e.len(),
+                )
+            })?,
+        )
     }
 
     pub fn iteration(&self) -> Result<u32> {
@@ -159,8 +168,35 @@ impl SenderKeyState {
         Ok(Self { state })
     }
 
-    pub fn from_protobuf(state: storage_proto::SenderKeyStateStructure) -> Self {
-        Self { state }
+    pub fn from_protobuf(state: storage_proto::SenderKeyStateStructure) -> Result<Self> {
+        let storage_proto::sender_key_state_structure::SenderSigningKey { private, public } = state
+            .sender_signing_key
+            .clone()
+            .ok_or(SignalProtocolError::InvalidProtobufEncoding)?;
+
+        let public_key: &[u8; 1 + PUBLIC_KEY_LENGTH] =
+            &public.try_into().map_err(|e: Vec<u8>| {
+                SignalProtocolError::BadKeyLength(
+                    KeyType::Curve25519,
+                    AsymmetricRole::Public,
+                    e.len(),
+                )
+            })?;
+        let public_key = PublicKey::deserialize(public_key)?;
+        let private_key: &[u8; PRIVATE_KEY_LENGTH] =
+            &private.try_into().map_err(|e: Vec<u8>| {
+                SignalProtocolError::BadKeyLength(
+                    KeyType::Curve25519,
+                    AsymmetricRole::Private,
+                    e.len(),
+                )
+            })?;
+        let private_key: Option<PrivateKey> = Some(PrivateKey::deserialize(&private_key));
+        Ok(Self {
+            state,
+            public_key,
+            private_key,
+        })
     }
 
     pub fn serialize(&self) -> Result<Vec<u8>> {
@@ -186,7 +222,16 @@ impl SenderKeyState {
             .sender_chain_key
             .as_ref()
             .ok_or(SignalProtocolError::InvalidProtobufEncoding)?;
-        SenderChainKey::new(sender_chain.iteration, sender_chain.seed.clone())
+        SenderChainKey::new(
+            sender_chain.iteration,
+            sender_chain.seed.clone().try_into().map_err(|e: Vec<u8>| {
+                SignalProtocolError::BadKeyLength(
+                    KeyType::Curve25519,
+                    AsymmetricRole::Hmac,
+                    e.len(),
+                )
+            })?,
+        )
     }
 
     pub fn set_sender_chain_key(&mut self, chain_key: SenderChainKey) -> Result<()> {

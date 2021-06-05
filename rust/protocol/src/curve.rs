@@ -94,6 +94,9 @@ pub enum AsymmetricRole {
     Hmac,
     /// This error was raised when decoding a [signature][curve25519::SIGNATURE_LENGTH].
     Signature,
+    /// This error was raised when decoding a symmetric cipher key as with
+    /// [crypto::aes_256_ctr_encrypt]
+    SymmetricKey,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
@@ -133,7 +136,11 @@ impl PublicKey {
     pub fn deserialize_result(value: &[u8]) -> Result<Self> {
         let value: [u8; 1 + curve25519::PUBLIC_KEY_LENGTH] =
             value.try_into().map_err(|_: TryFromSliceError| {
-                SignalProtocolError::BadKeyLength(KeyType::Curve25519, value.len())
+                SignalProtocolError::BadKeyLength(
+                    KeyType::Curve25519,
+                    AsymmetricRole::Public,
+                    value.len(),
+                )
             })?;
         Self::deserialize(&value)
     }
@@ -280,7 +287,11 @@ impl PrivateKey {
     pub fn deserialize_result(value: &[u8]) -> Result<Self> {
         let value: &[u8; curve25519::PRIVATE_KEY_LENGTH] =
             value.try_into().map_err(|_: TryFromSliceError| {
-                SignalProtocolError::BadKeyLength(KeyType::Curve25519, value.len())
+                SignalProtocolError::BadKeyLength(
+                    KeyType::Curve25519,
+                    AsymmetricRole::Private,
+                    value.len(),
+                )
             })?;
         Ok(Self::deserialize(value))
     }

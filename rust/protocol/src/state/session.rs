@@ -3,8 +3,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
+use crate::curve::curve25519::PUBLIC_KEY_LENGTH;
 use crate::ratchet::{ChainKey, MessageKeys, RootKey};
-use crate::{IdentityKey, KeyPair, PrivateKey, PublicKey, Result, SignalProtocolError, HKDF};
+use crate::{
+    AsymmetricRole, IdentityKey, KeyPair, KeyType, PrivateKey, PublicKey, Result,
+    SignalProtocolError, HKDF,
+};
 
 use crate::consts;
 use crate::proto::storage::session_structure;
@@ -13,6 +17,7 @@ use crate::state::{PreKeyId, SignedPreKeyId};
 use prost::Message;
 
 use std::collections::VecDeque;
+use std::convert::TryInto;
 
 #[derive(Debug, Clone)]
 pub(crate) struct UnacknowledgedPreKeyMessageItems {
@@ -53,6 +58,75 @@ pub(crate) struct SessionState {
 }
 
 impl SessionState {
+    fn extract_remote_identity_key(session: &SessionStructure) -> Result<Option<IdentityKey>> {
+        match session.remote_identity_public.len() {
+            0 => Ok(None),
+            _ => {
+                let key: [u8; 1 + PUBLIC_KEY_LENGTH] = session
+                    .remote_identity_public
+                    .clone()
+                    .try_into()
+                    .map_err(|e: Vec<u8>| {
+                        SignalProtocolError::BadKeyLength(
+                            KeyType::Curve25519,
+                            AsymmetricRole::Public,
+                            e.len(),
+                        )
+                    })?;
+                Ok(Some(IdentityKey::decode(&key)?))
+            }
+        }
+    }
+
+    fn extract_local_identity_key(session: &SessionStructure) -> Result<IdentityKey> {
+        let key: [u8; 1 + PUBLIC_KEY_LENGTH] = session
+            .local_identity_public
+            .clone()
+            .try_into()
+            .map_err(|e: Vec<u8>| {
+                SignalProtocolError::BadKeyLength(
+                    KeyType::Curve25519,
+                    AsymmetricRole::Public,
+                    e.len(),
+                )
+            })?;
+        Ok(IdentityKey::decode(&key)?)
+    }
+
+    fn extract_sender_key_pair(session: &SessionStructure) -> Result<Option<KeyPair>> {
+        match session.sender_chain.clone() {
+            None => Ok(None),
+            Some(ref c) => {
+                let sender_ratchet_key =
+                    PublicKey::deserialize(&c.sender_ratchet_key.clone().try_into().map_err(
+                        |e: Vec<u8>| {
+                            SignalProtocolError::BadKeyLength(
+                                KeyType::Curve25519,
+                                AsymmetricRole::Public,
+                                e.len(),
+                            )
+                        },
+                    )?)?;
+                let sender_ratchet_private_key = PrivateKey::deserialize(
+                    &c.sender_ratchet_key_private
+                        .clone()
+                        .try_into()
+                        .map_err(|e: Vec<u8>| {
+                            SignalProtocolError::BadKeyLength(
+                                KeyType::Curve25519,
+                                AsymmetricRole::Private,
+                                e.len(),
+                            )
+                        })?,
+                );
+                Ok(Some(KeyPair::new(
+                    sender_ratchet_key,
+                    sender_ratchet_private_key,
+                )))
+            }
+        }
+    }
+
     pub(crate) fn new(session: SessionStructure) -> Self {
         Self { session }
     }
@@ -76,24 +150,19 @@ impl SessionState {
     }
 
     pub(crate) fn remote_identity_key(&self) -> Result<Option<IdentityKey>> {
-        match self.session.remote_identity_public.len() {
-            0 => Ok(None),
-            _ => Ok(Some(IdentityKey::decode(
-                &self.session.remote_identity_public,
-            )?)),
-        }
+        Self::extract_remote_identity_key(&self.session)
     }
 
-    pub(crate) fn remote_identity_key_bytes(&self) -> Result<Option<Vec<u8>>> {
-        Ok(self.remote_identity_key()?.map(|k| k.serialize().to_vec()))
+    pub(crate) fn remote_identity_key_bytes(&self) -> Result<Option<[u8; 1 + PUBLIC_KEY_LENGTH]>> {
+        Ok(self.remote_identity_key()?.map(|k| k.serialize()))
     }
 
     pub(crate) fn local_identity_key(&self) -> Result<IdentityKey> {
-        IdentityKey::decode(&self.session.local_identity_public)
+        Self::extract_local_identity_key(&self.session)
     }
 
-    pub(crate) fn local_identity_key_bytes(&self) -> Result<Vec<u8>> {
-        Ok(self.local_identity_key()?.serialize().to_vec())
+    pub(crate) fn local_identity_key_bytes(&self) -> Result<[u8; 1 + PUBLIC_KEY_LENGTH]> {
+        Ok(self.local_identity_key()?.serialize())
     }
 
     pub(crate) fn session_with_self(&self) -> Result<bool> {
@@ -128,8 +197,13 @@ impl SessionState {
         Ok(())
     }
 
+    pub(crate) fn sender_key_pair(&self) -> Result<Option<KeyPair>> {
+        Self::extract_sender_key_pair(&self.session)
+    }
+
+    #[inline]
     pub(crate) fn sender_ratchet_key(&self) -> Result<PublicKey> {
-        match self.session.sender_chain {
+        match self.sender_key_pair()? {
             None => Err(SignalProtocolError::InvalidProtobufEncoding),
             Some(ref c) => PublicKey::deserialize_result(&c.sender_ratchet_key),
         }
@@ -140,7 +214,7 @@ impl SessionState {
     }
 
     pub(crate) fn sender_ratchet_private_key(&self) -> Result<PrivateKey> {
-        match self.session.sender_chain {
+        match self.sender_key_pair()? {
             None => Err(SignalProtocolError::InvalidProtobufEncoding),
             Some(ref c) => PrivateKey::deserialize_result(&c.sender_ratchet_key_private),
         }
@@ -482,11 +556,14 @@ impl SessionRecord {
 
         let mut previous = VecDeque::with_capacity(record.previous_sessions.len());
         for s in record.previous_sessions {
-            previous.push_back(s.into());
+            previous.push_back(s.try_into()?);
         }
 
         Ok(Self {
-            current_session: record.current_session.map(|s| s.into()),
+            current_session: match record.current_session {
+                None => None,
+                Some(s) => Some(s.try_into()?),
+            },
             previous_sessions: previous,
         })
     }
@@ -608,11 +685,11 @@ impl SessionRecord {
         self.session_state()?.session_version()
     }
 
-    pub fn local_identity_key_bytes(&self) -> Result<Vec<u8>> {
+    pub fn local_identity_key_bytes(&self) -> Result<[u8; 1 + PUBLIC_KEY_LENGTH]> {
         self.session_state()?.local_identity_key_bytes()
     }
 
-    pub fn remote_identity_key_bytes(&self) -> Result<Option<Vec<u8>>> {
+    pub fn remote_identity_key_bytes(&self) -> Result<Option<[u8; 1 + PUBLIC_KEY_LENGTH]>> {
         self.session_state()?.remote_identity_key_bytes()
     }
 

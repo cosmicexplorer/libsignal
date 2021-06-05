@@ -41,7 +41,8 @@ pub async fn message_encrypt(
     let local_identity_key = session_state.local_identity_key()?;
     let their_identity_key = session_state
         .remote_identity_key()?
-        .ok_or(SignalProtocolError::InvalidSessionStructure)?;
+        .map(Ok)
+        .unwrap_or(Err(SignalProtocolError::InvalidSessionStructure))?;
 
     let ctext = crypto::aes_256_cbc_encrypt(ptext, message_keys.cipher_key(), message_keys.iv())?;
 
@@ -246,7 +247,8 @@ pub async fn message_decrypt_signal<R: Rng + CryptoRng>(
     let their_identity_key = session_record
         .session_state()?
         .remote_identity_key()?
-        .ok_or(SignalProtocolError::InvalidSessionStructure)?;
+        .map(Ok)
+        .unwrap_or_else(|| Err(SignalProtocolError::InvalidProtobufEncoding))?;
 
     if !identity_store
         .is_trusted_identity(
@@ -479,12 +481,12 @@ fn decrypt_message_with_state<R: Rng + CryptoRng>(
     let message_keys =
         get_or_create_message_key(state, their_ephemeral, remote_address, &chain_key, counter)?;
 
-    let their_identity_key = state
-        .remote_identity_key()?
-        .ok_or(SignalProtocolError::InvalidSessionStructure)?;
+    let their_identity_key = state.remote_identity_key()?;
 
     let mac_valid = ciphertext.verify_mac(
-        &their_identity_key,
+        &their_identity_key
+            .map(Ok)
+            .unwrap_or_else(|| Err(SignalProtocolError::InvalidProtobufEncoding))?,
         &state.local_identity_key()?,
         message_keys.mac_key(),
     )?;

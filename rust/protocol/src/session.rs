@@ -87,15 +87,10 @@ async fn process_prekey_v3(
     let our_signed_pre_key_pair = signed_prekey_store
         .get_signed_pre_key(message.signed_pre_key_id(), ctx)
         .await?
-        .key_pair()?;
+        .key_pair();
 
     let our_one_time_pre_key_pair = if let Some(pre_key_id) = message.pre_key_id() {
-        Some(
-            pre_key_store
-                .get_pre_key(pre_key_id, ctx)
-                .await?
-                .key_pair()?,
-        )
+        Some(pre_key_store.get_pre_key(pre_key_id, ctx).await?.key_pair())
     } else {
         log::warn!("Processing PreKey message which had no one-time prekey");
         None
@@ -144,18 +139,7 @@ pub async fn process_prekey_bundle<R: Rng + CryptoRng>(
 
     if !their_identity_key.public_key().verify_signature(
         &bundle.signed_pre_key_public()?.serialize(),
-        bundle
-            .signed_pre_key_signature()?
-            .try_into()
-            .map_err(|_: TryFromSliceError| {
-                SignalProtocolError::BadKeyLength(
-                    KeyType::Curve25519,
-                    bundle
-                        .signed_pre_key_signature()
-                        .expect("just accessed this method")
-                        .len(),
-                )
-            })?,
+        bundle.signed_pre_key_signature()?,
     ) {
         return Err(SignalProtocolError::SignatureValidationFailed);
     }
