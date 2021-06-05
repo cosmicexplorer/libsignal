@@ -5,6 +5,7 @@
 
 use crate::curve::KeyType;
 
+use std::convert::Infallible;
 use std::error::Error;
 use std::fmt;
 use std::panic::UnwindSafe;
@@ -77,6 +78,14 @@ impl Error for SignalProtocolError {
     }
 }
 
+/// According to the docs for [Infallible], this error case should never be raised, so we just use
+/// `unreachable!()`.
+impl From<Infallible> for SignalProtocolError {
+    fn from(_value: Infallible) -> SignalProtocolError {
+        unreachable!()
+    }
+}
+
 impl From<prost::DecodeError> for SignalProtocolError {
     fn from(value: prost::DecodeError) -> SignalProtocolError {
         SignalProtocolError::ProtobufDecodingError(value)
@@ -117,6 +126,7 @@ impl fmt::Display for SignalProtocolError {
             SignalProtocolError::UnrecognizedMessageVersion(message_version) => {
                 write!(f, "unrecognized message version <{}>", message_version)
             }
+            #[allow(deprecated)]
             SignalProtocolError::FingerprintIdentifierMismatch => {
                 write!(f, "fingerprint identifiers do not match")
             }
@@ -133,7 +143,7 @@ impl fmt::Display for SignalProtocolError {
             SignalProtocolError::NoKeyTypeIdentifier => write!(f, "no key type identifier"),
             SignalProtocolError::BadKeyType(t) => write!(f, "bad key type <{:#04x}>", t),
             SignalProtocolError::BadKeyLength(t, l) => {
-                write!(f, "bad key length <{}> for key with type <{}>", l, t)
+                write!(f, "bad key length <{}> for key and type <{:?}>", l, t)
             }
             SignalProtocolError::InvalidPreKeyId => write!(f, "invalid prekey identifier"),
             SignalProtocolError::InvalidSignedPreKeyId => {
