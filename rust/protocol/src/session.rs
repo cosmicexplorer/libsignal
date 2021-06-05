@@ -1,17 +1,21 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020-2021 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
 use crate::{
-    Context, Direction, IdentityKeyStore, KeyPair, PreKeyBundle, PreKeySignalMessage, PreKeyStore,
-    ProtocolAddress, Result, SessionRecord, SessionStore, SignalProtocolError, SignedPreKeyStore,
+    Context, Direction, IdentityKeyStore, KeyPair, KeyType, PreKeyBundle, PreKeySignalMessage,
+    PreKeyStore, ProtocolAddress, Result, SessionRecord, SessionStore, SignalProtocolError,
+    SignedPreKeyStore,
 };
 
 use crate::ratchet;
 use crate::ratchet::{AliceSignalProtocolParameters, BobSignalProtocolParameters};
 use crate::state::PreKeyId;
 use rand::{CryptoRng, Rng};
+
+use std::array::TryFromSliceError;
+use std::convert::{TryFrom, TryInto};
 
 /*
 These functions are on SessionBuilder in Java
@@ -140,8 +144,19 @@ pub async fn process_prekey_bundle<R: Rng + CryptoRng>(
 
     if !their_identity_key.public_key().verify_signature(
         &bundle.signed_pre_key_public()?.serialize(),
-        bundle.signed_pre_key_signature()?,
-    )? {
+        bundle
+            .signed_pre_key_signature()?
+            .try_into()
+            .map_err(|_: TryFromSliceError| {
+                SignalProtocolError::BadKeyLength(
+                    KeyType::Curve25519,
+                    bundle
+                        .signed_pre_key_signature()
+                        .expect("just accessed this method")
+                        .len(),
+                )
+            })?,
+    ) {
         return Err(SignalProtocolError::SignatureValidationFailed);
     }
 

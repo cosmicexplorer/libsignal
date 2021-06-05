@@ -78,7 +78,7 @@ bridge_deserialize!(PublicKey::deserialize, ffi = publickey, jni = false);
 #[bridge_fn(ffi = false, node = false)]
 fn ECPublicKey_Deserialize(data: &[u8], offset: u32) -> Result<PublicKey> {
     let offset = offset as usize;
-    PublicKey::deserialize(&data[offset..])
+    PublicKey::deserialize_result(&data[offset..])
 }
 
 bridge_get_bytearray!(

@@ -1,5 +1,5 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020-2021 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
@@ -196,7 +196,7 @@ impl SenderKeyState {
 
     pub fn signing_key_public(&self) -> Result<PublicKey> {
         if let Some(ref signing_key) = self.state.sender_signing_key {
-            Ok(PublicKey::try_from(&signing_key.public[..])?)
+            Ok(PublicKey::deserialize_result(&signing_key.public[..])?)
         } else {
             Err(SignalProtocolError::InvalidProtobufEncoding)
         }
@@ -204,7 +204,7 @@ impl SenderKeyState {
 
     pub fn signing_key_private(&self) -> Result<PrivateKey> {
         if let Some(ref signing_key) = self.state.sender_signing_key {
-            Ok(PrivateKey::deserialize(&signing_key.private)?)
+            Ok(PrivateKey::deserialize_result(&signing_key.private)?)
         } else {
             Err(SignalProtocolError::InvalidProtobufEncoding)
         }

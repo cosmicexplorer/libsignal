@@ -1,5 +1,5 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020-2021 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
@@ -131,20 +131,18 @@ impl SessionState {
     pub(crate) fn sender_ratchet_key(&self) -> Result<PublicKey> {
         match self.session.sender_chain {
             None => Err(SignalProtocolError::InvalidProtobufEncoding),
-            Some(ref c) => PublicKey::deserialize(&c.sender_ratchet_key),
+            Some(ref c) => PublicKey::deserialize_result(&c.sender_ratchet_key),
         }
     }
 
     pub(crate) fn sender_ratchet_key_for_logging(&self) -> Result<String> {
-        self.sender_ratchet_key()?
-            .public_key_bytes()
-            .map(hex::encode)
+        Ok(hex::encode(self.sender_ratchet_key()?.public_key_bytes()))
     }
 
     pub(crate) fn sender_ratchet_private_key(&self) -> Result<PrivateKey> {
         match self.session.sender_chain {
             None => Err(SignalProtocolError::InvalidProtobufEncoding),
-            Some(ref c) => PrivateKey::deserialize(&c.sender_ratchet_key_private),
+            Some(ref c) => PrivateKey::deserialize_result(&c.sender_ratchet_key_private),
         }
     }
 
@@ -179,7 +177,7 @@ impl SessionState {
             be faster, but may miss non-canonical points. It's unclear if supporting such
             points is desirable.
             */
-            let this_point = PublicKey::deserialize(&chain.sender_ratchet_key)?.serialize();
+            let this_point = PublicKey::deserialize_result(&chain.sender_ratchet_key)?.serialize();
 
             if this_point == sender_bytes {
                 return Ok(Some((chain.clone(), idx)));
@@ -409,7 +407,7 @@ impl SessionState {
                     v => Some(v),
                 },
                 pending_pre_key.signed_pre_key_id as SignedPreKeyId,
-                PublicKey::deserialize(&pending_pre_key.base_key)?,
+                PublicKey::deserialize_result(&pending_pre_key.base_key)?,
             )))
         } else {
             Ok(None)

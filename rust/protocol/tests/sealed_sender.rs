@@ -25,7 +25,7 @@ fn test_server_cert() -> Result<(), SignalProtocolError> {
 
     let recovered = ServerCertificate::deserialize(&serialized)?;
 
-    assert_eq!(recovered.validate(&trust_root.public_key)?, true);
+    assert_eq!(recovered.validate(&trust_root.public_key), true);
 
     let mut cert_data = serialized;
     let cert_bits = cert_data.len() * 8;
@@ -37,7 +37,7 @@ fn test_server_cert() -> Result<(), SignalProtocolError> {
 
         match cert {
             Ok(cert) => {
-                assert_eq!(cert.validate(&trust_root.public_key)?, false);
+                assert_eq!(cert.validate(&trust_root.public_key), false);
             }
             Err(e) => match e {
                 SignalProtocolError::InvalidProtobufEncoding
@@ -74,7 +74,7 @@ fn test_revoked_server_cert() -> Result<(), SignalProtocolError> {
 
     let recovered = ServerCertificate::deserialize(&serialized)?;
 
-    assert_eq!(recovered.validate(&trust_root.public_key)?, false);
+    assert_eq!(recovered.validate(&trust_root.public_key), false);
 
     Ok(())
 }

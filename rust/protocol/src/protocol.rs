@@ -3,10 +3,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
+use crate::curve::curve25519::SIGNATURE_LENGTH;
 use crate::proto;
-use crate::{IdentityKey, PrivateKey, PublicKey, Result, SignalProtocolError};
+use crate::{IdentityKey, KeyType, PrivateKey, PublicKey, Result, SignalProtocolError};
 
-use std::convert::TryFrom;
+use std::array::TryFromSliceError;
+use std::convert::{Infallible, TryFrom, TryInto};
 
 use hmac::{Hmac, Mac, NewMac};
 use prost::Message;
@@ -79,7 +81,7 @@ impl SignalMessage {
         receiver_identity_key: &IdentityKey,
     ) -> Result<Self> {
         let message = proto::wire::SignalMessage {
-            ratchet_key: Some(sender_ratchet_key.serialize().into_vec()),
+            ratchet_key: Some(sender_ratchet_key.serialize().to_vec()),
             counter: Some(counter),
             previous_counter: Some(previous_counter),
             ciphertext: Some(Vec::<u8>::from(&ciphertext[..])),
@@ -211,7 +213,7 @@ impl TryFrom<&[u8]> for SignalMessage {
         let sender_ratchet_key = proto_structure
             .ratchet_key
             .ok_or(SignalProtocolError::InvalidProtobufEncoding)?;
-        let sender_ratchet_key = PublicKey::deserialize(&sender_ratchet_key)?;
+        let sender_ratchet_key = PublicKey::deserialize_result(&sender_ratchet_key)?;
         let counter = proto_structure
             .counter
             .ok_or(SignalProtocolError::InvalidProtobufEncoding)?;
@@ -258,8 +260,8 @@ impl PreKeySignalMessage {
             registration_id: Some(registration_id),
             pre_key_id,
             signed_pre_key_id: Some(signed_pre_key_id),
-            base_key: Some(base_key.serialize().into_vec()),
-            identity_key: Some(identity_key.serialize().into_vec()),
+            base_key: Some(base_key.serialize().to_vec()),
+            identity_key: Some(identity_key.serialize().to_vec()),
             message: Some(Vec::from(message.as_ref())),
         };
         let mut serialized = vec![0u8; 1 + proto_message.encoded_len()];
@@ -359,7 +361,7 @@ impl TryFrom<&[u8]> for PreKeySignalMessage {
             .signed_pre_key_id
             .ok_or(SignalProtocolError::InvalidProtobufEncoding)?;
 
-        let base_key = PublicKey::deserialize(base_key.as_ref())?;
+        let base_key = PublicKey::deserialize_result(base_key.as_ref())?;
 
         Ok(PreKeySignalMessage {
             message_version,
@@ -381,6 +383,8 @@ pub struct SenderKeyMessage {
     chain_id: u32,
     iteration: u32,
     ciphertext: Box<[u8]>,
+    semi_serialized: Box<[u8]>,
+    signature: [u8; SIGNATURE_LENGTH],
     serialized: Box<[u8]>,
 }
 
@@ -409,23 +413,29 @@ impl SenderKeyMessage {
         let signature =
             signature_key.calculate_signature(&serialized[..1 + proto_message_len], csprng)?;
         serialized[1 + proto_message_len..].copy_from_slice(&signature[..]);
+
+        let (semi_serialized, signature) =
+            serialized.split_at(serialized.len() - Self::SIGNATURE_LEN);
+
+        let signature: [u8; SIGNATURE_LENGTH] =
+            signature.try_into().map_err(|_: TryFromSliceError| {
+                SignalProtocolError::BadKeyLength(KeyType::Curve25519, signature.len())
+            })?;
+
         Ok(Self {
             message_version: SENDERKEY_MESSAGE_CURRENT_VERSION,
             distribution_id,
             chain_id,
             iteration,
             ciphertext,
+            semi_serialized: semi_serialized.to_vec().into_boxed_slice(),
+            signature,
             serialized: serialized.into_boxed_slice(),
         })
     }
 
-    pub fn verify_signature(&self, signature_key: &PublicKey) -> Result<bool> {
-        let valid = signature_key.verify_signature(
-            &self.serialized[..self.serialized.len() - Self::SIGNATURE_LEN],
-            &self.serialized[self.serialized.len() - Self::SIGNATURE_LEN..],
-        )?;
-
-        Ok(valid)
+    pub fn verify_signature(&self, signature_key: &PublicKey) -> bool {
+        signature_key.verify_signature(&self.semi_serialized, &self.signature)
     }
 
     #[inline]
@@ -501,12 +511,21 @@ impl TryFrom<&[u8]> for SenderKeyMessage {
             .ok_or(SignalProtocolError::InvalidProtobufEncoding)?
             .into_boxed_slice();
 
+        let (semi_serialized, signature) = value.split_at(value.len() - Self::SIGNATURE_LEN);
+
+        let signature: [u8; SIGNATURE_LENGTH] =
+            signature.try_into().map_err(|_: TryFromSliceError| {
+                SignalProtocolError::BadKeyLength(KeyType::Curve25519, signature.len())
+            })?;
+
         Ok(SenderKeyMessage {
             message_version,
             distribution_id,
             chain_id,
             iteration,
             ciphertext,
+            semi_serialized: semi_serialized.to_vec().into_boxed_slice(),
+            signature,
             serialized: Box::from(value),
         })
     }
@@ -641,7 +660,7 @@ impl TryFrom<&[u8]> for SenderKeyDistributionMessage {
             return Err(SignalProtocolError::InvalidProtobufEncoding);
         }
 
-        let signing_key = PublicKey::deserialize(&signing_key)?;
+        let signing_key = PublicKey::deserialize_result(&signing_key)?;
 
         Ok(SenderKeyDistributionMessage {
             message_version,
@@ -799,7 +818,7 @@ impl TryFrom<&[u8]> for DecryptionErrorMessage {
             .ok_or(SignalProtocolError::InvalidProtobufEncoding)?;
         let ratchet_key = proto_structure
             .ratchet_key
-            .map(|k| PublicKey::deserialize(&k))
+            .map(|k| PublicKey::deserialize_result(&k))
             .transpose()?;
         let device_id = proto_structure.device_id.unwrap_or_default();
         Ok(Self {

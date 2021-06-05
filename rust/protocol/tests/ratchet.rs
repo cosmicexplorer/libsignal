@@ -1,8 +1,9 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020-2021 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
+use arrayref::array_ref;
 use libsignal_protocol::*;
 
 #[test]
@@ -43,18 +44,22 @@ fn test_ratcheting_session_as_bob() -> Result<(), SignalProtocolError> {
 
     let bob_identity_key_public = IdentityKey::decode(&bob_identity_public)?;
 
-    let bob_identity_key_private = PrivateKey::deserialize(&bob_identity_private)?;
+    let bob_identity_key_private = PrivateKey::deserialize_result(&bob_identity_private)?;
 
     let bob_identity_key_pair =
         IdentityKeyPair::new(bob_identity_key_public, bob_identity_key_private);
 
-    let bob_ephemeral_pair =
-        KeyPair::from_public_and_private(&bob_ephemeral_public, &bob_ephemeral_private)?;
+    let bob_ephemeral_pair = KeyPair::from_public_and_private(
+        array_ref![&bob_ephemeral_public, 0, 33],
+        array_ref![&bob_ephemeral_private, 0, 32],
+    )?;
 
-    let bob_signed_prekey_pair =
-        KeyPair::from_public_and_private(&bob_signed_prekey_public, &bob_signed_prekey_private)?;
+    let bob_signed_prekey_pair = KeyPair::from_public_and_private(
+        array_ref![&bob_signed_prekey_public, 0, 33],
+        array_ref![&bob_signed_prekey_private, 0, 32],
+    )?;
 
-    let alice_base_public_key = PublicKey::deserialize(&alice_base_public)?;
+    let alice_base_public_key = PublicKey::deserialize_result(&alice_base_public)?;
 
     let bob_parameters = BobSignalProtocolParameters::new(
         bob_identity_key_pair,
@@ -123,16 +128,19 @@ fn test_ratcheting_session_as_alice() -> Result<(), SignalProtocolError> {
 
     let alice_identity_key_public = IdentityKey::decode(&alice_identity_public)?;
 
-    let bob_ephemeral_public = PublicKey::deserialize(&bob_ephemeral_public)?;
+    let bob_ephemeral_public = PublicKey::deserialize_result(&bob_ephemeral_public)?;
 
-    let alice_identity_key_private = PrivateKey::deserialize(&alice_identity_private)?;
+    let alice_identity_key_private = PrivateKey::deserialize_result(&alice_identity_private)?;
 
-    let bob_signed_prekey_public = PublicKey::deserialize(&bob_signed_prekey_public)?;
+    let bob_signed_prekey_public = PublicKey::deserialize_result(&bob_signed_prekey_public)?;
 
     let alice_identity_key_pair =
         IdentityKeyPair::new(alice_identity_key_public, alice_identity_key_private);
 
-    let alice_base_key = KeyPair::from_public_and_private(&alice_base_public, &alice_base_private)?;
+    let alice_base_key = KeyPair::from_public_and_private(
+        array_ref![&alice_base_public, 0, 33],
+        array_ref![&alice_base_private, 0, 32],
+    )?;
 
     let alice_parameters = AliceSignalProtocolParameters::new(
         alice_identity_key_pair,

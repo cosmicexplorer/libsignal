@@ -1,5 +1,5 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020-2021 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
@@ -284,8 +284,8 @@ mod tests {
             0xa7, 0xe3, 0x35, 0xd1,
         ];
 
-        let alice_private_key = PrivateKey::deserialize(&alice_private)?;
-        let bob_public_key = PublicKey::deserialize(&bob_public)?;
+        let alice_private_key = PrivateKey::deserialize_result(&alice_private)?;
+        let bob_public_key = PublicKey::deserialize_result(&bob_public)?;
         let root_key = RootKey::new(HKDF::new(2)?, &root_key_seed)?;
 
         let (next_root_key, next_chain_key) =

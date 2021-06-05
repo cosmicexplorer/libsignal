@@ -1,5 +1,5 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020-2021 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
@@ -130,7 +130,7 @@ pub async fn group_decrypt(
     }
 
     let signing_key = sender_key_state.signing_key_public()?;
-    if !skm.verify_signature(&signing_key)? {
+    if !skm.verify_signature(&signing_key) {
         return Err(SignalProtocolError::SignatureValidationFailed);
     }
 
