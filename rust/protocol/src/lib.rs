@@ -16,11 +16,13 @@
 
 #![warn(clippy::unwrap_used)]
 #![deny(unsafe_code)]
-
 // TODO(https://github.com/signalapp/libsignal-client/issues/285): it should be an aspiration to
 // eventually warn and then error for public members without docstrings. Also see
 // https://doc.rust-lang.org/rustdoc/what-to-include.html for background.
 // #![warn(missing_docs)]
+
+// Make all doctests fail if they produce any warnings.
+#![doc(test(attr(deny(warnings))))]
 
 mod address;
 mod consts;
