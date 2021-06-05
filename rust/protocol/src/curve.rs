@@ -17,7 +17,10 @@ use subtle::ConstantTimeEq;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum KeyType {
-    Djb,
+    /// See [Curve25519].
+    ///
+    /// [Curve25519]: https://en.wikipedia.org/wiki/Curve25519.
+    Curve25519 = 0x05,
 }
 
 impl fmt::Display for KeyType {
@@ -29,7 +32,7 @@ impl fmt::Display for KeyType {
 impl KeyType {
     fn value(&self) -> u8 {
         match &self {
-            KeyType::Djb => 0x05u8,
+            KeyType::Curve25519 => 0x05u8,
         }
     }
 }
@@ -39,7 +42,7 @@ impl TryFrom<u8> for KeyType {
 
     fn try_from(x: u8) -> Result<Self> {
         match x {
-            0x05u8 => Ok(KeyType::Djb),
+            0x05u8 => Ok(KeyType::Curve25519),
             t => Err(SignalProtocolError::BadKeyType(t)),
         }
     }
@@ -47,7 +50,7 @@ impl TryFrom<u8> for KeyType {
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 enum PublicKeyData {
-    DjbPublicKey([u8; curve25519::PUBLIC_KEY_LENGTH]),
+    Curve25519([u8; curve25519::PUBLIC_KEY_LENGTH]),
 }
 
 #[derive(Clone, Copy, Eq)]
@@ -66,15 +69,15 @@ impl PublicKey {
         }
         let key_type = KeyType::try_from(value[0])?;
         match key_type {
-            KeyType::Djb => {
+            KeyType::Curve25519 => {
                 // We allow trailing data after the public key (why?)
                 if value.len() < curve25519::PUBLIC_KEY_LENGTH + 1 {
-                    return Err(SignalProtocolError::BadKeyLength(KeyType::Djb, value.len()));
+                    return Err(SignalProtocolError::BadKeyLength(KeyType::Curve25519, value.len()));
                 }
                 let mut key = [0u8; curve25519::PUBLIC_KEY_LENGTH];
                 key.copy_from_slice(&value[1..][..curve25519::PUBLIC_KEY_LENGTH]);
                 Ok(PublicKey {
-                    key: PublicKeyData::DjbPublicKey(key),
+                    key: PublicKeyData::Curve25519(key),
                 })
             }
         }
@@ -82,34 +85,34 @@ impl PublicKey {
 
     pub fn public_key_bytes(&self) -> Result<&[u8]> {
         match self.key {
-            PublicKeyData::DjbPublicKey(ref v) => Ok(v),
+            PublicKeyData::Curve25519(ref v) => Ok(v),
         }
     }
 
-    pub fn from_djb_public_key_bytes(bytes: &[u8]) -> Result<Self> {
+    pub fn from_curve25519_public_key_bytes(bytes: &[u8]) -> Result<Self> {
         match <[u8; curve25519::PUBLIC_KEY_LENGTH]>::try_from(bytes) {
-            Err(_) => Err(SignalProtocolError::BadKeyLength(KeyType::Djb, bytes.len())),
+            Err(_) => Err(SignalProtocolError::BadKeyLength(KeyType::Curve25519, bytes.len())),
             Ok(key) => Ok(PublicKey {
-                key: PublicKeyData::DjbPublicKey(key),
+                key: PublicKeyData::Curve25519(key),
             }),
         }
     }
 
     pub fn serialize(&self) -> Box<[u8]> {
         let value_len = match self.key {
-            PublicKeyData::DjbPublicKey(v) => v.len(),
+            PublicKeyData::Curve25519(v) => v.len(),
         };
         let mut result = Vec::with_capacity(1 + value_len);
         result.push(self.key_type().value());
         match self.key {
-            PublicKeyData::DjbPublicKey(v) => result.extend_from_slice(&v),
+            PublicKeyData::Curve25519(v) => result.extend_from_slice(&v),
         }
         result.into_boxed_slice()
     }
 
     pub fn verify_signature(&self, message: &[u8], signature: &[u8]) -> Result<bool> {
         match self.key {
-            PublicKeyData::DjbPublicKey(pub_key) => {
+            PublicKeyData::Curve25519(pub_key) => {
                 if signature.len() != curve25519::SIGNATURE_LENGTH {
                     return Ok(false);
                 }
@@ -124,13 +127,13 @@ impl PublicKey {
 
     fn key_data(&self) -> &[u8] {
         match self.key {
-            PublicKeyData::DjbPublicKey(ref k) => k.as_ref(),
+            PublicKeyData::Curve25519(ref k) => k,
         }
     }
 
     pub fn key_type(&self) -> KeyType {
         match self.key {
-            PublicKeyData::DjbPublicKey(_) => KeyType::Djb,
+            PublicKeyData::Curve25519(_) => KeyType::Curve25519,
         }
     }
 }
@@ -197,7 +200,7 @@ impl fmt::Debug for PublicKey {
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 enum PrivateKeyData {
-    DjbPrivateKey([u8; curve25519::PRIVATE_KEY_LENGTH]),
+    Curve25519([u8; curve25519::PRIVATE_KEY_LENGTH]),
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -208,7 +211,7 @@ pub struct PrivateKey {
 impl PrivateKey {
     pub fn deserialize(value: &[u8]) -> Result<Self> {
         if value.len() != curve25519::PRIVATE_KEY_LENGTH {
-            Err(SignalProtocolError::BadKeyLength(KeyType::Djb, value.len()))
+            Err(SignalProtocolError::BadKeyLength(KeyType::Curve25519, value.len()))
         } else {
             let mut key = [0u8; curve25519::PRIVATE_KEY_LENGTH];
             key.copy_from_slice(&value[..curve25519::PRIVATE_KEY_LENGTH]);
@@ -217,30 +220,30 @@ impl PrivateKey {
             key[31] &= 0x7F;
             key[31] |= 0x40;
             Ok(Self {
-                key: PrivateKeyData::DjbPrivateKey(key),
+                key: PrivateKeyData::Curve25519(key),
             })
         }
     }
 
     pub fn serialize(&self) -> Vec<u8> {
         match self.key {
-            PrivateKeyData::DjbPrivateKey(v) => v.to_vec(),
+            PrivateKeyData::Curve25519(v) => v.to_vec(),
         }
     }
 
     pub fn public_key(&self) -> Result<PublicKey> {
         match self.key {
-            PrivateKeyData::DjbPrivateKey(private_key) => {
+            PrivateKeyData::Curve25519(private_key) => {
                 let public_key =
                     curve25519::PrivateKey::from(private_key).derive_public_key_bytes();
-                Ok(PublicKey::new(PublicKeyData::DjbPublicKey(public_key)))
+                Ok(PublicKey::new(PublicKeyData::Curve25519(public_key)))
             }
         }
     }
 
     pub fn key_type(&self) -> KeyType {
         match self.key {
-            PrivateKeyData::DjbPrivateKey(_) => KeyType::Djb,
+            PrivateKeyData::Curve25519(_) => KeyType::Curve25519,
         }
     }
 
@@ -250,7 +253,7 @@ impl PrivateKey {
         csprng: &mut R,
     ) -> Result<Box<[u8]>> {
         match self.key {
-            PrivateKeyData::DjbPrivateKey(k) => {
+            PrivateKeyData::Curve25519(k) => {
                 let private_key = curve25519::PrivateKey::from(k);
                 Ok(Box::new(private_key.calculate_signature(csprng, message)))
             }
@@ -259,7 +262,7 @@ impl PrivateKey {
 
     pub fn calculate_agreement(&self, their_key: &PublicKey) -> Result<Box<[u8]>> {
         match (self.key, their_key.key) {
-            (PrivateKeyData::DjbPrivateKey(priv_key), PublicKeyData::DjbPublicKey(pub_key)) => {
+            (PrivateKeyData::Curve25519(priv_key), PublicKeyData::Curve25519(pub_key)) => {
                 let private_key = curve25519::PrivateKey::from(priv_key);
                 Ok(Box::new(private_key.calculate_agreement(&pub_key)))
             }
@@ -301,10 +304,10 @@ impl KeyPair {
     pub fn generate<R: Rng + CryptoRng>(csprng: &mut R) -> Self {
         let private_key = curve25519::PrivateKey::new(csprng);
 
-        let public_key = PublicKey::from(PublicKeyData::DjbPublicKey(
+        let public_key = PublicKey::from(PublicKeyData::Curve25519(
             private_key.derive_public_key_bytes(),
         ));
-        let private_key = PrivateKey::from(PrivateKeyData::DjbPrivateKey(
+        let private_key = PrivateKey::from(PrivateKeyData::Curve25519(
             private_key.private_key_bytes(),
         ));
 

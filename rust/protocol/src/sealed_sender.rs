@@ -582,7 +582,7 @@ impl UnidentifiedSenderMessage {
                     remaining.split_at(curve::curve25519::PUBLIC_KEY_LENGTH);
 
                 Ok(Self::V2 {
-                    ephemeral_public: PublicKey::from_djb_public_key_bytes(ephemeral_public)?,
+                    ephemeral_public: PublicKey::from_curve25519_public_key_bytes(ephemeral_public)?,
                     encrypted_message_key: encrypted_message_key.into(),
                     authentication_tag: encrypted_authentication_tag.into(),
                     encrypted_message: encrypted_message.into(),
