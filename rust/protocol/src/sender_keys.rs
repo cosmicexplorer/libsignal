@@ -4,32 +4,37 @@
 //
 
 use crate::consts;
-use crate::crypto::hmac_sha256;
+use crate::crypto::{hmac_sha256, AES_NONCE_SIZE, HMAC_OUTPUT_SIZE};
+use crate::curve::curve25519::{PRIVATE_KEY_LENGTH, PUBLIC_KEY_LENGTH};
 use crate::proto::storage as storage_proto;
 use crate::{AsymmetricRole, KeyType, PrivateKey, PublicKey, Result, SignalProtocolError, HKDF};
 
+use arrayref::array_ref;
 use prost::Message;
 use std::collections::VecDeque;
-use std::convert::TryFrom;
+use std::convert::TryInto;
 use uuid::Uuid;
 
 #[derive(Debug, Clone)]
 pub struct SenderMessageKey {
     iteration: u32,
-    iv: Vec<u8>,
-    cipher_key: Vec<u8>,
-    seed: Vec<u8>,
+    iv: [u8; AES_NONCE_SIZE],
+    cipher_key: [u8; PUBLIC_KEY_LENGTH],
+    seed: [u8; HMAC_OUTPUT_SIZE],
 }
 
 impl SenderMessageKey {
-    pub fn new(iteration: u32, seed: Vec<u8>) -> Result<Self> {
+    pub fn new(iteration: u32, seed: [u8; HMAC_OUTPUT_SIZE]) -> Result<Self> {
         let hkdf = HKDF::new(3)?;
-        let derived = hkdf.derive_secrets(&seed, b"WhisperGroup", 48)?;
+        let derived_bytes =
+            hkdf.derive_secrets(&seed, b"WhisperGroup", AES_NONCE_SIZE + PUBLIC_KEY_LENGTH)?;
+        let derived: [u8; AES_NONCE_SIZE + PUBLIC_KEY_LENGTH] =
+            *array_ref![&derived_bytes, 0, AES_NONCE_SIZE + PUBLIC_KEY_LENGTH];
         Ok(Self {
             iteration,
             seed,
-            iv: derived[0..16].to_vec(),
-            cipher_key: derived[16..48].to_vec(),
+            iv: *array_ref![&derived, 0, AES_NONCE_SIZE],
+            cipher_key: *array_ref![&derived, AES_NONCE_SIZE, PUBLIC_KEY_LENGTH],
         })
     }
 
@@ -52,16 +57,16 @@ impl SenderMessageKey {
         Ok(self.iteration)
     }
 
-    pub fn iv(&self) -> Result<Vec<u8>> {
-        Ok(self.iv.clone())
+    pub fn iv(&self) -> Result<[u8; AES_NONCE_SIZE]> {
+        Ok(self.iv)
     }
 
-    pub fn cipher_key(&self) -> Result<Vec<u8>> {
-        Ok(self.cipher_key.clone())
+    pub fn cipher_key(&self) -> Result<[u8; PUBLIC_KEY_LENGTH]> {
+        Ok(self.cipher_key)
     }
 
-    pub fn seed(&self) -> Result<Vec<u8>> {
-        Ok(self.seed.clone())
+    pub fn seed(&self) -> Result<[u8; HMAC_OUTPUT_SIZE]> {
+        Ok(self.seed)
     }
 
     pub fn as_protobuf(
@@ -70,7 +75,7 @@ impl SenderMessageKey {
         Ok(
             storage_proto::sender_key_state_structure::SenderMessageKey {
                 iteration: self.iteration,
-                seed: self.seed.clone(),
+                seed: self.seed.into(),
             },
         )
     }
@@ -79,14 +84,14 @@ impl SenderMessageKey {
 #[derive(Debug, Clone)]
 pub struct SenderChainKey {
     iteration: u32,
-    chain_key: Vec<u8>,
+    chain_key: [u8; PUBLIC_KEY_LENGTH],
 }
 
 impl SenderChainKey {
     const MESSAGE_KEY_SEED: u8 = 0x01;
     const CHAIN_KEY_SEED: u8 = 0x02;
 
-    pub fn new(iteration: u32, chain_key: Vec<u8>) -> Result<Self> {
+    pub fn new(iteration: u32, chain_key: [u8; PUBLIC_KEY_LENGTH]) -> Result<Self> {
         Ok(Self {
             iteration,
             chain_key,
@@ -97,8 +102,8 @@ impl SenderChainKey {
         Ok(self.iteration)
     }
 
-    pub fn seed(&self) -> Result<Vec<u8>> {
-        Ok(self.chain_key.clone())
+    pub fn seed(&self) -> Result<[u8; PUBLIC_KEY_LENGTH]> {
+        Ok(self.chain_key)
     }
 
     pub fn next(&self) -> Result<SenderChainKey> {
@@ -115,15 +120,15 @@ impl SenderChainKey {
         )?)
     }
 
-    fn get_derivative(&self, label: u8) -> Result<Vec<u8>> {
+    fn get_derivative(&self, label: u8) -> Result<[u8; HMAC_OUTPUT_SIZE]> {
         let label = [label];
-        Ok(hmac_sha256(&self.chain_key, &label)?.to_vec())
+        Ok(hmac_sha256(&self.chain_key, &label)?)
     }
 
     pub fn as_protobuf(&self) -> Result<storage_proto::sender_key_state_structure::SenderChainKey> {
         Ok(storage_proto::sender_key_state_structure::SenderChainKey {
             iteration: self.iteration,
-            seed: self.chain_key.clone(),
+            seed: self.chain_key.to_vec(),
         })
     }
 }
@@ -131,6 +136,8 @@ impl SenderChainKey {
 #[derive(Debug, Clone)]
 pub struct SenderKeyState {
     state: storage_proto::SenderKeyStateStructure,
+    public_key: PublicKey,
+    private_key: Option<PrivateKey>,
 }
 
 impl SenderKeyState {
@@ -138,16 +145,14 @@ impl SenderKeyState {
         message_version: u8,
         chain_id: u32,
         iteration: u32,
-        chain_key: &[u8],
+        chain_key: &[u8; PRIVATE_KEY_LENGTH],
         signature_key: PublicKey,
         signature_private_key: Option<PrivateKey>,
     ) -> Result<SenderKeyState> {
         let state = storage_proto::SenderKeyStateStructure {
             message_version: message_version as u32,
             chain_id,
-            sender_chain_key: Some(
-                SenderChainKey::new(iteration, chain_key.to_vec())?.as_protobuf()?,
-            ),
+            sender_chain_key: Some(SenderChainKey::new(iteration, *chain_key)?.as_protobuf()?),
             sender_signing_key: Some(
                 storage_proto::sender_key_state_structure::SenderSigningKey {
                     public: signature_key.serialize().to_vec(),
@@ -160,12 +165,16 @@ impl SenderKeyState {
             sender_message_keys: vec![],
         };
 
-        Ok(Self { state })
+        Ok(Self {
+            state,
+            public_key: signature_key,
+            private_key: signature_private_key,
+        })
     }
 
     pub fn deserialize(buf: &[u8]) -> Result<Self> {
         let state = storage_proto::SenderKeyStateStructure::decode(buf)?;
-        Ok(Self { state })
+        Self::from_protobuf(state)
     }
 
     pub fn from_protobuf(state: storage_proto::SenderKeyStateStructure) -> Result<Self> {
@@ -239,20 +248,14 @@ impl SenderKeyState {
         Ok(())
     }
 
-    pub fn signing_key_public(&self) -> Result<PublicKey> {
-        if let Some(ref signing_key) = self.state.sender_signing_key {
-            Ok(PublicKey::deserialize_result(&signing_key.public[..])?)
-        } else {
-            Err(SignalProtocolError::InvalidProtobufEncoding)
-        }
+    #[inline]
+    pub fn signing_key_public(&self) -> PublicKey {
+        self.public_key
     }
 
-    pub fn signing_key_private(&self) -> Result<PrivateKey> {
-        if let Some(ref signing_key) = self.state.sender_signing_key {
-            Ok(PrivateKey::deserialize_result(&signing_key.private)?)
-        } else {
-            Err(SignalProtocolError::InvalidProtobufEncoding)
-        }
+    #[inline]
+    pub fn signing_key_private(&self) -> Option<PrivateKey> {
+        self.private_key
     }
 
     pub fn has_sender_message_key(&self, iteration: u32) -> Result<bool> {
@@ -313,7 +316,7 @@ impl SenderKeyRecord {
 
         let mut states = VecDeque::with_capacity(skr.sender_key_states.len());
         for state in skr.sender_key_states {
-            states.push_back(SenderKeyState::from_protobuf(state))
+            states.push_back(SenderKeyState::from_protobuf(state)?)
         }
         Ok(Self { states })
     }
@@ -356,7 +359,7 @@ impl SenderKeyRecord {
         message_version: u8,
         chain_id: u32,
         iteration: u32,
-        chain_key: &[u8],
+        chain_key: &[u8; PRIVATE_KEY_LENGTH],
         signature_key: PublicKey,
         signature_private_key: Option<PrivateKey>,
     ) -> Result<()> {
@@ -380,7 +383,7 @@ impl SenderKeyRecord {
         message_version: u8,
         chain_id: u32,
         iteration: u32,
-        chain_key: &[u8],
+        chain_key: &[u8; PRIVATE_KEY_LENGTH],
         signature_key: PublicKey,
         signature_private_key: Option<PrivateKey>,
     ) -> Result<()> {

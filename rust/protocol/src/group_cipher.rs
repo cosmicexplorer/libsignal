@@ -5,18 +5,17 @@
 
 use crate::consts;
 use crate::crypto;
-
+use crate::protocol::SENDERKEY_MESSAGE_CURRENT_VERSION;
+use crate::sender_keys::{SenderKeyState, SenderMessageKey};
 use crate::{
     Context, KeyPair, ProtocolAddress, Result, SenderKeyDistributionMessage, SenderKeyMessage,
     SenderKeyRecord, SenderKeyStore, SignalProtocolError,
 };
 
-use crate::protocol::SENDERKEY_MESSAGE_CURRENT_VERSION;
-use crate::sender_keys::{SenderKeyState, SenderMessageKey};
-
 use rand::{CryptoRng, Rng};
-use std::convert::TryFrom;
 use uuid::Uuid;
+
+use std::convert::TryFrom;
 
 pub async fn group_encrypt<R: Rng + CryptoRng>(
     sender_key_store: &mut dyn SenderKeyStore,
@@ -38,7 +37,7 @@ pub async fn group_encrypt<R: Rng + CryptoRng>(
     let ciphertext =
         crypto::aes_256_cbc_encrypt(plaintext, &sender_key.cipher_key()?, &sender_key.iv()?)?;
 
-    let signing_key = sender_key_state.signing_key_private()?;
+    let signing_key = sender_key_state.signing_key_private();
 
     let skm = SenderKeyMessage::new(
         sender_key_state.message_version()? as u8,
@@ -47,7 +46,7 @@ pub async fn group_encrypt<R: Rng + CryptoRng>(
         sender_key.iteration()?,
         ciphertext.into_boxed_slice(),
         csprng,
-        &signing_key,
+        &signing_key.ok_or(SignalProtocolError::NoSenderKeyState)?,
     )?;
 
     sender_key_state.set_sender_chain_key(sender_key_state.sender_chain_key()?.next()?)?;
@@ -129,7 +128,7 @@ pub async fn group_decrypt(
         ));
     }
 
-    let signing_key = sender_key_state.signing_key_public()?;
+    let signing_key = sender_key_state.signing_key_public();
     if !skm.verify_signature(&signing_key) {
         return Err(SignalProtocolError::SignatureValidationFailed);
     }
@@ -232,6 +231,6 @@ pub async fn create_sender_key_distribution_message<R: Rng + CryptoRng>(
         state.chain_id()?,
         sender_chain_key.iteration()?,
         sender_chain_key.seed()?,
-        state.signing_key_public()?,
+        state.signing_key_public(),
     )
 }
