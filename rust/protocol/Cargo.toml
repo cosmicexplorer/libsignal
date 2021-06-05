@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2020 Signal Messenger, LLC.
+# Copyright (C) 2020-2021 Signal Messenger, LLC.
 # SPDX-License-Identifier: AGPL-3.0-only
 #
 
@@ -41,6 +41,7 @@ u32_backend = ["curve25519-dalek/u32_backend"]
 u64_backend = ["curve25519-dalek/u64_backend"]
 simd_backend = ["curve25519-dalek/simd_backend"]
 nightly = ["curve25519-dalek/nightly"]
+unstable_internals = []
 
 [dev-dependencies]
 criterion = "0.3"

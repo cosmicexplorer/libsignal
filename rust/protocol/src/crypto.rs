@@ -41,6 +41,19 @@ pub const AES_NONCE_SIZE: usize = 128 / BITS_PER_BYTE;
 ///
 /// [AES]: https://en.wikipedia.org/wiki/Advanced_Encryption_Standard
 /// [CTR]: https://en.wikipedia.org/wiki/Block_cipher_mode_of_operation#CTR
+///```
+/// # fn main() -> Result<(), libsignal_protocol::error::SignalProtocolError> {
+/// # use libsignal_protocol::crypto_unstable::*;
+/// use rand::Rng;
+/// // Generate a random AES key.
+/// let key: [u8; AES_256_KEY_SIZE] = (&mut rand::thread_rng()).gen();
+///
+/// # #[allow(unused_variables)]
+/// // Encrypt a message with the generated key.
+/// let encrypted = aes_256_ctr_encrypt(b"hello", &key)?;
+/// # Ok(())
+/// # }
+///```
 pub fn aes_256_ctr_encrypt(ptext: &[u8], key: &[u8; AES_256_KEY_SIZE]) -> Result<Vec<u8>> {
     let zero_nonce = [0u8; AES_NONCE_SIZE];
     let mut cipher = Ctr128::<Aes256>::new(key.into(), (&zero_nonce).into());
@@ -54,6 +67,19 @@ pub fn aes_256_ctr_encrypt(ptext: &[u8], key: &[u8; AES_256_KEY_SIZE]) -> Result
 ///
 /// [AES]: https://en.wikipedia.org/wiki/Advanced_Encryption_Standard
 /// [CTR]: https://en.wikipedia.org/wiki/Block_cipher_mode_of_operation#CTR
+///```
+/// # fn main() -> Result<(), libsignal_protocol::error::SignalProtocolError> {
+/// # use libsignal_protocol::crypto_unstable::*;
+/// use rand::Rng;
+/// // Generate a random AES key.
+/// let key: [u8; AES_256_KEY_SIZE] = (&mut rand::thread_rng()).gen();
+///
+/// // Encrypt and decrypt a message with the symmetric key we just generated.
+/// let encrypted = aes_256_ctr_encrypt(b"hello", &key)?;
+/// assert!(b"hello".as_ref() == &aes_256_ctr_decrypt(&encrypted, &key)?);
+/// # Ok(())
+/// # }
+///```
 pub fn aes_256_ctr_decrypt(ctext: &[u8], key: &[u8; AES_256_KEY_SIZE]) -> Result<Vec<u8>> {
     aes_256_ctr_encrypt(ctext, key)
 }
@@ -63,6 +89,21 @@ pub fn aes_256_ctr_decrypt(ctext: &[u8], key: &[u8; AES_256_KEY_SIZE]) -> Result
 ///
 /// [AES]: https://en.wikipedia.org/wiki/Advanced_Encryption_Standard
 /// [CBC]: https://en.wikipedia.org/wiki/Block_cipher_mode_of_operation#CBC
+///```
+/// # fn main() -> Result<(), libsignal_protocol::error::SignalProtocolError> {
+/// # use libsignal_protocol::crypto_unstable::*;
+/// use rand::Rng;
+/// // Generate a random AES key.
+/// let key: [u8; AES_256_KEY_SIZE] = (&mut rand::thread_rng()).gen();
+/// // Generate an AES initialization vector (IV).
+/// let iv: [u8; AES_NONCE_SIZE] = (&mut rand::thread_rng()).gen();
+///
+/// # #[allow(unused_variables)]
+/// // Encrypt a message with the generated key material.
+/// let encrypted = aes_256_cbc_encrypt(b"hello", key.as_ref(), iv.as_ref())?;
+/// # Ok(())
+/// # }
+///```
 pub fn aes_256_cbc_encrypt(ptext: &[u8], key: &[u8], iv: &[u8]) -> Result<Vec<u8>> {
     match Cbc::<Aes256, Pkcs7>::new_var(key, iv) {
         Ok(mode) => Ok(mode.encrypt_vec(&ptext)),
@@ -77,6 +118,21 @@ pub fn aes_256_cbc_encrypt(ptext: &[u8], key: &[u8], iv: &[u8]) -> Result<Vec<u8
 ///
 /// [AES]: https://en.wikipedia.org/wiki/Advanced_Encryption_Standard
 /// [CBC]: https://en.wikipedia.org/wiki/Block_cipher_mode_of_operation#CBC
+///```
+/// # fn main() -> Result<(), libsignal_protocol::error::SignalProtocolError> {
+/// # use libsignal_protocol::crypto_unstable::*;
+/// use rand::Rng;
+/// // Generate a random AES key.
+/// let key: [u8; AES_256_KEY_SIZE] = (&mut rand::thread_rng()).gen();
+/// // Generate an AES initialization vector (IV).
+/// let iv: [u8; AES_NONCE_SIZE] = (&mut rand::thread_rng()).gen();
+///
+/// // Encrypt and decrypt a message with the generated symmetric key material.
+/// let encrypted = aes_256_cbc_encrypt(b"hello", key.as_ref(), iv.as_ref())?;
+/// assert!(b"hello".as_ref() == &aes_256_cbc_decrypt(&encrypted, key.as_ref(), iv.as_ref())?);
+/// # Ok(())
+/// # }
+///```
 pub fn aes_256_cbc_decrypt(ctext: &[u8], key: &[u8], iv: &[u8]) -> Result<Vec<u8>> {
     if ctext.is_empty() || ctext.len() % 16 != 0 {
         return Err(SignalProtocolError::InvalidCiphertext);
@@ -103,6 +159,21 @@ pub const HMAC_OUTPUT_SIZE: usize = 256 / BITS_PER_BYTE;
 /// Calculate the [HMAC]-SHA256 code over `input` using `key`.
 ///
 /// [HMAC]: https://en.wikipedia.org/wiki/HMAC
+///```
+/// # fn main() -> Result<(), libsignal_protocol::error::SignalProtocolError> {
+/// # use libsignal_protocol::crypto_unstable::*;
+/// use rand::distributions::*;
+/// // We can accept any size key for the HMAC operation, so generate a random size from 35-300.
+/// let key_len: usize = Uniform::new_inclusive(35, 300).sample(&mut rand::thread_rng());
+/// // Generate a random byte vector of the desired length.
+/// let key: Vec<u8> = Standard.sample_iter(&mut rand::thread_rng()).take(key_len).collect();
+///
+/// # #[allow(unused_variables)]
+/// // Generate the HMAC.
+/// let hmac = hmac_sha256(key.as_ref(), b"hello")?;
+/// # Ok(())
+/// # }
+///```
 pub fn hmac_sha256(key: &[u8], input: &[u8]) -> Result<[u8; HMAC_OUTPUT_SIZE]> {
     let mut hmac = Hmac::<Sha256>::new_varkey(key).expect("HMAC-SHA256 should accept any size key");
     hmac.update(input);
@@ -122,6 +193,24 @@ pub const MAC_KEY_LENGTH: usize = 10;
 ///
 /// [AES]: https://en.wikipedia.org/wiki/Advanced_Encryption_Standard
 /// [HMAC]: https://en.wikipedia.org/wiki/HMAC
+///```
+/// # fn main() -> Result<(), libsignal_protocol::error::SignalProtocolError> {
+/// # use libsignal_protocol::crypto_unstable::*;
+/// use rand::{Rng, distributions::*};
+/// // We can accept any size key for the HMAC operation, so generate a random size from 35-300.
+/// let mac_key_len: usize = Uniform::new_inclusive(35, 300).sample(&mut rand::thread_rng());
+/// // Generate a random byte vector of the desired length.
+/// let mac_key: Vec<u8> =
+///     Standard.sample_iter(&mut rand::thread_rng()).take(mac_key_len).collect();
+/// // Generate a random AES cipher key.
+/// let cipher_key: [u8; AES_256_KEY_SIZE] = (&mut rand::thread_rng()).gen();
+///
+/// # #[allow(unused_variables)]
+/// // Encrypt a message with the generated key material, embedding a MAC into the ciphertext.
+/// let encrypted = aes256_ctr_hmacsha256_encrypt(b"hello", &cipher_key, &mac_key)?;
+/// # Ok(())
+/// # }
+///```
 pub fn aes256_ctr_hmacsha256_encrypt(
     msg: &[u8],
     cipher_key: &[u8; AES_256_KEY_SIZE],
@@ -143,6 +232,25 @@ pub fn aes256_ctr_hmacsha256_encrypt(
 ///
 /// [AES]: https://en.wikipedia.org/wiki/Advanced_Encryption_Standard
 /// [HMAC]: https://en.wikipedia.org/wiki/HMAC
+///```
+/// # fn main() -> Result<(), libsignal_protocol::error::SignalProtocolError> {
+/// # use libsignal_protocol::crypto_unstable::*;
+/// use rand::{Rng, distributions::*};
+/// // We can accept any size key for the HMAC operation, so generate a random size from 35-300.
+/// let mac_key_len: usize = Uniform::new_inclusive(35, 300).sample(&mut rand::thread_rng());
+/// // Generate a random byte vector of the desired length.
+/// let mac_key: Vec<u8> =
+///     Standard.sample_iter(&mut rand::thread_rng()).take(mac_key_len).collect();
+/// // Generate a random AES cipher key.
+/// let cipher_key: [u8; AES_256_KEY_SIZE] = (&mut rand::thread_rng()).gen();
+///
+/// // Encrypt and decrypt a message with the symmetric keys we generated.
+/// let encrypted = aes256_ctr_hmacsha256_encrypt(b"hello", &cipher_key, &mac_key)?;
+/// // This decryption method verifies that the input ciphertext has a correct MAC at the end.
+/// assert!(b"hello".as_ref() == &aes256_ctr_hmacsha256_decrypt(&encrypted, &cipher_key, &mac_key)?);
+/// # Ok(())
+/// # }
+///```
 pub fn aes256_ctr_hmacsha256_decrypt(
     ctext: &[u8],
     cipher_key: &[u8; AES_256_KEY_SIZE],
