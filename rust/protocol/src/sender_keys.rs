@@ -1,5 +1,5 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020-2021 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
@@ -10,7 +10,7 @@ use itertools::Itertools;
 use prost::Message;
 use uuid::Uuid;
 
-use crate::consts;
+use crate::consts::limits::{MAX_MESSAGE_KEYS, MAX_SENDER_KEY_STATES};
 use crate::crypto::hmac_sha256;
 use crate::proto::storage as storage_proto;
 use crate::{PrivateKey, PublicKey, Result, SignalProtocolError, HKDF};
@@ -224,7 +224,7 @@ impl SenderKeyState {
         self.state
             .sender_message_keys
             .push(sender_message_key.as_protobuf()?);
-        while self.state.sender_message_keys.len() > consts::MAX_MESSAGE_KEYS {
+        while self.state.sender_message_keys.len() > MAX_MESSAGE_KEYS {
             self.state.sender_message_keys.remove(0);
         }
         Ok(())
@@ -256,7 +256,7 @@ pub struct SenderKeyRecord {
 impl SenderKeyRecord {
     pub fn new_empty() -> Self {
         Self {
-            states: VecDeque::with_capacity(consts::MAX_SENDER_KEY_STATES),
+            states: VecDeque::with_capacity(MAX_SENDER_KEY_STATES),
         }
     }
 
@@ -333,7 +333,7 @@ impl SenderKeyRecord {
             Some(state) => state,
         };
 
-        while self.states.len() >= consts::MAX_SENDER_KEY_STATES {
+        while self.states.len() >= MAX_SENDER_KEY_STATES {
             self.states.pop_back();
         }
 
@@ -533,8 +533,7 @@ mod sender_key_record_add_sender_key_state_tests {
     #[test]
     fn when_exceed_maximum_states_then_oldest_is_ejected() {
         assert_eq!(
-            5,
-            consts::MAX_SENDER_KEY_STATES,
+            5, MAX_SENDER_KEY_STATES,
             "Test written to expect this limit"
         );
 
