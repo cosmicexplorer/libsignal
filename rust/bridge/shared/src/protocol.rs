@@ -7,7 +7,10 @@ use libsignal_bridge_macros::*;
 use libsignal_protocol::error::Result;
 use libsignal_protocol::*;
 use static_assertions::const_assert_eq;
-use std::convert::{TryFrom, TryInto};
+use std::{
+    array::TryFromSliceError,
+    convert::{TryFrom, TryInto},
+};
 use uuid::Uuid;
 
 // Will be unused when building for Node only.
@@ -76,13 +79,13 @@ fn ProtocolAddress_New(name: String, device_id: u32) -> ProtocolAddress {
     ProtocolAddress::new(name, device_id)
 }
 
-bridge_deserialize!(PublicKey::deserialize, ffi = publickey, jni = false);
+bridge_deserialize!(PublicKey::deserialize_result, ffi = publickey, jni = false);
 
 // Alternate implementation to deserialize from an offset.
 #[bridge_fn(ffi = false, node = false)]
 fn ECPublicKey_Deserialize(data: &[u8], offset: u32) -> Result<PublicKey> {
     let offset = offset as usize;
-    PublicKey::deserialize(&data[offset..])
+    PublicKey::deserialize_result(&data[offset..])
 }
 
 bridge_get_bytearray!(
@@ -111,20 +114,18 @@ fn ECPublicKey_Compare(key1: &PublicKey, key2: &PublicKey) -> i32 {
 fn ECPublicKey_Verify(key: &PublicKey, message: &[u8], signature: &[u8]) -> Result<bool> {
     Ok(key.verify_signature(
         message,
-        signature
-            .try_into()
-            .map_err(|_: ::std::array::TryFromSliceError| {
-                SignalProtocolError::BadKeyLength(
-                    KeyType::Curve25519,
-                    AsymmetricRole::Signature,
-                    signature.len(),
-                )
-            })?,
+        signature.try_into().map_err(|_: TryFromSliceError| {
+            SignalProtocolError::BadKeyLength(
+                KeyType::Curve25519,
+                AsymmetricRole::Signature,
+                signature.len(),
+            )
+        })?,
     ))
 }
 
 bridge_deserialize!(
-    PrivateKey::deserialize,
+    PrivateKey::deserialize_result,
     ffi = privatekey,
     jni = ECPrivateKey
 );
@@ -202,8 +203,8 @@ fn NumericFingerprintGenerator_New(
     remote_identifier: &[u8],
     remote_key: &[u8],
 ) -> Result<Fingerprint> {
-    let local_key = IdentityKey::decode(local_key)?;
-    let remote_key = IdentityKey::decode(remote_key)?;
+    let local_key = IdentityKey::new(PublicKey::deserialize_result(&local_key)?);
+    let remote_key = IdentityKey::new(PublicKey::deserialize_result(&remote_key)?);
 
     Fingerprint::new(
         version,
@@ -448,15 +449,13 @@ fn SenderKeyDistributionMessage_New(
         distribution_id,
         chain_id,
         iteration,
-        chainkey
-            .try_into()
-            .map_err(|_: ::std::array::TryFromSliceError| {
-                SignalProtocolError::BadKeyLength(
-                    KeyType::Curve25519,
-                    AsymmetricRole::ChainKey,
-                    chainkey.len(),
-                )
-            })?,
+        chainkey.try_into().map_err(|_: TryFromSliceError| {
+            SignalProtocolError::BadKeyLength(
+                KeyType::Curve25519,
+                AsymmetricRole::ChainKey,
+                chainkey.len(),
+            )
+        })?,
         *pk,
     )
 }
@@ -549,21 +548,20 @@ fn PreKeyBundle_New(
         }
     };
 
+    let signed_prekey_signature: &[u8; 64] = signed_prekey_signature.try_into().map_err(|_| {
+        SignalProtocolError::BadKeyLength(
+            KeyType::Curve25519,
+            AsymmetricRole::Signature,
+            signed_prekey_signature.len(),
+        )
+    })?;
     PreKeyBundle::new(
         registration_id,
         device_id,
         prekey,
         signed_prekey_id,
         *signed_prekey,
-        signed_prekey_signature
-            .try_into()
-            .map_err(|_: ::std::array::TryFromSliceError| {
-                SignalProtocolError::BadKeyLength(
-                    KeyType::Curve25519,
-                    AsymmetricRole::Signature,
-                    signed_prekey_signature.len(),
-                )
-            })?,
+        *signed_prekey_signature,
         identity_key,
     )
 }
@@ -598,10 +596,21 @@ fn SignedPreKeyRecord_New(
     timestamp: u64,
     pub_key: &PublicKey,
     priv_key: &PrivateKey,
-    signature: &[u8; 64],
-) -> SignedPreKeyRecord {
+    signature: &[u8],
+) -> Result<SignedPreKeyRecord> {
     let keypair = KeyPair::new(*pub_key, *priv_key);
-    SignedPreKeyRecord::new(id, timestamp, &keypair, signature)
+    Ok(SignedPreKeyRecord::new(
+        id,
+        timestamp,
+        &keypair,
+        signature.try_into().map_err(|_: TryFromSliceError| {
+            SignalProtocolError::BadKeyLength(
+                KeyType::Curve25519,
+                AsymmetricRole::Signature,
+                signature.len(),
+            )
+        })?,
+    ))
 }
 
 bridge_deserialize!(PreKeyRecord::deserialize);
@@ -663,7 +672,7 @@ fn SenderCertificate_Validate(
     key: &PublicKey,
     time: u64,
 ) -> Result<bool> {
-    cert.validate(key, time)
+    Ok(cert.validate(key, time))
 }
 
 #[bridge_fn]

@@ -280,6 +280,7 @@ fn throw_error(env: &JNIEnv, error: SignalJniError) {
             "org/whispersystems/libsignal/LegacyMessageException"
         }
 
+        #[allow(deprecated)]
         SignalJniError::Signal(SignalProtocolError::FingerprintIdentifierMismatch)
         | SignalJniError::Signal(SignalProtocolError::FingerprintParsingError) => {
             "org/whispersystems/libsignal/fingerprint/FingerprintParsingException"
