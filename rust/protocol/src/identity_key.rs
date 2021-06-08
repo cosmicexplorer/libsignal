@@ -89,7 +89,7 @@ impl From<IdentityKey> for PublicKey {
 /// The private identity of a user.
 ///
 /// Can be converted to and from [`KeyPair`].
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct IdentityKeyPair {
     identity_key: IdentityKey,
     private_key: PrivateKey,
