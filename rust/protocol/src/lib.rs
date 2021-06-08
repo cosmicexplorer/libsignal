@@ -24,7 +24,7 @@
 
 mod address;
 mod consts;
-mod crypto;
+pub mod crypto;
 mod curve;
 pub mod error;
 mod fingerprint;
