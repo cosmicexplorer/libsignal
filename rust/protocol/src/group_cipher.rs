@@ -1,22 +1,21 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020-2021 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
 use crate::consts::limits::MAX_FORWARD_JUMPS;
 use crate::crypto;
-
+use crate::protocol::SENDERKEY_MESSAGE_CURRENT_VERSION;
+use crate::sender_keys::{SenderKeyState, SenderMessageKey};
 use crate::{
     Context, KeyPair, ProtocolAddress, Result, SenderKeyDistributionMessage, SenderKeyMessage,
     SenderKeyRecord, SenderKeyStore, SignalProtocolError,
 };
 
-use crate::protocol::SENDERKEY_MESSAGE_CURRENT_VERSION;
-use crate::sender_keys::{SenderKeyState, SenderMessageKey};
-
 use rand::{CryptoRng, Rng};
-use std::convert::TryFrom;
 use uuid::Uuid;
+
+use std::convert::TryFrom;
 
 pub async fn group_encrypt<R: Rng + CryptoRng>(
     sender_key_store: &mut dyn SenderKeyStore,
@@ -36,21 +35,21 @@ pub async fn group_encrypt<R: Rng + CryptoRng>(
     let sender_key = sender_key_state.sender_chain_key()?.sender_message_key()?;
 
     let ciphertext =
-        crypto::aes_256_cbc_encrypt(plaintext, &sender_key.cipher_key()?, &sender_key.iv()?)?;
+        crypto::aes_256_cbc_encrypt(plaintext, &sender_key.cipher_key(), &sender_key.iv())?;
 
     let signing_key = sender_key_state.signing_key_private()?;
 
     let skm = SenderKeyMessage::new(
-        sender_key_state.message_version()? as u8,
+        sender_key_state.message_version() as u8,
         distribution_id,
-        sender_key_state.chain_id()?,
-        sender_key.iteration()?,
+        sender_key_state.chain_id(),
+        sender_key.iteration(),
         ciphertext.into_boxed_slice(),
         csprng,
         &signing_key,
     )?;
 
-    sender_key_state.set_sender_chain_key(sender_key_state.sender_chain_key()?.next()?)?;
+    sender_key_state.set_sender_chain_key(sender_key_state.sender_chain_key()?.next());
 
     sender_key_store
         .store_sender_key(sender, distribution_id, &record, ctx)
@@ -65,7 +64,7 @@ fn get_sender_key(
     distribution_id: Uuid,
 ) -> Result<SenderMessageKey> {
     let sender_chain_key = state.sender_chain_key()?;
-    let current_iteration = sender_chain_key.iteration()?;
+    let current_iteration = sender_chain_key.iteration();
 
     if current_iteration > iteration {
         if let Some(smk) = state.remove_sender_message_key(iteration)? {
@@ -98,12 +97,12 @@ fn get_sender_key(
 
     let mut sender_chain_key = sender_chain_key;
 
-    while sender_chain_key.iteration()? < iteration {
-        state.add_sender_message_key(&sender_chain_key.sender_message_key()?)?;
-        sender_chain_key = sender_chain_key.next()?;
+    while sender_chain_key.iteration() < iteration {
+        state.add_sender_message_key(&sender_chain_key.sender_message_key()?);
+        sender_chain_key = sender_chain_key.next();
     }
 
-    state.set_sender_chain_key(sender_chain_key.next()?)?;
+    state.set_sender_chain_key(sender_chain_key.next());
     sender_chain_key.sender_message_key()
 }
 
@@ -123,14 +122,15 @@ pub async fn group_decrypt(
         record.sender_key_state_for_chain_id(skm.chain_id(), skm.distribution_id())?;
 
     let message_version = skm.message_version() as u32;
-    if message_version != sender_key_state.message_version()? {
+    if message_version != sender_key_state.message_version() {
         return Err(SignalProtocolError::UnrecognizedMessageVersion(
             message_version,
         ));
     }
 
     let signing_key = sender_key_state.signing_key_public()?;
-    if !skm.verify_signature(&signing_key)? {
+
+    if !skm.verify_signature(&signing_key) {
         return Err(SignalProtocolError::SignatureValidationFailed);
     }
 
@@ -140,11 +140,8 @@ pub async fn group_decrypt(
         skm.distribution_id(),
     )?;
 
-    let plaintext = crypto::aes_256_cbc_decrypt(
-        skm.ciphertext(),
-        &sender_key.cipher_key()?,
-        &sender_key.iv()?,
-    )?;
+    let plaintext =
+        crypto::aes_256_cbc_decrypt(skm.ciphertext(), &sender_key.cipher_key(), &sender_key.iv())?;
 
     sender_key_store
         .store_sender_key(sender, skm.distribution_id(), &record, ctx)
@@ -207,7 +204,7 @@ pub async fn create_sender_key_distribution_message<R: Rng + CryptoRng>(
             chain_id
         );
 
-        let iteration = 0;
+        let iteration: u32 = 0;
         let sender_key: [u8; 32] = csprng.gen();
         let signing_key = KeyPair::generate(csprng);
         sender_key_record.set_sender_key_state(
@@ -227,11 +224,11 @@ pub async fn create_sender_key_distribution_message<R: Rng + CryptoRng>(
     let sender_chain_key = state.sender_chain_key()?;
 
     SenderKeyDistributionMessage::new(
-        state.message_version()? as u8,
+        state.message_version() as u8,
         distribution_id,
-        state.chain_id()?,
-        sender_chain_key.iteration()?,
-        sender_chain_key.seed()?,
+        state.chain_id(),
+        sender_chain_key.iteration(),
+        sender_chain_key.seed(),
         state.signing_key_public()?,
     )
 }

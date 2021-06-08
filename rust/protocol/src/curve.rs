@@ -28,12 +28,12 @@ pub mod curve25519;
 use crate::utils::constant_time_cmp;
 use crate::{Result, SignalProtocolError};
 
+use std::array::TryFromSliceError;
 use std::cmp::Ordering;
 use std::convert::{TryFrom, TryInto};
 use std::fmt;
 use std::hash;
 
-use arrayref::array_ref;
 use num_enum::{IntoPrimitive, TryFromPrimitive, TryFromPrimitiveError};
 use rand::{CryptoRng, Rng};
 use subtle::ConstantTimeEq;
@@ -80,6 +80,22 @@ pub trait Keyed {
     fn key_type(&self) -> KeyType;
 }
 
+/// Types of components of an asymmetric key pair.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+pub enum AsymmetricRole {
+    /// This error was raised when decoding a [PublicKey].
+    Public,
+    /// This error was raised when decoding a [PrivateKey].
+    Private,
+    /// This error was raised when decoding an HMAC from a method like [crypto::hmac_sha256].
+    Hmac,
+    /// This error was raised when decoding a [signature][curve25519::SIGNATURE_LENGTH].
+    Signature,
+    /// This error was raised when decoding a symmetric cipher key as with
+    /// [crypto::aes_256_ctr_encrypt]
+    SymmetricKey,
+}
+
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 enum PublicKeyData {
     Curve25519([u8; 32]),
@@ -99,11 +115,11 @@ impl PublicKey {
         Self { key }
     }
 
+    /// The number of bytes we use in our serialization format for public keys.
+    pub const ENCODED_PUBLIC_KEY_LENGTH: usize = 1 + curve25519::PUBLIC_KEY_LENGTH;
+
     /// Deserialize a public key from a byte slice.
-    pub fn deserialize(value: &[u8]) -> Result<Self> {
-        if value.is_empty() {
-            return Err(SignalProtocolError::NoKeyTypeIdentifier);
-        }
+    pub fn deserialize(value: &[u8; Self::ENCODED_PUBLIC_KEY_LENGTH]) -> Result<Self> {
         let key_type = KeyType::try_from(value[0])?;
         match key_type {
             KeyType::Curve25519 => {
@@ -111,6 +127,7 @@ impl PublicKey {
                 if value.len() < curve25519::PUBLIC_KEY_LENGTH + 1 {
                     return Err(SignalProtocolError::BadKeyLength(
                         KeyType::Curve25519,
+                        AsymmetricRole::Public,
                         value.len(),
                     ));
                 }
@@ -123,61 +140,58 @@ impl PublicKey {
         }
     }
 
+    /// Deserialize from an arbitrary slice for the bridge crate.
+    pub fn deserialize_result(value: &[u8]) -> Result<Self> {
+        // We allow trailing data after the public key (why?)
+        let value: [u8; Self::ENCODED_PUBLIC_KEY_LENGTH] =
+            value
+                .try_into()
+                .map_err(|_: TryFromSliceError| {
+                    SignalProtocolError::BadKeyLength(
+                        KeyType::Curve25519,
+                        AsymmetricRole::Public,
+                        value.len(),
+                    )
+                })?;
+        Self::deserialize(&value)
+    }
+
     /// Return the bytes that make up this public key.
-    pub fn public_key_bytes(&self) -> Result<&[u8]> {
+    pub fn public_key_bytes(&self) -> &[u8; curve25519::PUBLIC_KEY_LENGTH] {
         match self.key {
-            PublicKeyData::Curve25519(ref v) => Ok(v),
+            PublicKeyData::Curve25519(ref x) => x,
         }
     }
 
-    /// Create an instance by attempting to interpret `bytes` as a [KeyType::Curve25519] public key.
-    pub fn from_curve25519_public_key_bytes(bytes: &[u8]) -> Result<Self> {
-        match <[u8; curve25519::PUBLIC_KEY_LENGTH]>::try_from(bytes) {
-            Err(_) => Err(SignalProtocolError::BadKeyLength(
-                KeyType::Curve25519,
-                bytes.len(),
-            )),
-            Ok(key) => Ok(PublicKey {
-                key: PublicKeyData::Curve25519(key),
-            }),
+    /// Create an instance by interpreting `bytes` as a [KeyType::Curve25519] public key.
+    pub fn from_curve25519_public_key_bytes(bytes: &[u8; curve25519::PUBLIC_KEY_LENGTH]) -> Self {
+        Self {
+            key: PublicKeyData::Curve25519(*bytes),
         }
     }
 
     /// Return a byte slice which can be deserialized with [Self::deserialize].
-    pub fn serialize(&self) -> Box<[u8]> {
-        let value_len = match self.key {
-            PublicKeyData::Curve25519(v) => v.len(),
-        };
-        let mut result = Vec::with_capacity(1 + value_len);
-        result.push(self.key_type().into());
-        match self.key {
-            PublicKeyData::Curve25519(v) => result.extend_from_slice(&v),
-        }
-        result.into_boxed_slice()
+    pub fn serialize(&self) -> [u8; Self::ENCODED_PUBLIC_KEY_LENGTH] {
+        let mut result: [u8; Self::ENCODED_PUBLIC_KEY_LENGTH] =
+            [0; Self::ENCODED_PUBLIC_KEY_LENGTH];
+        let (key_type, key) = result
+            .split_first_mut()
+            .expect("`result` is a static array with nonzero size");
+        let key_value: u8 = self.key_type().into();
+        *key_type = key_value;
+        key.copy_from_slice(self.public_key_bytes());
+        result
     }
 
     /// Validate whether `signature` successfully matches `message` for this public key.
     ///
-    /// Return `Ok(false)` if the signature fails to match or could not be read.
-    pub fn verify_signature(&self, message: &[u8], signature: &[u8]) -> Result<bool> {
-        match self.key {
-            PublicKeyData::Curve25519(pub_key) => {
-                if signature.len() != curve25519::SIGNATURE_LENGTH {
-                    return Ok(false);
-                }
-                Ok(curve25519::PrivateKey::verify_signature(
-                    &pub_key,
-                    message,
-                    array_ref![signature, 0, curve25519::SIGNATURE_LENGTH],
-                ))
-            }
-        }
-    }
-
-    pub(crate) fn key_data(&self) -> &[u8] {
-        match self.key {
-            PublicKeyData::Curve25519(ref x) => x,
-        }
+    /// Return `false` if the signature fails to match or could not be read.
+    pub fn verify_signature(
+        &self,
+        message: &[u8],
+        signature: &[u8; curve25519::SIGNATURE_LENGTH],
+    ) -> bool {
+        curve25519::PrivateKey::verify_signature(self.public_key_bytes(), message, signature)
     }
 }
 
@@ -195,10 +209,10 @@ impl From<PublicKeyData> for PublicKey {
     }
 }
 
-impl TryFrom<&[u8]> for PublicKey {
+impl TryFrom<&[u8; PublicKey::ENCODED_PUBLIC_KEY_LENGTH]> for PublicKey {
     type Error = SignalProtocolError;
 
-    fn try_from(value: &[u8]) -> Result<Self> {
+    fn try_from(value: &[u8; PublicKey::ENCODED_PUBLIC_KEY_LENGTH]) -> Result<Self> {
         Self::deserialize(value)
     }
 }
@@ -212,7 +226,7 @@ impl subtle::ConstantTimeEq for PublicKey {
         if self.key_type() != other.key_type() {
             return 0.ct_eq(&1);
         }
-        self.key_data().ct_eq(other.key_data())
+        self.public_key_bytes().ct_eq(other.public_key_bytes())
     }
 }
 
@@ -235,8 +249,7 @@ impl Ord for PublicKey {
         if self.key_type() != other.key_type() {
             return self.key_type().cmp(&other.key_type());
         }
-
-        crate::utils::constant_time_cmp(self.key_data(), other.key_data())
+        constant_time_cmp(self.public_key_bytes(), other.public_key_bytes())
     }
 }
 
@@ -272,40 +285,45 @@ pub struct PrivateKey {
 }
 
 impl PrivateKey {
-    /// Try to parse a private key from the byte slice `value`.
-    pub fn deserialize(value: &[u8]) -> Result<Self> {
-        if value.len() != curve25519::PRIVATE_KEY_LENGTH {
-            Err(SignalProtocolError::BadKeyLength(
-                KeyType::Curve25519,
-                value.len(),
-            ))
-        } else {
-            let mut key = [0u8; curve25519::PRIVATE_KEY_LENGTH];
-            key.copy_from_slice(&value[..curve25519::PRIVATE_KEY_LENGTH]);
-            // Clamp:
-            key[0] &= 0xF8;
-            key[31] &= 0x7F;
-            key[31] |= 0x40;
-            Ok(Self {
-                key: PrivateKeyData::Curve25519(key),
-            })
+    /// Parse a private key from the byte slice `value`.
+    pub fn deserialize(value: &[u8; curve25519::PRIVATE_KEY_LENGTH]) -> Self {
+        let mut value = *value;
+        // Clamp:
+        value[0] &= 0xF8;
+        value[curve25519::PRIVATE_KEY_LENGTH - 1] &= 0x7F;
+        value[curve25519::PRIVATE_KEY_LENGTH - 1] |= 0x40;
+        Self {
+            key: PrivateKeyData::Curve25519(value),
         }
+    }
+
+    /// Try to parse a private key from the byte slice `value` for the bridge crate.
+    pub fn deserialize_result(value: &[u8]) -> Result<Self> {
+        let value: &[u8; curve25519::PRIVATE_KEY_LENGTH] =
+            value
+                .try_into()
+                .map_err(|_: TryFromSliceError| {
+                    SignalProtocolError::BadKeyLength(
+                        KeyType::Curve25519,
+                        AsymmetricRole::Private,
+                        value.len(),
+                    )
+                })?;
+        Ok(Self::deserialize(value))
     }
 
     /// Return a byte slice which can be deserialized with [Self::deserialize].
-    pub fn serialize(&self) -> Vec<u8> {
-        match self.key {
-            PrivateKeyData::Curve25519(v) => v.to_vec(),
-        }
+    pub fn serialize(&self) -> [u8; curve25519::PRIVATE_KEY_LENGTH] {
+        *self.key_data()
     }
 
     /// Derive a public key from the current private key's contents.
-    pub fn public_key(&self) -> Result<PublicKey> {
+    pub fn public_key(&self) -> PublicKey {
         match self.key {
             PrivateKeyData::Curve25519(private_key) => {
                 let public_key =
                     curve25519::PrivateKey::from(private_key).derive_public_key_bytes();
-                Ok(PublicKey::new(PublicKeyData::Curve25519(public_key)))
+                PublicKey::new(PublicKeyData::Curve25519(public_key))
             }
         }
     }
@@ -315,34 +333,29 @@ impl PrivateKey {
         &self,
         message: &[u8],
         csprng: &mut R,
-    ) -> Result<Box<[u8]>> {
+    ) -> [u8; curve25519::SIGNATURE_LENGTH] {
         match self.key {
             PrivateKeyData::Curve25519(k) => {
                 let private_key = curve25519::PrivateKey::from(k);
-                Ok(Box::new(private_key.calculate_signature(csprng, message)))
+                private_key.calculate_signature(csprng, message)
             }
         }
     }
 
     /// Calculate a shared secret between this private key and the public key `their_key`.
-    pub fn calculate_agreement(
-        &self,
-        their_key: &PublicKey,
-    ) -> Result<[u8; curve25519::AGREEMENT_LENGTH]> {
+    pub fn calculate_agreement(&self, their_key: &PublicKey) -> [u8; curve25519::AGREEMENT_LENGTH] {
         match (self.key, their_key.key) {
             (PrivateKeyData::Curve25519(priv_key), PublicKeyData::Curve25519(pub_key)) => {
                 let private_key = curve25519::PrivateKey::from(priv_key);
-                Ok(private_key.calculate_agreement(&pub_key))
+                private_key.calculate_agreement(&DalekPublicKey::from(pub_key))
             }
         }
     }
 
-    pub(crate) fn key_data(&self) -> Box<[u8]> {
-        Box::from(
-            self.public_key()
-                .expect("should always have a public key translation")
-                .key_data(),
-        )
+    fn key_data(&self) -> &[u8; curve25519::PRIVATE_KEY_LENGTH] {
+        match self.key {
+            PrivateKeyData::Curve25519(ref k) => k,
+        }
     }
 }
 
@@ -360,10 +373,8 @@ impl From<PrivateKeyData> for PrivateKey {
     }
 }
 
-impl TryFrom<&[u8]> for PrivateKey {
-    type Error = SignalProtocolError;
-
-    fn try_from(value: &[u8]) -> Result<Self> {
+impl From<&[u8; curve25519::PRIVATE_KEY_LENGTH]> for PrivateKey {
+    fn from(value: &[u8; curve25519::PRIVATE_KEY_LENGTH]) -> Self {
         Self::deserialize(value)
     }
 }
@@ -489,7 +500,10 @@ impl KeyPair {
     /// # Ok(())
     /// # }
     ///```
-    pub fn from_public_and_private(public_key: &[u8], private_key: &[u8]) -> Result<Self> {
+    pub fn from_public_and_private(
+        public_key: &[u8; PublicKey::ENCODED_PUBLIC_KEY_LENGTH],
+        private_key: &[u8; curve25519::PRIVATE_KEY_LENGTH],
+    ) -> Result<Self> {
         let public_key = PublicKey::try_from(public_key)?;
         let private_key = PrivateKey::try_from(private_key)?;
         Ok(Self::new(public_key, private_key))
@@ -498,19 +512,16 @@ impl KeyPair {
     /// Calculate a signature for `message` given the current identity's private key.
     ///
     ///```
-    /// # fn main() -> Result<(), libsignal_protocol::error::SignalProtocolError> {
     /// # use libsignal_protocol::KeyPair;
     /// let kp = KeyPair::generate(&mut rand::thread_rng());
     /// # #[allow(unused_variables)]
-    /// let signature: Box<[u8]> = kp.calculate_signature(b"hello", &mut rand::thread_rng())?;
-    /// # Ok(())
-    /// # }
+    /// let signature: [u8; 64] = kp.calculate_signature(b"hello", &mut rand::thread_rng());
     ///```
     pub fn calculate_signature<R: CryptoRng + Rng>(
         &self,
         message: &[u8],
         csprng: &mut R,
-    ) -> Result<Box<[u8]>> {
+    ) -> [u8; curve25519::SIGNATURE_LENGTH] {
         self.private_key.calculate_signature(message, csprng)
     }
 
@@ -522,33 +533,27 @@ impl KeyPair {
     /// let kp = KeyPair::generate(&mut rand::thread_rng());
     /// let kp2 = KeyPair::generate(&mut rand::thread_rng());
     /// assert!(
-    ///   kp.calculate_agreement(&kp2.public_key)? == kp2.calculate_agreement(&kp.public_key)?
+    ///   kp.calculate_agreement(&kp2.public_key) == kp2.calculate_agreement(&kp.public_key)
     /// );
     /// # Ok(())
     /// # }
     ///```
-    pub fn calculate_agreement(&self, their_key: &PublicKey) -> Result<Box<[u8]>> {
-        Ok(Box::from(
-            self.private_key.calculate_agreement(their_key)?.as_ref(),
-        ))
+    pub fn calculate_agreement(&self, their_key: &PublicKey) -> [u8; curve25519::AGREEMENT_LENGTH] {
+        self.private_key.calculate_agreement(their_key)
     }
 
     /// Verify a signature for `message` produced by [Self::calculate_signature].
     ///```
-    /// # fn main() -> Result<(), libsignal_protocol::error::SignalProtocolError> {
     /// # use libsignal_protocol::KeyPair;
     /// let kp = KeyPair::generate(&mut rand::thread_rng());
-    /// let signature = kp.calculate_signature(b"hello", &mut rand::thread_rng())?;
-    /// assert!(KeyPair::verify_signature(&kp.public_key.serialize(), b"hello", &signature)?);
-    /// # Ok(())
-    /// # }
+    /// let signature = kp.calculate_signature(b"hello", &mut rand::thread_rng());
+    /// assert!(KeyPair::verify_signature(&kp.public_key, b"hello", &signature));
     ///```
     pub fn verify_signature(
-        their_public_key: &[u8],
+        their_public_key: &PublicKey,
         message: &[u8],
-        signature: &[u8],
-    ) -> Result<bool> {
-        let their_public_key: PublicKey = their_public_key.try_into()?;
+        signature: &[u8; curve25519::SIGNATURE_LENGTH],
+    ) -> bool {
         their_public_key.verify_signature(message, signature)
     }
 }
@@ -569,12 +574,10 @@ impl subtle::ConstantTimeEq for KeyPair {
     }
 }
 
-impl TryFrom<PrivateKey> for KeyPair {
-    type Error = SignalProtocolError;
-
-    fn try_from(value: PrivateKey) -> Result<Self> {
-        let public_key = value.public_key()?;
-        Ok(Self::new(public_key, value))
+impl From<PrivateKey> for KeyPair {
+    fn from(value: PrivateKey) -> Self {
+        let public_key = value.public_key();
+        Self::new(public_key, value)
     }
 }
 
@@ -585,54 +588,43 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_large_signatures() -> Result<()> {
+    fn test_large_signatures() {
         let mut csprng = OsRng;
         let key_pair = KeyPair::generate(&mut csprng);
         let mut message = [0u8; 1024 * 1024];
         let signature = key_pair
             .private_key
-            .calculate_signature(&message, &mut csprng)?;
+            .calculate_signature(&message, &mut csprng);
 
-        assert!(key_pair.public_key.verify_signature(&message, &signature)?);
+        assert!(key_pair.public_key.verify_signature(&message, &signature));
         message[0] ^= 0x01u8;
-        assert!(!key_pair.public_key.verify_signature(&message, &signature)?);
+        assert!(!key_pair.public_key.verify_signature(&message, &signature));
         message[0] ^= 0x01u8;
-        let public_key = key_pair.private_key.public_key()?;
-        assert!(public_key.verify_signature(&message, &signature)?);
-
-        Ok(())
+        let public_key = key_pair.private_key.public_key();
+        assert!(public_key.verify_signature(&message, &signature));
     }
 
     #[test]
     fn test_decode_size() -> Result<()> {
         let mut csprng = OsRng;
         let key_pair = KeyPair::generate(&mut csprng);
-        let serialized_public = key_pair.public_key.serialize();
+        let serialized_public: [u8; 33] = key_pair.public_key.serialize();
 
         assert_eq!(
             serialized_public,
-            key_pair.private_key.public_key()?.serialize()
+            key_pair.private_key.public_key().serialize()
         );
-        let empty: [u8; 0] = [];
 
-        let just_right = PublicKey::try_from(&serialized_public[..]);
+        let just_right = PublicKey::try_from(&serialized_public);
 
         assert!(just_right.is_ok());
-        assert!(PublicKey::try_from(&serialized_public[1..]).is_err());
-        assert!(PublicKey::try_from(&empty[..]).is_err());
 
         let mut bad_key_type = [0u8; 33];
         bad_key_type[..].copy_from_slice(&serialized_public[..]);
         bad_key_type[0] = 0x01u8;
-        assert!(PublicKey::try_from(&bad_key_type[..]).is_err());
-
-        let mut extra_space = [0u8; 34];
-        extra_space[..33].copy_from_slice(&serialized_public[..]);
-        let extra_space_decode = PublicKey::try_from(&extra_space[..]);
-        assert!(extra_space_decode.is_ok());
+        assert!(PublicKey::try_from(&bad_key_type).is_err());
 
         assert_eq!(&serialized_public[..], &just_right?.serialize()[..]);
-        assert_eq!(&serialized_public[..], &extra_space_decode?.serialize()[..]);
         Ok(())
     }
 }

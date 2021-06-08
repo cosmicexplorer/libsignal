@@ -48,7 +48,7 @@ use error::Result;
 
 pub use {
     address::{DeviceId, ProtocolAddress},
-    curve::{KeyPair, KeyType, Keyed, PrivateKey, PublicKey},
+    curve::{AsymmetricRole, KeyPair, KeyType, Keyed, PrivateKey, PublicKey},
     error::SignalProtocolError,
     fingerprint::{DisplayableFingerprint, Fingerprint, ScannableFingerprint},
     group_cipher::{

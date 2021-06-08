@@ -7,7 +7,7 @@
 
 #![warn(missing_docs)]
 
-use crate::curve::KeyType;
+use crate::curve::{AsymmetricRole, KeyType};
 
 #[cfg(doc)]
 pub use crate::{
@@ -25,6 +25,7 @@ pub use crate::{
 #[cfg(doc)]
 use uuid::Uuid;
 
+use std::convert::Infallible;
 use std::error::Error;
 use std::fmt;
 use std::panic::UnwindSafe;
@@ -99,7 +100,7 @@ pub enum SignalProtocolError {
     ///
     /// Prefer to use static-sized slices in API method signatures and struct fields to minimize the
     /// need to raise this error.
-    BadKeyLength(KeyType, usize),
+    BadKeyLength(KeyType, AsymmetricRole, usize),
 
     /// Raised if signature validation fails for a [SignedPreKeyRecord] or a [SenderKeyMessage].
     SignatureValidationFailed,
@@ -193,6 +194,14 @@ impl Error for SignalProtocolError {
     }
 }
 
+/// According to the docs for [Infallible], this error case should never be raised, so we just use
+/// `unreachable!()`.
+impl From<Infallible> for SignalProtocolError {
+    fn from(_value: Infallible) -> SignalProtocolError {
+        unreachable!("Infallible From impl reached")
+    }
+}
+
 impl From<prost::DecodeError> for SignalProtocolError {
     fn from(value: prost::DecodeError) -> SignalProtocolError {
         SignalProtocolError::ProtobufDecodingError(value)
@@ -249,8 +258,12 @@ impl fmt::Display for SignalProtocolError {
             }
             SignalProtocolError::NoKeyTypeIdentifier => write!(f, "no key type identifier"),
             SignalProtocolError::BadKeyType(t) => write!(f, "bad key type <{:#04x}>", t),
-            SignalProtocolError::BadKeyLength(t, l) => {
-                write!(f, "bad key length <{:?}> for key with type <{:?}>", l, t)
+            SignalProtocolError::BadKeyLength(t, r, l) => {
+                write!(
+                    f,
+                    "bad key length <{}> for key {:?} with type <{:?}>",
+                    l, r, t
+                )
             }
             SignalProtocolError::InvalidPreKeyId => write!(f, "invalid prekey identifier"),
             SignalProtocolError::InvalidSignedPreKeyId => {

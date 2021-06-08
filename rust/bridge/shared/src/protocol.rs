@@ -148,7 +148,7 @@ fn ECPrivateKey_Agree<T: Env>(
     private_key: &PrivateKey,
     public_key: &PublicKey,
 ) -> Result<T::Buffer> {
-    let dh_secret = private_key.calculate_agreement(public_key)?;
+    let dh_secret = private_key.calculate_agreement(public_key);
     Ok(env.buffer(dh_secret.to_vec()))
 }
 

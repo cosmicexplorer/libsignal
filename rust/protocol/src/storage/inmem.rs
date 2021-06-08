@@ -46,7 +46,7 @@ impl InMemIdentityKeyStore {
         }
     }
 
-    /// Clear the mapping of known keys.
+    /// Clear the current mapping of known keys.
     pub fn reset(&mut self) {
         self.known_keys.clear();
     }
