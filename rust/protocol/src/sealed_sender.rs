@@ -582,7 +582,9 @@ impl UnidentifiedSenderMessage {
                     remaining.split_at(curve::curve25519::PUBLIC_KEY_LENGTH);
 
                 Ok(Self::V2 {
-                    ephemeral_public: PublicKey::from_curve25519_public_key_bytes(ephemeral_public)?,
+                    ephemeral_public: PublicKey::from_curve25519_public_key_bytes(
+                        ephemeral_public,
+                    )?,
                     encrypted_message_key: encrypted_message_key.into(),
                     authentication_tag: encrypted_authentication_tag.into(),
                     encrypted_message: encrypted_message.into(),
@@ -863,7 +865,7 @@ mod sealed_sender_v2 {
         let agreement = our_keys
             .private_key()
             .calculate_agreement(their_key.public_key())?;
-        let mut agreement_key_input = agreement.into_vec();
+        let mut agreement_key_input = agreement.to_vec();
         agreement_key_input.extend_from_slice(&ephemeral_pub_key.serialize());
         agreement_key_input.extend_from_slice(encrypted_message_key);
         match direction {
@@ -1357,8 +1359,8 @@ fn test_agreement_xor() -> Result<()> {
         m.as_ref(),
     )?;
     let recv_a_b = sealed_sender_v2::apply_agreement_xor(
-        &a.private_key,
-        &keys.e.public_key()?,
+        &a,
+        &keys.e.public_key,
         Direction::Receiving,
         send_a_b.as_ref(),
     )?;

@@ -149,7 +149,7 @@ fn ECPrivateKey_Agree<T: Env>(
     public_key: &PublicKey,
 ) -> Result<T::Buffer> {
     let dh_secret = private_key.calculate_agreement(public_key)?;
-    Ok(env.buffer(dh_secret.into_vec()))
+    Ok(env.buffer(dh_secret.to_vec()))
 }
 
 #[bridge_fn_buffer(ffi = "identitykeypair_serialize")]
