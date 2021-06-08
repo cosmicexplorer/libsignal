@@ -25,8 +25,8 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use uuid::Uuid;
 
-#[derive(Clone)]
 /// Reference implementation of [traits::IdentityKeyStore].
+#[derive(Debug, Clone)]
 pub struct InMemIdentityKeyStore {
     key_pair: IdentityKeyPair,
     registration_id: u32,
@@ -111,7 +111,7 @@ impl traits::IdentityKeyStore for InMemIdentityKeyStore {
 }
 
 /// Reference implementation of [traits::PreKeyStore].
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct InMemPreKeyStore {
     pre_keys: HashMap<PreKeyId, PreKeyRecord>,
 }
@@ -160,7 +160,7 @@ impl traits::PreKeyStore for InMemPreKeyStore {
 }
 
 /// Reference implementation of [traits::SignedPreKeyStore].
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct InMemSignedPreKeyStore {
     signed_pre_keys: HashMap<SignedPreKeyId, SignedPreKeyRecord>,
 }
@@ -207,7 +207,7 @@ impl traits::SignedPreKeyStore for InMemSignedPreKeyStore {
 }
 
 /// Reference implementation of [traits::SessionStore].
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct InMemSessionStore {
     sessions: HashMap<ProtocolAddress, SessionRecord>,
 }
@@ -271,7 +271,7 @@ impl traits::SessionStore for InMemSessionStore {
 }
 
 /// Reference implementation of [traits::SenderKeyStore].
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct InMemSenderKeyStore {
     // We use Cow keys in order to store owned values but compare to referenced ones.
     // See https://users.rust-lang.org/t/hashmap-with-tuple-keys/12711/6.
@@ -324,7 +324,7 @@ impl traits::SenderKeyStore for InMemSenderKeyStore {
 
 #[allow(missing_docs)]
 /// Reference implementation of [traits::ProtocolStore].
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct InMemSignalProtocolStore {
     pub session_store: InMemSessionStore,
     pub pre_key_store: InMemPreKeyStore,
