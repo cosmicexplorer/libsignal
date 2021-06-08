@@ -21,7 +21,7 @@ use curve25519_dalek::scalar::Scalar;
 use rand::{CryptoRng, Rng};
 use sha2::{Digest, Sha512};
 use subtle::ConstantTimeEq;
-use x25519_dalek::{PublicKey, StaticSecret};
+use x25519_dalek::{PublicKey as DalekPublicKey, StaticSecret};
 
 use std::fmt;
 
@@ -36,7 +36,7 @@ pub const PUBLIC_KEY_LENGTH: usize = 32;
 /// Length of a signature.
 pub const SIGNATURE_LENGTH: usize = 64;
 
-/// A flexible key pair type wrapping [PublicKey] and [StaticSecret].
+/// A flexible key pair type wrapping [StaticSecret].
 ///
 /// Operations here are simple enough to *not* produce fallible [Result]s. Instead we use static
 /// slice lengths to avoid having to handle any error cases.
@@ -52,7 +52,12 @@ impl fmt::Debug for PrivateKey {
 }
 
 impl PrivateKey {
-    /// Generate a [StaticSecret] and then a [PublicKey] from a [CryptoRng].
+    /// Generate a [StaticSecret] from a [CryptoRng].
+    ///```
+    /// # use libsignal_protocol::curve_unstable::curve25519::*;
+    /// # #[allow(unused_variables)]
+    /// let pk = PrivateKey::new(&mut rand::thread_rng());
+    ///```
     pub fn new<R>(csprng: &mut R) -> Self
     where
         R: CryptoRng + Rng,
@@ -64,14 +69,16 @@ impl PrivateKey {
     /// Do a [DH] key exchange to produce a slice that can be reproduced by another keypair.
     ///
     /// [DH]: https://en.wikipedia.org/wiki/Diffie%E2%80%93Hellman_key_exchange
-    pub fn calculate_agreement(
-        &self,
-        their_public_key: &[u8; PUBLIC_KEY_LENGTH],
-    ) -> [u8; AGREEMENT_LENGTH] {
-        *self
-            .secret
-            .diffie_hellman(&PublicKey::from(*their_public_key))
-            .as_bytes()
+    ///```
+    /// # use libsignal_protocol::curve_unstable::curve25519::*;
+    /// let pk = PrivateKey::new(&mut rand::thread_rng());
+    /// let pk2 = PrivateKey::new(&mut rand::thread_rng());
+    /// assert!(
+    ///   pk.calculate_agreement(&pk2.derive_public_key()) ==
+    ///     pk2.calculate_agreement(&pk.derive_public_key()));
+    ///```
+    pub fn calculate_agreement(&self, their_public_key: &DalekPublicKey) -> [u8; AGREEMENT_LENGTH] {
+        *self.secret.diffie_hellman(their_public_key).as_bytes()
     }
 
     /// Calculates an XEdDSA signature using the X25519 private key directly.
@@ -82,6 +89,12 @@ impl PrivateKey {
     /// fixed to 0, but rather passed back in the most significant bit of the signature which would
     /// otherwise always be 0. This is for compatibility with the implementation found in
     /// libsignal-protocol-java.
+    ///```
+    /// # use libsignal_protocol::curve_unstable::curve25519::*;
+    /// let pk = PrivateKey::new(&mut rand::thread_rng());
+    /// # #[allow(unused_variables)]
+    /// let signature = pk.calculate_signature(&mut rand::thread_rng(), b"hello");
+    ///```
     pub fn calculate_signature<R>(&self, csprng: &mut R, message: &[u8]) -> [u8; SIGNATURE_LENGTH]
     where
         R: CryptoRng + Rng,
@@ -127,12 +140,18 @@ impl PrivateKey {
 
     /// Verify a signature from [Self::calculate_signature] against another key pair's public key.
     ///
+    ///```
+    /// # use libsignal_protocol::curve_unstable::curve25519::*;
+    /// let pk = PrivateKey::new(&mut rand::thread_rng());
+    /// let signature = pk.calculate_signature(&mut rand::thread_rng(), b"hello");
+    /// assert!(PrivateKey::verify_signature(&pk.derive_public_key(), b"hello", &signature));
+    ///```
     pub fn verify_signature(
-        their_public_key: &[u8; PUBLIC_KEY_LENGTH],
+        their_public_key: &DalekPublicKey,
         message: &[u8],
         signature: &[u8; SIGNATURE_LENGTH],
     ) -> bool {
-        let mont_point = MontgomeryPoint(*their_public_key);
+        let mont_point = MontgomeryPoint(their_public_key.to_bytes());
         let ed_pub_key_point =
             match mont_point.to_edwards((signature[SIGNATURE_LENGTH - 1] & 0b1000_0000_u8) >> 7) {
                 Some(x) => x,
@@ -165,10 +184,10 @@ impl PrivateKey {
         bool::from(cap_r_check.as_bytes().ct_eq(&cap_r))
     }
 
-    /// Return the bytes of a [PublicKey] that another party can use to validate against
-    /// [Self::verify_signature].
-    pub fn derive_public_key_bytes(&self) -> [u8; PUBLIC_KEY_LENGTH] {
-        *PublicKey::from(&self.secret).as_bytes()
+    /// Return a public key derived from this private key's data that another party can use to
+    /// validate against [Self::verify_signature].
+    pub fn derive_public_key(&self) -> DalekPublicKey {
+        DalekPublicKey::from(&self.secret)
     }
 
     /// Return a serialization of this private key.
@@ -222,11 +241,12 @@ mod tests {
         let alice_key = PrivateKey::from(alice_private);
         let bob_key = PrivateKey::from(bob_private);
 
-        assert_eq!(alice_public, alice_key.derive_public_key_bytes());
-        assert_eq!(bob_public, bob_key.derive_public_key_bytes());
+        assert_eq!(alice_public, alice_key.derive_public_key().to_bytes());
+        assert_eq!(bob_public, bob_key.derive_public_key().to_bytes());
 
-        let alice_computed_secret = alice_key.calculate_agreement(&bob_public);
-        let bob_computed_secret = bob_key.calculate_agreement(&alice_public);
+        let alice_computed_secret =
+            alice_key.calculate_agreement(&DalekPublicKey::from(bob_public));
+        let bob_computed_secret = bob_key.calculate_agreement(&DalekPublicKey::from(alice_public));
 
         assert_eq!(shared, alice_computed_secret);
         assert_eq!(shared, bob_computed_secret);
@@ -239,10 +259,8 @@ mod tests {
             let alice_key = PrivateKey::new(&mut csprng);
             let bob_key = PrivateKey::new(&mut csprng);
 
-            let alice_computed_secret =
-                alice_key.calculate_agreement(&bob_key.derive_public_key_bytes());
-            let bob_computed_secret =
-                bob_key.calculate_agreement(&alice_key.derive_public_key_bytes());
+            let alice_computed_secret = alice_key.calculate_agreement(&bob_key.derive_public_key());
+            let bob_computed_secret = bob_key.calculate_agreement(&alice_key.derive_public_key());
 
             assert_eq!(alice_computed_secret, bob_computed_secret);
         }
@@ -276,13 +294,13 @@ mod tests {
         let alice_identity_key = PrivateKey::from(alice_identity_private);
 
         assert_eq!(
-            alice_identity_public,
-            alice_identity_key.derive_public_key_bytes()
+            DalekPublicKey::from(alice_identity_public),
+            alice_identity_key.derive_public_key()
         );
 
         assert!(
             PrivateKey::verify_signature(
-                &alice_identity_public,
+                &DalekPublicKey::from(alice_identity_public),
                 &alice_ephemeral_public,
                 &alice_signature
             ),
@@ -296,7 +314,7 @@ mod tests {
 
             assert!(
                 !PrivateKey::verify_signature(
-                    &alice_identity_public,
+                    &DalekPublicKey::from(alice_identity_public),
                     &alice_ephemeral_public,
                     &alice_signature_copy
                 ),
@@ -314,7 +332,7 @@ mod tests {
             let key = PrivateKey::new(&mut csprng);
             let signature = key.calculate_signature(&mut csprng, &message);
             assert!(
-                PrivateKey::verify_signature(&key.derive_public_key_bytes(), &message, &signature),
+                PrivateKey::verify_signature(&key.derive_public_key(), &message, &signature),
                 "signature check failed"
             );
         }

@@ -97,7 +97,7 @@ pub async fn create_pre_key_bundle<R: Rng + CryptoRng>(
                 timestamp,
                 &signed_pre_key_pair,
                 &signed_pre_key_signature,
-            )?,
+            ),
             None,
         )
         .await?;

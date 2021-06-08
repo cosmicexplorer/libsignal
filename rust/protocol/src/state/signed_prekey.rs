@@ -25,17 +25,9 @@ impl SignedPreKeyRecord {
         id: SignedPreKeyId,
         timestamp: u64,
         key: &KeyPair,
-        signature: &[u8],
-    ) -> Result<Self> {
-        let signature: &[u8; SIGNATURE_LENGTH] =
-            &signature.to_vec().try_into().map_err(|e: Vec<u8>| {
-                SignalProtocolError::BadKeyLength(
-                    KeyType::Curve25519,
-                    AsymmetricRole::Signature,
-                    e.len(),
-                )
-            })?;
-        Ok(Self {
+        signature: &[u8; SIGNATURE_LENGTH],
+    ) -> Self {
+        Self {
             signed_pre_key: SignedPreKeyRecordStructure {
                 id,
                 timestamp,
@@ -47,7 +39,7 @@ impl SignedPreKeyRecord {
             timestamp,
             key_pair: *key,
             signature: *signature,
-        })
+        }
     }
 
     pub fn deserialize(data: &[u8]) -> Result<Self> {

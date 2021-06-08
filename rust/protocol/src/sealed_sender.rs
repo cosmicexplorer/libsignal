@@ -1383,7 +1383,7 @@ pub async fn sealed_sender_decrypt(
 
 #[test]
 fn test_lossless_round_trip() -> Result<()> {
-    let trust_root = PrivateKey::deserialize(&[0u8; 32]);
+    let trust_root = PrivateKey::deserialize(&[0u8; 32])?;
 
     // To test a hypothetical addition of a new field:
     //

@@ -696,11 +696,8 @@ impl TryFrom<&[u8]> for SenderKeyDistributionMessage {
         let chain_key: &[u8; CHAIN_KEY_LENGTH] = &chain_key_bytes
             .try_into()
             .map_err(|_| SignalProtocolError::InvalidProtobufEncoding)?;
-        let signing_key: &[u8; PublicKey::ENCODED_PUBLIC_KEY_LENGTH] = &signing_key_bytes
-            .try_into()
-            .map_err(|_| SignalProtocolError::InvalidProtobufEncoding)?;
 
-        let signing_key = PublicKey::deserialize(&signing_key)?;
+        let signing_key = PublicKey::deserialize(&signing_key_bytes)?;
 
         Ok(SenderKeyDistributionMessage {
             message_version,

@@ -96,28 +96,9 @@ impl SessionState {
         match session.sender_chain.clone() {
             None => Ok(None),
             Some(ref c) => {
-                let sender_ratchet_key =
-                    PublicKey::deserialize(&c.sender_ratchet_key.clone().try_into().map_err(
-                        |e: Vec<u8>| {
-                            SignalProtocolError::BadKeyLength(
-                                KeyType::Curve25519,
-                                AsymmetricRole::Public,
-                                e.len(),
-                            )
-                        },
-                    )?)?;
-                let sender_ratchet_private_key = PrivateKey::deserialize(
-                    &c.sender_ratchet_key_private
-                        .clone()
-                        .try_into()
-                        .map_err(|e: Vec<u8>| {
-                            SignalProtocolError::BadKeyLength(
-                                KeyType::Curve25519,
-                                AsymmetricRole::Private,
-                                e.len(),
-                            )
-                        })?,
-                );
+                let sender_ratchet_key = PublicKey::deserialize(&c.sender_ratchet_key)?;
+                let sender_ratchet_private_key =
+                    PrivateKey::deserialize(&c.sender_ratchet_key_private)?;
                 Ok(Some(KeyPair::new(
                     sender_ratchet_key,
                     sender_ratchet_private_key,

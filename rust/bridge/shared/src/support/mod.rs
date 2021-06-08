@@ -142,7 +142,8 @@ macro_rules! bridge_get_bytearray {
             #[bridge_fn_buffer($($param = $val),*)]
             fn [<$typ _ $name>]<E: Env>(env: E, obj: &$typ) -> Result<E::Buffer> {
                 let result = TransformHelper($typ::$method(obj));
-                Ok(env.buffer(result.ok_if_needed()?.into_vec_if_needed().0))
+                let slice: &[u8] = result.ok_if_needed()?.into_vec_if_needed().0.as_ref();
+                Ok(env.buffer(slice))
             }
         }
     };
@@ -182,7 +183,8 @@ macro_rules! bridge_get_optional_bytearray {
                 let result = $typ::$method(obj);
                 let result_without_errors = TransformHelper(result).ok_if_needed()?.0;
                 let result_buffer = result_without_errors.map(|b| {
-                    env.buffer(TransformHelper(b).into_vec_if_needed().0)
+                    let slice: &[u8] = TransformHelper(b).into_vec_if_needed().0.as_ref();
+                    env.buffer(slice)
                 });
                 Ok(result_buffer)
             }
@@ -229,7 +231,7 @@ macro_rules! bridge_get_optional_bytearray {
 ///
 /// #[bridge_fn]
 /// fn Foo_GetBar(obj: &Foo) -> Result<&str> {
-///   Foo::bar(obj)   
+///   Foo::bar(obj)
 /// }
 /// ```
 ///

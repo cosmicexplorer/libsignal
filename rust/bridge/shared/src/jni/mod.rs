@@ -251,7 +251,7 @@ fn throw_error(env: &JNIEnv, error: SignalJniError) {
         SignalJniError::Signal(SignalProtocolError::NoKeyTypeIdentifier)
         | SignalJniError::Signal(SignalProtocolError::SignatureValidationFailed)
         | SignalJniError::Signal(SignalProtocolError::BadKeyType(_))
-        | SignalJniError::Signal(SignalProtocolError::BadKeyLength(_, _))
+        | SignalJniError::Signal(SignalProtocolError::BadKeyLength(_, _, _))
         | SignalJniError::SignalCrypto(SignalCryptoError::InvalidKeySize) => {
             "org/whispersystems/libsignal/InvalidKeyException"
         }

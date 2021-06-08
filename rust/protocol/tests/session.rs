@@ -98,7 +98,7 @@ fn test_basic_prekey_v3() -> Result<(), SignalProtocolError> {
                     /*timestamp*/ 42,
                     &bob_signed_pre_key_pair,
                     &bob_signed_pre_key_signature,
-                )?,
+                ),
                 None,
             )
             .await?;
@@ -182,7 +182,7 @@ fn test_basic_prekey_v3() -> Result<(), SignalProtocolError> {
                     /*timestamp*/ 42,
                     &bob_signed_pre_key_pair,
                     &bob_signed_pre_key_signature,
-                )?,
+                ),
                 None,
             )
             .await?;
@@ -317,7 +317,7 @@ fn chain_jump_over_limit() -> Result<(), SignalProtocolError> {
                     /*timestamp*/ 42,
                     &bob_signed_pre_key_pair,
                     &bob_signed_pre_key_signature,
-                )?,
+                ),
                 None,
             )
             .await?;
@@ -406,7 +406,7 @@ fn chain_jump_over_limit_with_self() -> Result<(), SignalProtocolError> {
                     /*timestamp*/ 42,
                     &a2_signed_pre_key_pair,
                     &a2_signed_pre_key_signature,
-                )?,
+                ),
                 None,
             )
             .await?;
@@ -613,7 +613,7 @@ fn repeat_bundle_message_v3() -> Result<(), SignalProtocolError> {
                     /*timestamp*/ 42,
                     &bob_signed_pre_key_pair,
                     &bob_signed_pre_key_signature,
-                )?,
+                ),
                 None,
             )
             .await?;
@@ -717,7 +717,7 @@ fn bad_message_bundle() -> Result<(), SignalProtocolError> {
                     /*timestamp*/ 42,
                     &bob_signed_pre_key_pair,
                     &bob_signed_pre_key_signature,
-                )?,
+                ),
                 None,
             )
             .await?;
@@ -852,7 +852,7 @@ fn optional_one_time_prekey() -> Result<(), SignalProtocolError> {
                     /*timestamp*/ 42,
                     &bob_signed_pre_key_pair,
                     &bob_signed_pre_key_signature,
-                )?,
+                ),
                 None,
             )
             .await?;

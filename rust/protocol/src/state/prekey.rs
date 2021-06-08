@@ -38,14 +38,6 @@ impl PreKeyRecord {
             private_key,
             ..
         } = record.clone();
-        let public_key: &[u8; PublicKey::ENCODED_PUBLIC_KEY_LENGTH] =
-            &public_key.try_into().map_err(|e: Vec<u8>| {
-                SignalProtocolError::BadKeyLength(
-                    KeyType::Curve25519,
-                    AsymmetricRole::Public,
-                    e.len(),
-                )
-            })?;
         let public_key = PublicKey::deserialize(&public_key)?;
         let private_key: &[u8; PRIVATE_KEY_LENGTH] =
             &private_key.try_into().map_err(|e: Vec<u8>| {
@@ -55,7 +47,7 @@ impl PreKeyRecord {
                     e.len(),
                 )
             })?;
-        let private_key = PrivateKey::deserialize(&private_key);
+        let private_key = PrivateKey::from(private_key);
         Ok(Self {
             pre_key: record,
             key_pair: KeyPair::new(public_key, private_key),

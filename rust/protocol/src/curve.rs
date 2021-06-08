@@ -37,6 +37,7 @@ use std::hash;
 use num_enum::{IntoPrimitive, TryFromPrimitive, TryFromPrimitiveError};
 use rand::{CryptoRng, Rng};
 use subtle::ConstantTimeEq;
+use x25519_dalek::PublicKey as DalekPublicKey;
 
 /// Map the variant of key being used to and from a [u8].
 ///
@@ -94,6 +95,8 @@ pub enum AsymmetricRole {
     /// This error was raised when decoding a symmetric cipher key as with
     /// [crypto::aes_256_ctr_encrypt]
     SymmetricKey,
+    /// This error was raised when decoding a chain key from a [SenderKeyDistributionMessage].
+    ChainKey,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
@@ -119,12 +122,12 @@ impl PublicKey {
     pub const ENCODED_PUBLIC_KEY_LENGTH: usize = 1 + curve25519::PUBLIC_KEY_LENGTH;
 
     /// Deserialize a public key from a byte slice.
-    pub fn deserialize(value: &[u8; Self::ENCODED_PUBLIC_KEY_LENGTH]) -> Result<Self> {
+    pub fn deserialize(value: &[u8]) -> Result<Self> {
         let key_type = KeyType::try_from(value[0])?;
         match key_type {
             KeyType::Curve25519 => {
                 // We allow trailing data after the public key (why?)
-                if value.len() < curve25519::PUBLIC_KEY_LENGTH + 1 {
+                if value.len() < Self::ENCODED_PUBLIC_KEY_LENGTH {
                     return Err(SignalProtocolError::BadKeyLength(
                         KeyType::Curve25519,
                         AsymmetricRole::Public,
@@ -163,6 +166,10 @@ impl PublicKey {
         }
     }
 
+    fn as_dalek_public_key(&self) -> DalekPublicKey {
+        DalekPublicKey::from(*self.public_key_bytes())
+    }
+
     /// Create an instance by interpreting `bytes` as a [KeyType::Curve25519] public key.
     pub fn from_curve25519_public_key_bytes(bytes: &[u8; curve25519::PUBLIC_KEY_LENGTH]) -> Self {
         Self {
@@ -191,7 +198,7 @@ impl PublicKey {
         message: &[u8],
         signature: &[u8; curve25519::SIGNATURE_LENGTH],
     ) -> bool {
-        curve25519::PrivateKey::verify_signature(self.public_key_bytes(), message, signature)
+        curve25519::PrivateKey::verify_signature(&self.as_dalek_public_key(), message, signature)
     }
 }
 
@@ -285,15 +292,24 @@ pub struct PrivateKey {
 }
 
 impl PrivateKey {
-    /// Parse a private key from the byte slice `value`.
-    pub fn deserialize(value: &[u8; curve25519::PRIVATE_KEY_LENGTH]) -> Self {
-        let mut value = *value;
-        // Clamp:
-        value[0] &= 0xF8;
-        value[curve25519::PRIVATE_KEY_LENGTH - 1] &= 0x7F;
-        value[curve25519::PRIVATE_KEY_LENGTH - 1] |= 0x40;
-        Self {
-            key: PrivateKeyData::Curve25519(value),
+    /// Try to parse a private key from the byte slice `value`.
+    pub fn deserialize(value: &[u8]) -> Result<Self> {
+        if value.len() != curve25519::PRIVATE_KEY_LENGTH {
+            Err(SignalProtocolError::BadKeyLength(
+                KeyType::Curve25519,
+                AsymmetricRole::Private,
+                value.len(),
+            ))
+        } else {
+            let mut key = [0u8; curve25519::PRIVATE_KEY_LENGTH];
+            key.copy_from_slice(&value[..curve25519::PRIVATE_KEY_LENGTH]);
+            // Clamp:
+            key[0] &= 0xF8;
+            key[31] &= 0x7F;
+            key[31] |= 0x40;
+            Ok(Self {
+                key: PrivateKeyData::Curve25519(key),
+            })
         }
     }
 
@@ -309,7 +325,7 @@ impl PrivateKey {
                         value.len(),
                     )
                 })?;
-        Ok(Self::deserialize(value))
+        Ok(Self::deserialize(value)?)
     }
 
     /// Return a byte slice which can be deserialized with [Self::deserialize].
@@ -321,8 +337,9 @@ impl PrivateKey {
     pub fn public_key(&self) -> PublicKey {
         match self.key {
             PrivateKeyData::Curve25519(private_key) => {
-                let public_key =
-                    curve25519::PrivateKey::from(private_key).derive_public_key_bytes();
+                let public_key = curve25519::PrivateKey::from(private_key)
+                    .derive_public_key()
+                    .to_bytes();
                 PublicKey::new(PublicKeyData::Curve25519(public_key))
             }
         }
@@ -375,7 +392,7 @@ impl From<PrivateKeyData> for PrivateKey {
 
 impl From<&[u8; curve25519::PRIVATE_KEY_LENGTH]> for PrivateKey {
     fn from(value: &[u8; curve25519::PRIVATE_KEY_LENGTH]) -> Self {
-        Self::deserialize(value)
+        Self::deserialize(value).expect("should have no problem deserializing from static slice")
     }
 }
 
@@ -455,7 +472,7 @@ impl KeyPair {
         let private_key = curve25519::PrivateKey::new(csprng);
 
         let public_key = PublicKey::from(PublicKeyData::Curve25519(
-            private_key.derive_public_key_bytes(),
+            private_key.derive_public_key().to_bytes(),
         ));
         let private_key =
             PrivateKey::from(PrivateKeyData::Curve25519(private_key.private_key_bytes()));
