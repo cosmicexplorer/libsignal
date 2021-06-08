@@ -94,6 +94,12 @@ typedef struct SignalPreKeyRecord SignalPreKeyRecord;
 
 typedef struct SignalPreKeySignalMessage SignalPreKeySignalMessage;
 
+/**
+ * Private key half of a [KeyPair].
+ *
+ * Analogously to [PublicKey], uses [Self::ct_eq] and [constant_time_cmp] to implement equality and
+ * ordering without leaking too much information about the contents of the data being compared.
+ */
 typedef struct SignalPrivateKey SignalPrivateKey;
 
 /**
@@ -101,6 +107,12 @@ typedef struct SignalPrivateKey SignalPrivateKey;
  */
 typedef struct SignalProtocolAddress SignalProtocolAddress;
 
+/**
+ * Public key half of a [KeyPair].
+ *
+ * Uses [Self::ct_eq] and [constant_time_cmp] to implement equality and ordering without leaking
+ * too much information about the contents of the data being compared.
+ */
 typedef struct SignalPublicKey SignalPublicKey;
 
 typedef struct SignalSenderCertificate SignalSenderCertificate;
