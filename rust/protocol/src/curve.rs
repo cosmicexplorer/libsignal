@@ -45,12 +45,12 @@ impl TryFrom<u8> for KeyType {
     }
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 enum PublicKeyData {
     DjbPublicKey([u8; curve25519::PUBLIC_KEY_LENGTH]),
 }
 
-#[derive(Clone, Copy, Eq)]
+#[derive(Clone, Copy, Eq, Hash)]
 pub struct PublicKey {
     key: PublicKeyData,
 }
@@ -203,12 +203,12 @@ impl fmt::Debug for PublicKey {
     }
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 enum PrivateKeyData {
     DjbPrivateKey([u8; curve25519::PRIVATE_KEY_LENGTH]),
 }
 
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(Clone, Copy, Eq, Hash)]
 pub struct PrivateKey {
     key: PrivateKeyData,
 }
@@ -243,6 +243,12 @@ impl PrivateKey {
                     curve25519::PrivateKey::from(*private_key).derive_public_key_bytes();
                 Ok(PublicKey::new(PublicKeyData::DjbPublicKey(public_key)))
             }
+        }
+    }
+
+    fn key_data(&self) -> &[u8] {
+        match self.key {
+            PrivateKeyData::DjbPrivateKey(ref k) => k.as_ref(),
         }
     }
 
@@ -297,7 +303,53 @@ impl TryFrom<&[u8]> for PrivateKey {
     }
 }
 
-#[derive(Copy, Clone)]
+impl subtle::ConstantTimeEq for PrivateKey {
+    /// A constant-time comparison as long as the two keys have a matching type.
+    ///
+    /// If the two keys have different types, the comparison short-circuits,
+    /// much like comparing two slices of different lengths.
+    fn ct_eq(&self, other: &PrivateKey) -> subtle::Choice {
+        if self.key_type() != other.key_type() {
+            return 0.ct_eq(&1);
+        }
+        self.key_data().ct_eq(other.key_data())
+    }
+}
+
+impl PartialEq for PrivateKey {
+    fn eq(&self, other: &PrivateKey) -> bool {
+        bool::from(self.ct_eq(other))
+    }
+}
+
+impl Ord for PrivateKey {
+    fn cmp(&self, other: &Self) -> Ordering {
+        if self.key_type() != other.key_type() {
+            return self.key_type().cmp(&other.key_type());
+        }
+
+        crate::utils::constant_time_cmp(self.key_data(), other.key_data())
+    }
+}
+
+impl PartialOrd for PrivateKey {
+    fn partial_cmp(&self, other: &PrivateKey) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl fmt::Debug for PrivateKey {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "PrivateKey {{ key_type={}, serialize={:?} }}",
+            self.key_type(),
+            self.serialize()
+        )
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub struct KeyPair {
     pub public_key: PublicKey,
     pub private_key: PrivateKey,
