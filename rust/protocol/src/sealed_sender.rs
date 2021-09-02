@@ -366,7 +366,7 @@ impl ContentHint {
         }
     }
 
-    pub const fn to_u32(self) -> u32 {
+    pub fn to_u32(self) -> u32 {
         use proto::sealed_sender::unidentified_sender_message::message::ContentHint as ProtoContentHint;
         match self {
             ContentHint::Default => 0,
@@ -912,7 +912,7 @@ mod sealed_sender_v2 {
     pub const AUTH_TAG_LEN: usize = 16;
 
     /// An asymmetric and a symmetric cipher key.
-    pub(super) struct DerivedKeys {
+    pub struct DerivedKeys {
         /// Asymmetric key pair.
         pub(super) e: KeyPair,
         /// Symmetric key used to instantiate [`Aes256GcmSiv::new_from_slice`].
@@ -921,7 +921,7 @@ mod sealed_sender_v2 {
 
     impl DerivedKeys {
         /// Derive a set of ephemeral keys from a slice of random bytes `m`.
-        pub(super) fn calculate(m: &[u8]) -> DerivedKeys {
+        pub fn calculate(m: &[u8]) -> DerivedKeys {
             let kdf = hkdf::Hkdf::<sha2::Sha256>::new(None, m);
             let mut r = [0; 64];
             kdf.expand(LABEL_R, &mut r).expect("valid output length");
@@ -940,7 +940,7 @@ mod sealed_sender_v2 {
     /// The output of this method when called with [`Direction::Sending`] can be inverted to produce
     /// the original `input` bytes if called with [`Direction::Receiving`] with `our_keys` and
     /// `their_key` swapped.
-    pub(super) fn apply_agreement_xor(
+    pub fn apply_agreement_xor(
         our_keys: &KeyPair,
         their_key: &PublicKey,
         direction: Direction,
@@ -1060,6 +1060,7 @@ mod sealed_sender_v2 {
         Ok(())
     }
 }
+pub use sealed_sender_v2::{apply_agreement_xor, DerivedKeys};
 
 /// This method implements a single-key multi-recipient [KEM] as defined in Manuel Barbosa's
 /// ["Randomness Reuse: Extensions and Improvements"], a.k.a. Sealed Sender v2.
