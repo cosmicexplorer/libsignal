@@ -63,8 +63,8 @@ pub use {
         AliceSignalProtocolParameters, BobSignalProtocolParameters,
     },
     sealed_sender::{
-        apply_agreement_xor, sealed_sender_decrypt, sealed_sender_decrypt_to_usmc,
-        sealed_sender_encrypt, sealed_sender_encrypt_from_usmc,
+        apply_agreement_xor, encrypt_pre_key_bundle_message, sealed_sender_decrypt,
+        sealed_sender_decrypt_to_usmc, sealed_sender_encrypt, sealed_sender_encrypt_from_usmc,
         sealed_sender_multi_recipient_encrypt, sealed_sender_multi_recipient_fan_out, ContentHint,
         DerivedKeys, SealedSenderDecryptionResult, SenderCertificate, ServerCertificate,
         UnidentifiedSenderMessageContent,

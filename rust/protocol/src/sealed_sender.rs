@@ -1,5 +1,5 @@
 //
-// Copyright 2020-2021 Signal Messenger, LLC.
+// Copyright 2020-2022 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
@@ -328,6 +328,7 @@ impl From<ProtoMessageType> for CiphertextMessageType {
             ProtoMessageType::PrekeyMessage => Self::PreKey,
             ProtoMessageType::SenderkeyMessage => Self::SenderKey,
             ProtoMessageType::PlaintextContent => Self::Plaintext,
+            ProtoMessageType::EncryptedPrekeyBundleMessage => Self::EncryptedPreKeyBundle,
         };
         // Keep raw values in sync from now on, for efficient codegen.
         assert!(result == Self::PreKey || message_type as i32 == result as i32);
@@ -342,6 +343,7 @@ impl From<CiphertextMessageType> for ProtoMessageType {
             CiphertextMessageType::Whisper => Self::Message,
             CiphertextMessageType::SenderKey => Self::SenderkeyMessage,
             CiphertextMessageType::Plaintext => Self::PlaintextContent,
+            CiphertextMessageType::EncryptedPreKeyBundle => Self::EncryptedPrekeyBundleMessage,
         };
         // Keep raw values in sync from now on, for efficient codegen.
         assert!(result == Self::PrekeyMessage || message_type as i32 == result as i32);
@@ -570,6 +572,8 @@ impl UnidentifiedSenderMessage {
                 {
                     return Err(SignalProtocolError::InvalidProtobufEncoding);
                 }
+                /* let (encrypted_message_key, remaining) = remaining.split_at(sealed_sender_v2::MESSAGE_KEY_LEN + 1); */
+                /* let encrypted_message_key = &encrypted_message_key[1..]; */
                 let (encrypted_message_key, remaining) =
                     remaining.split_at(sealed_sender_v2::MESSAGE_KEY_LEN);
                 let (encrypted_authentication_tag, remaining) =
@@ -1342,6 +1346,12 @@ pub async fn sealed_sender_multi_recipient_encrypt<R: Rng + CryptoRng>(
         }
 
         previous_their_identity = Some(their_identity);
+        /* /\* serialized.extend_from_slice(their_uuid.as_bytes()); *\/ */
+        /* /\* let device_id: u32 = destination.device_id().into(); *\/ */
+        /* /\* prost::encode_length_delimiter(device_id as usize, &mut serialized) *\/ */
+        /* /\*     .expect("cannot fail encoding to Vec"); *\/ */
+        /* serialized.extend_from_slice(&c_i); */
+        /* serialized.extend_from_slice(&at_i); */
     }
 
     serialized.extend_from_slice(e_pub.public_key_bytes()?);
@@ -1660,6 +1670,54 @@ pub async fn sealed_sender_decrypt(
             )
             .await?
         }
+        CiphertextMessageType::EncryptedPreKeyBundle => {
+            let encrypted_keys_and_ctext = usmc.contents()?;
+            let (encrypted_secret_key, rest) = encrypted_keys_and_ctext.split_at(32);
+            let encrypted_secret_key: [u8; 32] = encrypted_secret_key.try_into().expect("size 32");
+            let (public_secret_key, rest) = rest.split_at(32);
+            let public_secret_key = PublicKey::from_djb_public_key_bytes(public_secret_key)?;
+            let (encrypted_iv, rest) = rest.split_at(32);
+            let encrypted_iv: [u8; 32] = encrypted_iv.try_into().expect("size 32");
+            let (public_iv_key, ciphertext) = rest.split_at(32);
+            let public_iv_key = PublicKey::from_djb_public_key_bytes(public_iv_key)?;
+
+            let our_identity: KeyPair = identity_store.get_identity_key_pair(None).await?.into();
+
+            let secret_key = sealed_sender_v2::apply_agreement_xor(
+                &our_identity,
+                &public_secret_key,
+                Direction::Receiving,
+                &encrypted_secret_key,
+            )?;
+            let secret_iv = sealed_sender_v2::apply_agreement_xor(
+                &our_identity,
+                &public_iv_key,
+                Direction::Receiving,
+                &encrypted_iv,
+            )?;
+
+            crypto::aes_256_cbc_decrypt(ciphertext, &secret_key, &secret_iv[..16]).map_err(|e| {
+                match e {
+                    crypto::DecryptionError::BadKeyOrIv => {
+                        log::warn!("bad decryption of keys for {}", remote_address);
+                        SignalProtocolError::InvalidSessionStructure(
+                            "invalid keys to decrypt pre-key bundle",
+                        )
+                    }
+                    crypto::DecryptionError::BadCiphertext(msg) => {
+                        log::warn!(
+                            "failed to decrypt encrypted pre-key bundle for {}: {}",
+                            remote_address,
+                            msg
+                        );
+                        SignalProtocolError::InvalidMessage(
+                            CiphertextMessageType::EncryptedPreKeyBundle,
+                            "failed to decrypt",
+                        )
+                    }
+                }
+            })?
+        }
         msg_type => {
             return Err(SignalProtocolError::InvalidMessage(
                 msg_type,
@@ -1740,4 +1798,60 @@ fn test_lossless_round_trip() -> Result<()> {
         SenderCertificate::deserialize(&sender_certificate_data.encode_to_vec())?;
     assert!(sender_certificate.validate(&trust_root.public_key()?, 31336)?);
     Ok(())
+}
+
+pub async fn encrypt_pre_key_bundle_message<R: CryptoRng + Rng>(
+    destination: &ProtocolAddress,
+    plaintext: Vec<u8>,
+    id_store: &mut dyn IdentityKeyStore,
+    csprng: &mut R,
+) -> Result<Vec<u8>> {
+    let dest_pubkey = id_store
+        .get_identity(&destination, None)
+        .await?
+        .ok_or_else(|| SignalProtocolError::SessionNotFound(destination.clone()))?;
+
+    let (secret_key, encrypted_secret_key, public_secret_key): ([u8; 32], [u8; 32], PublicKey) = {
+        let m: [u8; 32] = csprng.gen();
+        let keys = sealed_sender_v2::DerivedKeys::calculate(&m);
+        let send = sealed_sender_v2::apply_agreement_xor(
+            &keys.e,
+            dest_pubkey.public_key(),
+            Direction::Sending,
+            &m,
+        )?;
+        (m, send, keys.e.public_key)
+    };
+    /* This will be cut down to 16 bytes. */
+    let (iv, encrypted_iv, public_iv_key): ([u8; 32], [u8; 32], PublicKey) = {
+        let m: [u8; 32] = csprng.gen();
+        let keys = sealed_sender_v2::DerivedKeys::calculate(&m);
+        let send = sealed_sender_v2::apply_agreement_xor(
+            &keys.e,
+            dest_pubkey.public_key(),
+            Direction::Sending,
+            &m,
+        )?;
+        (m, send, keys.e.public_key)
+    };
+
+    let ciphertext =
+        crypto::aes_256_cbc_encrypt(&plaintext, &secret_key, &iv[..16]).map_err(|e| match e {
+            crypto::EncryptionError::BadKeyOrIv => {
+                log::warn!("bad encryption of keys for {}", destination);
+                SignalProtocolError::InvalidSessionStructure(
+                    "invalid keys to encrypt pre-key bundle",
+                )
+            }
+        })?;
+
+    let result: Vec<u8> = encrypted_secret_key
+        .iter()
+        .chain(public_secret_key.public_key_bytes()?)
+        .chain(encrypted_iv.as_ref())
+        .chain(public_iv_key.public_key_bytes()?)
+        .chain(&ciphertext)
+        .cloned()
+        .collect();
+    Ok(result)
 }

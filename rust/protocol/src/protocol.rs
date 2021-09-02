@@ -23,6 +23,7 @@ pub enum CiphertextMessage {
     PreKeySignalMessage(PreKeySignalMessage),
     SenderKeyMessage(SenderKeyMessage),
     PlaintextContent(PlaintextContent),
+    EncryptedPreKeyBundle(SignalMessage),
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug, num_enum::TryFromPrimitive)]
@@ -32,6 +33,7 @@ pub enum CiphertextMessageType {
     PreKey = 3,
     SenderKey = 7,
     Plaintext = 8,
+    EncryptedPreKeyBundle = 9,
 }
 
 impl CiphertextMessage {
@@ -41,6 +43,9 @@ impl CiphertextMessage {
             CiphertextMessage::PreKeySignalMessage(_) => CiphertextMessageType::PreKey,
             CiphertextMessage::SenderKeyMessage(_) => CiphertextMessageType::SenderKey,
             CiphertextMessage::PlaintextContent(_) => CiphertextMessageType::Plaintext,
+            CiphertextMessage::EncryptedPreKeyBundle(_) => {
+                CiphertextMessageType::EncryptedPreKeyBundle
+            }
         }
     }
 
@@ -50,6 +55,7 @@ impl CiphertextMessage {
             CiphertextMessage::PreKeySignalMessage(x) => x.serialized(),
             CiphertextMessage::SenderKeyMessage(x) => x.serialized(),
             CiphertextMessage::PlaintextContent(x) => x.serialized(),
+            CiphertextMessage::EncryptedPreKeyBundle(x) => x.serialized(),
         }
     }
 }
@@ -760,6 +766,7 @@ impl DecryptionErrorMessage {
                     "cannot create a DecryptionErrorMessage for plaintext content; it is not encrypted".to_string()
                 ));
             }
+            CiphertextMessageType::EncryptedPreKeyBundle => None,
         };
 
         let proto_message = proto::service::DecryptionErrorMessage {
