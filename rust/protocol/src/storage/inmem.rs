@@ -1,5 +1,5 @@
 //
-// Copyright 2020, 2021 Signal Messenger, LLC.
+// Copyright 2020-2022 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
@@ -215,25 +215,6 @@ impl InMemSessionStore {
             sessions: HashMap::new(),
         }
     }
-
-    /// Bulk version of [`SessionStore::load_session`].
-    ///
-    /// Useful for [crate::sealed_sender_multi_recipient_encrypt].
-    ///
-    /// [`SessionStore::load_session`]: crate::SessionStore::load_session
-    pub fn load_existing_sessions(
-        &self,
-        addresses: &[&ProtocolAddress],
-    ) -> Result<Vec<&SessionRecord>> {
-        addresses
-            .iter()
-            .map(|&address| {
-                self.sessions
-                    .get(address)
-                    .ok_or_else(|| SignalProtocolError::SessionNotFound(address.clone()))
-            })
-            .collect()
-    }
 }
 
 impl Default for InMemSessionStore {
@@ -263,6 +244,22 @@ impl traits::SessionStore for InMemSessionStore {
     ) -> Result<()> {
         self.sessions.insert(address.clone(), record.clone());
         Ok(())
+    }
+
+    async fn load_existing_sessions(
+        &self,
+        addresses: &[&ProtocolAddress],
+        _ctx: Context,
+    ) -> Result<Vec<SessionRecord>> {
+        addresses
+            .iter()
+            .map(|&address| {
+                self.sessions
+                    .get(address)
+                    .ok_or_else(|| SignalProtocolError::SessionNotFound(address.clone()))
+                    .map(|record| record.clone())
+            })
+            .collect()
     }
 }
 
@@ -440,6 +437,16 @@ impl traits::SessionStore for InMemSignalProtocolStore {
         ctx: Context,
     ) -> Result<()> {
         self.session_store.store_session(address, record, ctx).await
+    }
+
+    async fn load_existing_sessions(
+        &self,
+        addresses: &[&ProtocolAddress],
+        ctx: Context,
+    ) -> Result<Vec<SessionRecord>> {
+        self.session_store
+            .load_existing_sessions(addresses, ctx)
+            .await
     }
 }
 

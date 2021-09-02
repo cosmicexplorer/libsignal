@@ -496,11 +496,14 @@ fn test_sealed_sender_multi_recipient() -> Result<(), SignalProtocolError> {
         )?;
 
         let recipients = [&bob_uuid_address];
+        let records = alice_store
+            .session_store
+            .load_existing_sessions(&recipients, None)
+            .await?;
+        let record_refs: Vec<&SessionRecord> = records.iter().collect();
         let alice_ctext = sealed_sender_multi_recipient_encrypt(
             &recipients,
-            &alice_store
-                .session_store
-                .load_existing_sessions(&recipients)?,
+            record_refs.as_ref(),
             &alice_usmc,
             &mut alice_store.identity_store,
             None,
@@ -550,11 +553,14 @@ fn test_sealed_sender_multi_recipient() -> Result<(), SignalProtocolError> {
         )?;
 
         let recipients = [&bob_uuid_address];
+        let records = &alice_store
+            .session_store
+            .load_existing_sessions(&recipients, None)
+            .await?;
+        let record_refs: Vec<&SessionRecord> = records.into_iter().collect();
         let alice_ctext = sealed_sender_multi_recipient_encrypt(
             &recipients,
-            &alice_store
-                .session_store
-                .load_existing_sessions(&recipients)?,
+            record_refs.as_ref(),
             &alice_usmc,
             &mut alice_store.identity_store,
             None,
@@ -610,11 +616,14 @@ fn test_sealed_sender_multi_recipient() -> Result<(), SignalProtocolError> {
         )?;
 
         let recipients = [&bob_uuid_address];
+        let records = &alice_store
+            .session_store
+            .load_existing_sessions(&recipients, None)
+            .await?;
+        let record_refs: Vec<&SessionRecord> = records.into_iter().collect();
         let alice_ctext = sealed_sender_multi_recipient_encrypt(
             &recipients,
-            &alice_store
-                .session_store
-                .load_existing_sessions(&recipients)?,
+            record_refs.as_ref(),
             &alice_usmc,
             &mut alice_store.identity_store,
             None,
@@ -835,11 +844,14 @@ fn test_sealed_sender_multi_recipient_encrypt_with_bad_registration_id(
         )?;
 
         let recipients = [&bob_uuid_address];
+        let records = &alice_store
+            .session_store
+            .load_existing_sessions(&recipients, None)
+            .await?;
+        let record_refs: Vec<&SessionRecord> = records.into_iter().collect();
         match sealed_sender_multi_recipient_encrypt(
             &recipients,
-            &alice_store
-                .session_store
-                .load_existing_sessions(&recipients)?,
+            record_refs.as_ref(),
             &alice_usmc,
             &mut alice_store.identity_store,
             None,

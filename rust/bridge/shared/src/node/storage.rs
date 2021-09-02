@@ -329,6 +329,20 @@ impl SessionStore for NodeSessionStore {
             .await
             .map_err(|s| js_error_to_rust("saveSession", s))
     }
+
+    async fn load_existing_sessions(
+        &self,
+        addresses: &[&ProtocolAddress],
+        ctx: libsignal_protocol::Context,
+    ) -> Result<Vec<SessionRecord>, SignalProtocolError> {
+        let mut ret: Vec<SessionRecord> = Vec::new();
+        for address in addresses.iter() {
+            if let Some(record) = self.load_session(address, ctx).await? {
+                ret.push(record);
+            }
+        }
+        Ok(ret)
+    }
 }
 
 pub struct NodeIdentityKeyStore {

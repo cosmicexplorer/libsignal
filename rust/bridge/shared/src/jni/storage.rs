@@ -415,6 +415,20 @@ impl<'a> SessionStore for JniSessionStore<'a> {
     ) -> Result<(), SignalProtocolError> {
         Ok(self.do_store_session(address, record)?)
     }
+
+    async fn load_existing_sessions(
+        &self,
+        addresses: &[&ProtocolAddress],
+        ctx: Context,
+    ) -> Result<Vec<SessionRecord>, SignalProtocolError> {
+        let mut ret: Vec<SessionRecord> = Vec::new();
+        for address in addresses.iter() {
+            if let Some(record) = self.load_session(address, ctx).await? {
+                ret.push(record);
+            }
+        }
+        Ok(ret)
+    }
 }
 
 pub struct JniSenderKeyStore<'a> {

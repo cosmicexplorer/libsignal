@@ -94,7 +94,7 @@ impl From<&SignalFfiError> for SignalErrorCode {
 
             SignalFfiError::Signal(SignalProtocolError::NoKeyTypeIdentifier)
             | SignalFfiError::Signal(SignalProtocolError::BadKeyType(_))
-            | SignalFfiError::Signal(SignalProtocolError::BadKeyLength(_, _, _))
+            | SignalFfiError::Signal(SignalProtocolError::BadKeyLength(_, _, _, _))
             | SignalFfiError::Signal(SignalProtocolError::InvalidMacKeyLength(_))
             | SignalFfiError::DeviceTransfer(DeviceTransferError::KeyDecodingFailed)
             | SignalFfiError::HsmEnclave(HsmEnclaveError::InvalidPublicKeyError)

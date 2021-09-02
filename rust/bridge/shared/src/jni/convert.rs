@@ -685,6 +685,9 @@ impl ResultTypeInfo for CiphertextMessage {
                 jni_class_name!(org.signal.libsignal.protocol.message.PlaintextContent),
                 m.convert_into(env)?,
             ),
+            CiphertextMessage::EncryptedPreKeyBundle(m) => {
+                unimplemented!("this case is not implemented: {:?}", m)
+            }
         };
 
         Ok(obj?.into_inner())

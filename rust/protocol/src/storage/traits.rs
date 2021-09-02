@@ -1,5 +1,5 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020-2022 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
@@ -92,6 +92,17 @@ pub trait SessionStore {
         record: &SessionRecord,
         ctx: Context,
     ) -> Result<()>;
+
+    /// Bulk version of [`Self::load_session`].
+    ///
+    /// Useful for [crate::sealed_sender_multi_recipient_encrypt].
+    ///
+    /// [`SessionStore::load_session`]: crate::SessionStore::load_session
+    async fn load_existing_sessions(
+        &self,
+        addresses: &[&ProtocolAddress],
+        ctx: Context,
+    ) -> Result<Vec<SessionRecord>>;
 }
 
 #[async_trait(?Send)]

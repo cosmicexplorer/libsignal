@@ -391,6 +391,20 @@ impl SessionStore for &FfiSessionStoreStruct {
 
         Ok(())
     }
+
+    async fn load_existing_sessions(
+        &self,
+        addresses: &[&ProtocolAddress],
+        ctx: Context,
+    ) -> Result<Vec<SessionRecord>, SignalProtocolError> {
+        let mut ret: Vec<SessionRecord> = Vec::new();
+        for address in addresses.iter() {
+            if let Some(record) = self.load_session(address, ctx).await? {
+                ret.push(record);
+            }
+        }
+        Ok(ret)
+    }
 }
 
 type LoadSenderKey = extern "C" fn(

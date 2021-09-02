@@ -367,7 +367,7 @@ impl ContentHint {
         }
     }
 
-    pub fn to_u32(self) -> u32 {
+    pub const fn to_u32(self) -> u32 {
         use proto::sealed_sender::unidentified_sender_message::message::ContentHint as ProtoContentHint;
         match self {
             ContentHint::Default => 0,
