@@ -573,8 +573,6 @@ impl UnidentifiedSenderMessage {
                 {
                     return Err(SignalProtocolError::InvalidProtobufEncoding);
                 }
-                /* let (encrypted_message_key, remaining) = remaining.split_at(sealed_sender_v2::MESSAGE_KEY_LEN + 1); */
-                /* let encrypted_message_key = &encrypted_message_key[1..]; */
                 let (encrypted_message_key, remaining) =
                     remaining.split_at(sealed_sender_v2::MESSAGE_KEY_LEN);
                 let (encrypted_authentication_tag, remaining) =
@@ -1067,6 +1065,12 @@ mod sealed_sender_v2 {
 }
 pub use sealed_sender_v2::{apply_agreement_xor, DerivedKeys};
 
+#[derive(Debug, Copy, Clone)]
+pub enum SealedSenderDestinationSessions<'a> {
+    ExistingSessions(&'a [&'a SessionRecord]),
+    CreateSessions,
+}
+
 /// This method implements a single-key multi-recipient [KEM] as defined in Manuel Barbosa's
 /// ["Randomness Reuse: Extensions and Improvements"], a.k.a. Sealed Sender v2.
 ///
@@ -1230,11 +1234,40 @@ pub async fn sealed_sender_multi_recipient_encrypt<R: Rng + CryptoRng>(
     ctx: Context,
     rng: &mut R,
 ) -> Result<Vec<u8>> {
-    if destinations.len() != destination_sessions.len() {
-        return Err(SignalProtocolError::InvalidArgument(
-            "must have the same number of destination sessions as addresses".to_string(),
-        ));
-    }
+    sealed_sender_multi_recipient_encrypt_full(
+        destinations,
+        SealedSenderDestinationSessions::ExistingSessions(destination_sessions),
+        usmc,
+        identity_store,
+        ctx,
+        rng,
+    )
+    .await
+}
+
+/// Method that does all the actual work of of [sealed_sender_multi_recipient_encrypt].
+///
+/// [sealed_sender_multi_recipient_encrypt] will just wrap `destination_sessions` in
+/// a [SealedSenderDestinationSessions] instance.
+pub async fn sealed_sender_multi_recipient_encrypt_full<R: Rng + CryptoRng>(
+    destinations: &[&ProtocolAddress],
+    destination_sessions: SealedSenderDestinationSessions<'_>,
+    usmc: &UnidentifiedSenderMessageContent,
+    identity_store: &mut dyn IdentityKeyStore,
+    ctx: Context,
+    rng: &mut R,
+) -> Result<Vec<u8>> {
+    let destination_sessions: Option<&[&SessionRecord]> = match destination_sessions {
+        SealedSenderDestinationSessions::ExistingSessions(destination_sessions) => {
+            if destinations.len() != destination_sessions.len() {
+                return Err(SignalProtocolError::InvalidArgument(
+                    "must have the same number of destination sessions as addresses".to_string(),
+                ));
+            }
+            Some(destination_sessions)
+        }
+        SealedSenderDestinationSessions::CreateSessions => None,
+    };
 
     let m: [u8; sealed_sender_v2::MESSAGE_KEY_LEN] = rng.gen();
     let keys = sealed_sender_v2::DerivedKeys::calculate(&m);
@@ -1268,7 +1301,8 @@ pub async fn sealed_sender_multi_recipient_encrypt<R: Rng + CryptoRng>(
 
     let our_identity = identity_store.get_identity_key_pair(ctx).await?;
     let mut previous_their_identity = None;
-    for (&destination, session) in destinations.iter().zip(destination_sessions) {
+
+    for (destination_index, destination) in destinations.iter().enumerate() {
         let their_uuid = Uuid::parse_str(destination.name()).map_err(|_| {
             SignalProtocolError::InvalidArgument(format!(
                 "multi-recipient sealed sender requires UUID recipients (not {})",
@@ -1287,28 +1321,33 @@ pub async fn sealed_sender_multi_recipient_encrypt<R: Rng + CryptoRng>(
                 SignalProtocolError::SessionNotFound(destination.clone())
             })?;
 
-        let their_registration_id = session.remote_registration_id().map_err(|_| {
-            SignalProtocolError::InvalidState(
-                "sealed_sender_multi_recipient_encrypt",
-                format!(
-                    concat!(
-                        "cannot get registration ID from session with {} ",
-                        "(maybe it was recently archived)"
+        let their_registration_id = if let Some(destination_sessions) = destination_sessions {
+            let session = destination_sessions[destination_index];
+
+            let their_registration_id = session.remote_registration_id().map_err(|_| {
+                SignalProtocolError::InvalidState(
+                    "sealed_sender_multi_recipient_encrypt",
+                    format!(
+                        concat!(
+                            "cannot get registration ID from session with {} ",
+                            "(maybe it was recently archived)"
+                        ),
+                        destination
                     ),
-                    destination
-                ),
-            )
-        })?;
-        // Valid registration IDs fit in 14 bits.
-        // TODO: move this into a RegistrationId strong type.
-        if their_registration_id & 0x3FFF != their_registration_id {
-            return Err(SignalProtocolError::InvalidRegistrationId(
-                destination.clone(),
-                their_registration_id,
-            ));
-        }
-        let their_registration_id =
-            u16::try_from(their_registration_id).expect("just checked range");
+                )
+            })?;
+            // Valid registration IDs fit in 14 bits.
+            // TODO: move this into a RegistrationId strong type.
+            if their_registration_id & 0x3FFF != their_registration_id {
+                return Err(SignalProtocolError::InvalidRegistrationId(
+                    destination.clone().clone(),
+                    their_registration_id,
+                ));
+            }
+            u16::try_from(their_registration_id).expect("just checked range")
+        } else {
+            0u16
+        };
 
         let end_of_previous_recipient_data = serialized.len();
 
@@ -1527,10 +1566,14 @@ pub async fn sealed_sender_decrypt_to_usmc(
             )?;
 
             let keys = sealed_sender_v2::DerivedKeys::calculate(&m);
-            if !bool::from(keys.e.public_key.ct_eq(&ephemeral_public)) {
-                return Err(SignalProtocolError::InvalidSealedSenderMessage(
-                    "derived ephemeral key did not match key provided in message".to_string(),
-                ));
+            if keys.e.public_key != ephemeral_public {
+                return Err(SignalProtocolError::InvalidSealedSenderMessage(format!(
+                    "derived ephemeral key {:?} did not match key {:?} provided in message {:?} (encrypted key was {:?})",
+                    keys.e.public_key,
+                    &ephemeral_public,
+                    encrypted_message,
+                    encrypted_message_key,
+                )));
             }
 
             let mut message_bytes = encrypted_message.into_vec();

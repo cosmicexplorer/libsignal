@@ -65,9 +65,10 @@ pub use {
     sealed_sender::{
         apply_agreement_xor, encrypt_pre_key_bundle_message, sealed_sender_decrypt,
         sealed_sender_decrypt_to_usmc, sealed_sender_encrypt, sealed_sender_encrypt_from_usmc,
-        sealed_sender_multi_recipient_encrypt, sealed_sender_multi_recipient_fan_out, ContentHint,
-        DerivedKeys, SealedSenderDecryptionResult, SenderCertificate, ServerCertificate,
-        UnidentifiedSenderMessageContent,
+        sealed_sender_multi_recipient_encrypt, sealed_sender_multi_recipient_encrypt_full,
+        sealed_sender_multi_recipient_fan_out, ContentHint, DerivedKeys,
+        SealedSenderDecryptionResult, SealedSenderDestinationSessions, SenderCertificate,
+        ServerCertificate, UnidentifiedSenderMessageContent,
     },
     sender_keys::{SenderKeyRecord, SenderKeyState, SenderMessageKey},
     session::{process_prekey, process_prekey_bundle},
