@@ -26,6 +26,10 @@ pub enum CiphertextMessage {
     EncryptedPreKeyBundle(SignalMessage),
 }
 
+/// These must be aligned with the values in
+/// [crate::proto::sealed_sender::unidentified_sender_message::message::Type].
+///
+/// *TODO: but PreKey is 3 instead of 1? Why does that work?*
 #[derive(Copy, Clone, Eq, PartialEq, Debug, num_enum::TryFromPrimitive)]
 #[repr(u8)]
 pub enum CiphertextMessageType {
@@ -33,7 +37,7 @@ pub enum CiphertextMessageType {
     PreKey = 3,
     SenderKey = 7,
     Plaintext = 8,
-    EncryptedPreKeyBundle = 9,
+    EncryptedPreKeyBundle = 50,
 }
 
 impl CiphertextMessage {

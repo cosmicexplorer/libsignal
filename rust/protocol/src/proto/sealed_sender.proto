@@ -41,7 +41,9 @@ message UnidentifiedSenderMessage {
             reserved 3 to 6;
             SENDERKEY_MESSAGE      = 7;
             PLAINTEXT_CONTENT      = 8;
-            ENCRYPTED_PREKEY_BUNDLE_MESSAGE = 9;
+            // NB: This isn't in the base signal protocol, so we extend it extremely far to make it
+            // extensible with room to grow. Arbitrarily pick +50.
+            ENCRYPTED_PREKEY_BUNDLE_MESSAGE = 50;
         }
 
         enum ContentHint {
