@@ -1386,12 +1386,6 @@ pub async fn sealed_sender_multi_recipient_encrypt_full<R: Rng + CryptoRng>(
         }
 
         previous_their_identity = Some(their_identity);
-        /* /\* serialized.extend_from_slice(their_uuid.as_bytes()); *\/ */
-        /* /\* let device_id: u32 = destination.device_id().into(); *\/ */
-        /* /\* prost::encode_length_delimiter(device_id as usize, &mut serialized) *\/ */
-        /* /\*     .expect("cannot fail encoding to Vec"); *\/ */
-        /* serialized.extend_from_slice(&c_i); */
-        /* serialized.extend_from_slice(&at_i); */
     }
 
     serialized.extend_from_slice(e_pub.public_key_bytes()?);
@@ -1566,7 +1560,7 @@ pub async fn sealed_sender_decrypt_to_usmc(
             )?;
 
             let keys = sealed_sender_v2::DerivedKeys::calculate(&m);
-            if keys.e.public_key != ephemeral_public {
+            if !bool::from(keys.e.public_key.ct_eq(&ephemeral_public)) {
                 return Err(SignalProtocolError::InvalidSealedSenderMessage(format!(
                     "derived ephemeral key {:?} did not match key {:?} provided in message {:?} (encrypted key was {:?})",
                     keys.e.public_key,
@@ -1716,12 +1710,16 @@ pub async fn sealed_sender_decrypt(
         }
         CiphertextMessageType::EncryptedPreKeyBundle => {
             let encrypted_keys_and_ctext = usmc.contents()?;
-            let (encrypted_secret_key, rest) = encrypted_keys_and_ctext.split_at(32);
-            let encrypted_secret_key: [u8; 32] = encrypted_secret_key.try_into().expect("size 32");
+            let (encrypted_secret_key, rest) =
+                encrypted_keys_and_ctext.split_at(sealed_sender_v2::MESSAGE_KEY_LEN);
+            let encrypted_secret_key =
+                <[u8; sealed_sender_v2::MESSAGE_KEY_LEN]>::try_from(encrypted_secret_key)
+                    .expect("encrypted message key was incorrect length");
             let (public_secret_key, rest) = rest.split_at(32);
             let public_secret_key = PublicKey::from_djb_public_key_bytes(public_secret_key)?;
             let (encrypted_iv, rest) = rest.split_at(32);
-            let encrypted_iv: [u8; 32] = encrypted_iv.try_into().expect("size 32");
+            let encrypted_iv = <[u8; sealed_sender_v2::MESSAGE_KEY_LEN]>::try_from(encrypted_iv)
+                .expect("encrypted iv was incorrect length");
             let (public_iv_key, ciphertext) = rest.split_at(32);
             let public_iv_key = PublicKey::from_djb_public_key_bytes(public_iv_key)?;
 
@@ -1855,8 +1853,12 @@ pub async fn encrypt_pre_key_bundle_message<R: CryptoRng + Rng>(
         .await?
         .ok_or_else(|| SignalProtocolError::SessionNotFound(destination.clone()))?;
 
-    let (secret_key, encrypted_secret_key, public_secret_key): ([u8; 32], [u8; 32], PublicKey) = {
-        let m: [u8; 32] = csprng.gen();
+    let (secret_key, encrypted_secret_key, public_secret_key): (
+        [u8; sealed_sender_v2::MESSAGE_KEY_LEN],
+        [u8; sealed_sender_v2::MESSAGE_KEY_LEN],
+        PublicKey,
+    ) = {
+        let m: [u8; sealed_sender_v2::MESSAGE_KEY_LEN] = csprng.gen();
         let keys = sealed_sender_v2::DerivedKeys::calculate(&m);
         let send = sealed_sender_v2::apply_agreement_xor(
             &keys.e,
@@ -1867,8 +1869,12 @@ pub async fn encrypt_pre_key_bundle_message<R: CryptoRng + Rng>(
         (m, send, keys.e.public_key)
     };
     /* This will be cut down to 16 bytes. */
-    let (iv, encrypted_iv, public_iv_key): ([u8; 32], [u8; 32], PublicKey) = {
-        let m: [u8; 32] = csprng.gen();
+    let (iv, encrypted_iv, public_iv_key): (
+        [u8; sealed_sender_v2::MESSAGE_KEY_LEN],
+        [u8; sealed_sender_v2::MESSAGE_KEY_LEN],
+        PublicKey,
+    ) = {
+        let m: [u8; sealed_sender_v2::MESSAGE_KEY_LEN] = csprng.gen();
         let keys = sealed_sender_v2::DerivedKeys::calculate(&m);
         let send = sealed_sender_v2::apply_agreement_xor(
             &keys.e,
