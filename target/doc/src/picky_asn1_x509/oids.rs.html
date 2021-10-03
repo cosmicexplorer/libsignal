@@ -1,0 +1,313 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `/home/cosmicexplorer/.cargo/registry/src/github.com-1ecc6299db9ec823/picky-asn1-x509-0.5.0/src/oids.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>oids.rs - source</title><link rel="stylesheet" type="text/css" href="../../normalize.css"><link rel="stylesheet" type="text/css" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../ayu.css" disabled ><script id="default-settings"></script><script src="../../storage.js"></script><script src="../../crates.js"></script><noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="icon" type="image/svg+xml" href="../../favicon.svg">
+<link rel="alternate icon" type="image/png" href="../../favicon-16x16.png">
+<link rel="alternate icon" type="image/png" href="../../favicon-32x32.png"><style type="text/css">#crate-search{background-image:url("../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../picky_asn1_x509/index.html'><div class='logo-container rust-logo'><img src='../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img src="../../brush.svg" width="18" height="18" alt="Pick another theme!"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../settings.html" title="settings"><img src="../../wheel.svg" width="18" height="18" alt="Change settings"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">  1</span>
+<span id="2">  2</span>
+<span id="3">  3</span>
+<span id="4">  4</span>
+<span id="5">  5</span>
+<span id="6">  6</span>
+<span id="7">  7</span>
+<span id="8">  8</span>
+<span id="9">  9</span>
+<span id="10"> 10</span>
+<span id="11"> 11</span>
+<span id="12"> 12</span>
+<span id="13"> 13</span>
+<span id="14"> 14</span>
+<span id="15"> 15</span>
+<span id="16"> 16</span>
+<span id="17"> 17</span>
+<span id="18"> 18</span>
+<span id="19"> 19</span>
+<span id="20"> 20</span>
+<span id="21"> 21</span>
+<span id="22"> 22</span>
+<span id="23"> 23</span>
+<span id="24"> 24</span>
+<span id="25"> 25</span>
+<span id="26"> 26</span>
+<span id="27"> 27</span>
+<span id="28"> 28</span>
+<span id="29"> 29</span>
+<span id="30"> 30</span>
+<span id="31"> 31</span>
+<span id="32"> 32</span>
+<span id="33"> 33</span>
+<span id="34"> 34</span>
+<span id="35"> 35</span>
+<span id="36"> 36</span>
+<span id="37"> 37</span>
+<span id="38"> 38</span>
+<span id="39"> 39</span>
+<span id="40"> 40</span>
+<span id="41"> 41</span>
+<span id="42"> 42</span>
+<span id="43"> 43</span>
+<span id="44"> 44</span>
+<span id="45"> 45</span>
+<span id="46"> 46</span>
+<span id="47"> 47</span>
+<span id="48"> 48</span>
+<span id="49"> 49</span>
+<span id="50"> 50</span>
+<span id="51"> 51</span>
+<span id="52"> 52</span>
+<span id="53"> 53</span>
+<span id="54"> 54</span>
+<span id="55"> 55</span>
+<span id="56"> 56</span>
+<span id="57"> 57</span>
+<span id="58"> 58</span>
+<span id="59"> 59</span>
+<span id="60"> 60</span>
+<span id="61"> 61</span>
+<span id="62"> 62</span>
+<span id="63"> 63</span>
+<span id="64"> 64</span>
+<span id="65"> 65</span>
+<span id="66"> 66</span>
+<span id="67"> 67</span>
+<span id="68"> 68</span>
+<span id="69"> 69</span>
+<span id="70"> 70</span>
+<span id="71"> 71</span>
+<span id="72"> 72</span>
+<span id="73"> 73</span>
+<span id="74"> 74</span>
+<span id="75"> 75</span>
+<span id="76"> 76</span>
+<span id="77"> 77</span>
+<span id="78"> 78</span>
+<span id="79"> 79</span>
+<span id="80"> 80</span>
+<span id="81"> 81</span>
+<span id="82"> 82</span>
+<span id="83"> 83</span>
+<span id="84"> 84</span>
+<span id="85"> 85</span>
+<span id="86"> 86</span>
+<span id="87"> 87</span>
+<span id="88"> 88</span>
+<span id="89"> 89</span>
+<span id="90"> 90</span>
+<span id="91"> 91</span>
+<span id="92"> 92</span>
+<span id="93"> 93</span>
+<span id="94"> 94</span>
+<span id="95"> 95</span>
+<span id="96"> 96</span>
+<span id="97"> 97</span>
+<span id="98"> 98</span>
+<span id="99"> 99</span>
+<span id="100">100</span>
+<span id="101">101</span>
+<span id="102">102</span>
+<span id="103">103</span>
+<span id="104">104</span>
+<span id="105">105</span>
+<span id="106">106</span>
+<span id="107">107</span>
+<span id="108">108</span>
+<span id="109">109</span>
+<span id="110">110</span>
+<span id="111">111</span>
+<span id="112">112</span>
+<span id="113">113</span>
+<span id="114">114</span>
+<span id="115">115</span>
+<span id="116">116</span>
+<span id="117">117</span>
+<span id="118">118</span>
+<span id="119">119</span>
+<span id="120">120</span>
+<span id="121">121</span>
+<span id="122">122</span>
+<span id="123">123</span>
+<span id="124">124</span>
+<span id="125">125</span>
+<span id="126">126</span>
+<span id="127">127</span>
+<span id="128">128</span>
+<span id="129">129</span>
+<span id="130">130</span>
+<span id="131">131</span>
+<span id="132">132</span>
+<span id="133">133</span>
+<span id="134">134</span>
+<span id="135">135</span>
+<span id="136">136</span>
+<span id="137">137</span>
+<span id="138">138</span>
+<span id="139">139</span>
+<span id="140">140</span>
+<span id="141">141</span>
+<span id="142">142</span>
+<span id="143">143</span>
+<span id="144">144</span>
+<span id="145">145</span>
+<span id="146">146</span>
+<span id="147">147</span>
+<span id="148">148</span>
+<span id="149">149</span>
+<span id="150">150</span>
+<span id="151">151</span>
+<span id="152">152</span>
+<span id="153">153</span>
+<span id="154">154</span>
+</pre><pre class="rust">
+<span class="doccomment">//! OIDs commonly used with X.509 certificates</span>
+
+<span class="doccomment">/// Unsafely marks a branch as unreachable.</span>
+<span class="doccomment">/// This won&#39;t panic if reached, however children will be sacrificed and dark magic performed.</span>
+<span class="doccomment">///</span>
+<span class="doccomment">/// # Unsafety</span>
+<span class="doccomment">///</span>
+<span class="doccomment">/// This is incredibly unsafe.</span>
+<span class="doccomment">/// You can already see Hades waving his hand at you from here.</span>
+<span class="doccomment">/// You shall not pass this bridge leading to insanity. Never.</span>
+<span class="doccomment">/// No one can tell you what would happen if you did.</span>
+<span class="doccomment">/// Only one thing is for sure: it leads to a land of desolation called UB.</span>
+<span class="doccomment">/// I mean, I&#39;m literally creating infinity out of emptiness.</span>
+<span class="doccomment">/// If you don&#39;t care about your mental sanity, you can read the</span>
+<span class="doccomment">/// [nomicon on unchecked uninitialized memory](https://doc.rust-lang.org/nomicon/unchecked-uninit.html).</span>
+<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">invalid_value</span>)]</span>
+<span class="kw">unsafe</span> <span class="kw">fn</span> <span class="ident">unreachable</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="op">!</span> {
+    <span class="ident">core::mem::MaybeUninit::uninit</span>().<span class="ident">assume_init</span>()
+}
+
+<span class="macro">macro_rules!</span> <span class="ident">define_oid</span> {
+    (<span class="macro-nonterminal">$</span><span class="macro-nonterminal">uppercase</span>:<span class="ident">ident</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro-nonterminal">$</span><span class="macro-nonterminal">lowercase</span>:<span class="ident">ident</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro-nonterminal">$</span><span class="macro-nonterminal">str_value</span>:<span class="ident">literal</span>) <span class="op">=</span><span class="op">&gt;</span> {
+        <span class="kw">pub</span> <span class="kw">const</span> <span class="macro-nonterminal">$</span><span class="macro-nonterminal">uppercase</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;static</span> <span class="ident">str</span> <span class="op">=</span> <span class="macro-nonterminal">$</span><span class="macro-nonterminal">str_value</span>;
+
+        <span class="kw">pub</span> <span class="kw">fn</span> <span class="macro-nonterminal">$</span><span class="macro-nonterminal">lowercase</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="ident">oid::ObjectIdentifier</span> {
+            <span class="kw">use</span> <span class="ident">std::sync::Once</span>;
+            <span class="kw">use</span> <span class="ident">std::convert::TryInto</span>;
+
+            <span class="kw">static</span> <span class="kw-2">mut</span> <span class="ident">OID</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">oid::ObjectIdentifier</span><span class="op">&gt;</span> <span class="op">=</span> <span class="prelude-val">None</span>;
+            <span class="kw">static</span> <span class="ident">INIT</span>: <span class="ident">Once</span> <span class="op">=</span> <span class="ident">Once::new</span>();
+            <span class="kw">unsafe</span> {
+                <span class="ident">INIT</span>.<span class="ident">call_once</span>(<span class="op">|</span><span class="op">|</span> {
+                    <span class="ident">OID</span> <span class="op">=</span> <span class="prelude-val">Some</span>(<span class="macro-nonterminal">$</span><span class="macro-nonterminal">uppercase</span>.<span class="ident">try_into</span>().<span class="ident">unwrap</span>())
+                });
+                <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">oid</span>) <span class="op">=</span> <span class="kw-2">&amp;</span><span class="ident">OID</span> { <span class="ident">oid</span>.<span class="ident">clone</span>() } <span class="kw">else</span> { <span class="ident">unreachable</span>() }
+            }
+        }
+    };
+    ( $( <span class="macro-nonterminal">$</span><span class="macro-nonterminal">uppercase</span>:<span class="ident">ident</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro-nonterminal">$</span><span class="macro-nonterminal">lowercase</span>:<span class="ident">ident</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro-nonterminal">$</span><span class="macro-nonterminal">str_value</span>:<span class="ident">literal</span>, )<span class="op">+</span> ) <span class="op">=</span><span class="op">&gt;</span> {
+        $( <span class="macro">define_oid!</span> { <span class="macro-nonterminal">$</span><span class="macro-nonterminal">uppercase</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro-nonterminal">$</span><span class="macro-nonterminal">lowercase</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro-nonterminal">$</span><span class="macro-nonterminal">str_value</span> } )<span class="op">+</span>
+    };
+}
+
+<span class="macro">define_oid!</span> {
+    <span class="comment">// ANSI-X962</span>
+    <span class="ident">EC_PUBLIC_KEY</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">ec_public_key</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;1.2.840.10045.2.1&quot;</span>,
+    <span class="ident">ECDSA_WITH_SHA256</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">ecdsa_with_sha256</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;1.2.840.10045.4.3.2&quot;</span>,
+    <span class="ident">ECDSA_WITH_SHA384</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">ecdsa_with_sha384</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;1.2.840.10045.4.3.3&quot;</span>,
+
+    <span class="comment">// RSADSI</span>
+    <span class="ident">RSA_ENCRYPTION</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">rsa_encryption</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;1.2.840.113549.1.1.1&quot;</span>,
+    <span class="ident">SHA1_WITH_RSA_ENCRYPTION</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">sha1_with_rsa_encryption</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;1.2.840.113549.1.1.5&quot;</span>,
+    <span class="ident">SHA256_WITH_RSA_ENCRYPTION</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">sha256_with_rsa_encryption</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;1.2.840.113549.1.1.11&quot;</span>,
+    <span class="ident">SHA384_WITH_RSA_ENCRYPTION</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">sha384_with_rsa_encryption</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;1.2.840.113549.1.1.12&quot;</span>,
+    <span class="ident">SHA512_WITH_RSA_ENCRYPTION</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">sha512_with_rsa_encryption</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;1.2.840.113549.1.1.13&quot;</span>,
+    <span class="ident">SHA224_WITH_RSA_ENCRYPTION</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">sha224_with_rsa_encryption</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;1.2.840.113549.1.1.14&quot;</span>,
+    <span class="ident">EMAIL_ADDRESS</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">email_address</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;1.2.840.113549.1.9.1&quot;</span>, <span class="comment">// deprecated</span>
+    <span class="ident">EXTENSION_REQ</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">extension_request</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;1.2.840.113549.1.9.14&quot;</span>,
+
+    <span class="comment">// NIST</span>
+    <span class="ident">DSA_WITH_SHA224</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">dsa_with_sha224</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.3.1&quot;</span>,
+    <span class="ident">DSA_WITH_SHA256</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">dsa_with_sha256</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.3.2&quot;</span>,
+    <span class="ident">DSA_WITH_SHA384</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">dsa_with_sha384</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.3.3&quot;</span>,
+    <span class="ident">DSA_WITH_SHA512</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">dsa_with_sha512</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.3.4&quot;</span>,
+    <span class="ident">ID_ECDSA_WITH_SHA3_256</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">id_ecdsa_with_sha3_256</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.3.10&quot;</span>,
+    <span class="ident">ID_RSASSA_PKCS1_V1_5_WITH_SHA3_224</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">id_rsassa_pkcs1_v1_5_with_sha3_224</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.3.13&quot;</span>,
+    <span class="ident">ID_RSASSA_PKCS1_V1_5_WITH_SHA3_256</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">id_rsassa_pkcs1_v1_5_with_sha3_256</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.3.14&quot;</span>,
+    <span class="ident">ID_RSASSA_PKCS1_V1_5_WITH_SHA3_384</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">id_rsassa_pkcs1_v1_5_with_sha3_384</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.3.15&quot;</span>,
+    <span class="ident">ID_RSASSA_PKCS1_V1_5_WITH_SHA3_512</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">id_rsassa_pkcs1_v1_5_with_sha3_512</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.3.16&quot;</span>,
+
+    <span class="comment">// Certicom Object Identifiers</span>
+    <span class="ident">SECP384R1</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">secp384r1</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;1.3.132.0.34&quot;</span>,
+
+    <span class="comment">// RFC 8410</span>
+    <span class="ident">X25519</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">x25519</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;1.3.101.110&quot;</span>,
+    <span class="ident">X448</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">x448</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;1.3.101.111&quot;</span>,
+    <span class="ident">ED25519</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">ed25519</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;1.3.101.112&quot;</span>,
+    <span class="ident">ED448</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">ed448</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;1.3.101.113&quot;</span>,
+
+    <span class="comment">// Extended key purpose OIDS</span>
+    <span class="ident">KP_SERVER_AUTH</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">kp_server_auth</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;1.3.6.1.5.5.7.3.1&quot;</span>,
+    <span class="ident">KP_CLIENT_AUTH</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">kp_client_auth</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;1.3.6.1.5.5.7.3.2&quot;</span>,
+    <span class="ident">KP_CODE_SIGNING</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">kp_code_signing</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;1.3.6.1.5.5.7.3.3&quot;</span>,
+    <span class="ident">KP_EMAIL_PROTECTION</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">kp_email_protection</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;1.3.6.1.5.5.7.3.4&quot;</span>,
+    <span class="ident">KP_IPSEC_END_SYSTEM</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">kp_ipsec_end_system</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;1.3.6.1.5.5.7.3.5&quot;</span>,
+    <span class="ident">KP_IPSPEC_TUNNEL</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">kp_ipsec_tunnel</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;1.3.6.1.5.5.7.3.6&quot;</span>,
+    <span class="ident">KP_IPSEC_USER</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">kp_ipsec_user</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;1.3.6.1.5.5.7.3.7&quot;</span>,
+    <span class="ident">KP_TIME_STAMPING</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">kp_time_stamping</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;1.3.6.1.5.5.7.3.8&quot;</span>,
+    <span class="ident">KP_OCSP_SIGNING</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">kp_ocsp_signing</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;1.3.6.1.5.5.7.3.9&quot;</span>,
+    <span class="ident">KP_ANY_EXTENDED_KEY_USAGE</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">kp_any_extended_key_usage</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.5.29.37.0&quot;</span>,
+
+    <span class="comment">// attribute types</span>
+    <span class="ident">AT_COMMON_NAME</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">at_common_name</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.5.4.3&quot;</span>,
+    <span class="ident">AT_SURNAME</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">at_surname</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.5.4.4&quot;</span>,
+    <span class="ident">AT_SERIAL_NUMBER</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">at_serial_number</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.5.4.5&quot;</span>,
+    <span class="ident">AT_COUNTRY_NAME</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">at_country_name</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.5.4.6&quot;</span>,
+    <span class="ident">AT_LOCALITY_NAME</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">at_locality_name</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.5.4.7&quot;</span>,
+    <span class="ident">AT_STATE_OR_PROVINCE_NAME</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">at_state_or_province_name</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.5.4.8&quot;</span>,
+    <span class="ident">AT_STREET_NAME</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">at_street_name</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.5.4.9&quot;</span>,
+    <span class="ident">AT_ORGANIZATION_NAME</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">at_organization_name</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.5.4.10&quot;</span>,
+    <span class="ident">AT_ORGANIZATIONAL_UNIT_NAME</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">at_organizational_unit_name</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.5.4.11&quot;</span>,
+
+    <span class="comment">// certificate extensions</span>
+    <span class="ident">SUBJECT_KEY_IDENTIFIER</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">subject_key_identifier</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.5.29.14&quot;</span>,
+    <span class="ident">KEY_USAGE</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">key_usage</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.5.29.15&quot;</span>,
+    <span class="ident">SUBJECT_ALTERNATIVE_NAME</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">subject_alternative_name</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.5.29.17&quot;</span>,
+    <span class="ident">ISSUER_ALTERNATIVE_NAME</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">issuer_alternative_name</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.5.29.18&quot;</span>,
+    <span class="ident">BASIC_CONSTRAINTS</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">basic_constraints</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.5.29.19&quot;</span>,
+    <span class="ident">AUTHORITY_KEY_IDENTIFIER</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">authority_key_identifier</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.5.29.35&quot;</span>,
+    <span class="ident">EXTENDED_KEY_USAGE</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">extended_key_usage</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.5.29.37&quot;</span>,
+
+    <span class="comment">// aes</span>
+    <span class="comment">// aes-128</span>
+    <span class="ident">AES128_ECB</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">aes128_ecb</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.1.1&quot;</span>,
+    <span class="ident">AES128_CBC</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">aes128_cbc</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.1.2&quot;</span>,
+    <span class="ident">AES128_OFB</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">aes128_ofb</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.1.3&quot;</span>,
+    <span class="ident">AES128_CFB</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">aes128_cfb</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.1.4&quot;</span>,
+    <span class="ident">AES128_WRAP</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">aes128_wrap</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.1.5&quot;</span>,
+    <span class="ident">AES128_GCM</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">aes128_gcm</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.1.6&quot;</span>,
+    <span class="ident">AES128_CCM</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">aes128_ccm</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.1.7&quot;</span>,
+    <span class="ident">AES128_WRAP_PAD</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">aes128_wrap_pad</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.1.8&quot;</span>,
+    <span class="comment">// aes-192</span>
+    <span class="ident">AES192_ECB</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">aes192_ecb</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.1.21&quot;</span>,
+    <span class="ident">AES192_CBC</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">aes192_cbc</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.1.22&quot;</span>,
+    <span class="ident">AES192_OFB</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">aes192_ofb</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.1.23&quot;</span>,
+    <span class="ident">AES192_CFB</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">aes192_cfb</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.1.24&quot;</span>,
+    <span class="ident">AES192_WRAP</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">aes192_wrap</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.1.25&quot;</span>,
+    <span class="ident">AES192_GCM</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">aes192_gcm</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.1.26&quot;</span>,
+    <span class="ident">AES192_CCM</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">aes192_ccm</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.1.27&quot;</span>,
+    <span class="ident">AES192_WRAP_PAD</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">aes192_wrap_pad</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.1.28&quot;</span>,
+    <span class="comment">// aes-256</span>
+    <span class="ident">AES256_ECB</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">aes256_ecb</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.1.41&quot;</span>,
+    <span class="ident">AES256_CBC</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">aes256_cbc</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.1.42&quot;</span>,
+    <span class="ident">AES256_OFB</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">aes256_ofb</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.1.43&quot;</span>,
+    <span class="ident">AES256_CFB</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">aes256_cfb</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.1.44&quot;</span>,
+    <span class="ident">AES256_WRAP</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">aes256_wrap</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.1.45&quot;</span>,
+    <span class="ident">AES256_GCM</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">aes256_gcm</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.1.46&quot;</span>,
+    <span class="ident">AES256_CCM</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">aes256_ccm</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.1.47&quot;</span>,
+    <span class="ident">AES256_WRAP_PAD</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">aes256_wrap_pad</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.1.48&quot;</span>,
+
+    <span class="comment">// hash algorithm</span>
+    <span class="ident">SHA256</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">sha256</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.2.1&quot;</span>,
+    <span class="ident">SHA384</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">sha384</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.2.2&quot;</span>,
+    <span class="ident">SHA512</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">sha512</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.2.3&quot;</span>,
+    <span class="ident">SHA224</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">sha224</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.2.4&quot;</span>,
+    <span class="ident">SHA512_224</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">sha512_224</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.2.5&quot;</span>,
+    <span class="ident">SHA512_256</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">sha512_256</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.2.6&quot;</span>,
+    <span class="ident">SHA3_224</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">sha3_224</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.2.7&quot;</span>,
+    <span class="ident">SHA3_256</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">sha3_256</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.2.8&quot;</span>,
+    <span class="ident">SHA3_384</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">sha3_384</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.2.9&quot;</span>,
+    <span class="ident">SHA3_512</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">sha3_512</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.2.10&quot;</span>,
+    <span class="ident">SHAKE128</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">shake128</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.2.11&quot;</span>,
+    <span class="ident">SHAKE256</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">shake256</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;2.16.840.1.101.3.4.2.12&quot;</span>,
+}
+</pre></div>
+</section><section id="search" class="content hidden"></section><div id="rustdoc-vars" data-root-path="../../" data-current-crate="picky_asn1_x509" data-search-index-js="../../search-index.js" data-search-js="../../search.js"></div><script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script></body></html>

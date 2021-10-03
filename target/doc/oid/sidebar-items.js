@@ -1,0 +1,1 @@
+initSidebarItems({"enum":[["ObjectIdentifierError","Object Identifier Errors"]],"mod":[["prelude","Convenience module for quickly importing the public interface (e.g., `use oid::prelude::*`)"]],"struct":[["ObjectIdentifier","Object Identifier (OID)"]]});

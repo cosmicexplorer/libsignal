@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["BitString","A bit string."]]});

@@ -1,0 +1,1 @@
+initSidebarItems({"fn":[["scalar_from_slice_canonical",""],["scalar_from_slice_wide",""]]});

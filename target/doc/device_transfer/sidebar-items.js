@@ -1,0 +1,1 @@
+initSidebarItems({"enum":[["Error","Error types for device transfer."]],"fn":[["create_rsa_private_key","Generate a private key of size `bits` and export to PKCS8 format."],["create_self_signed_cert","Generate a self-signed certificate of name `name`, expiring in `days_to_expire`."]]});

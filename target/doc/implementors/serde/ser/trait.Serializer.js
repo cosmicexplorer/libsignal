@@ -1,0 +1,4 @@
+(function() {var implementors = {};
+implementors["picky_asn1_der"] = [{"text":"impl&lt;'a, 'se&gt; <a class=\"trait\" href=\"serde/ser/trait.Serializer.html\" title=\"trait serde::ser::Serializer\">Serializer</a> for &amp;'a mut <a class=\"struct\" href=\"picky_asn1_der/struct.Serializer.html\" title=\"struct picky_asn1_der::Serializer\">Serializer</a>&lt;'se&gt;","synthetic":false,"types":["picky_asn1_der::ser::Serializer"]}];
+implementors["toml"] = [{"text":"impl&lt;'a, 'b&gt; <a class=\"trait\" href=\"https://docs.rs/serde/1.0.123/serde/ser/trait.Serializer.html\" title=\"trait serde::ser::Serializer\">Serializer</a> for &amp;'b mut <a class=\"struct\" href=\"toml/ser/struct.Serializer.html\" title=\"struct toml::ser::Serializer\">Serializer</a>&lt;'a&gt;","synthetic":false,"types":["toml::ser::Serializer"]}];
+if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

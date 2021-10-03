@@ -1,0 +1,82 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Crates.io docs.rs Crates.io"><meta name="keywords" content="rust, rustlang, rust-lang, picky_asn1_der"><title>picky_asn1_der - Rust</title><link rel="stylesheet" type="text/css" href="../normalize.css"><link rel="stylesheet" type="text/css" href="../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../ayu.css" disabled ><script id="default-settings"></script><script src="../storage.js"></script><script src="../crates.js"></script><noscript><link rel="stylesheet" href="../noscript.css"></noscript><link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="alternate icon" type="image/png" href="../favicon-16x16.png">
+<link rel="alternate icon" type="image/png" href="../favicon-32x32.png"><style type="text/css">#crate-search{background-image:url("../down-arrow.svg");}</style></head><body class="rustdoc mod crate"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../picky_asn1_der/index.html'><div class='logo-container rust-logo'><img src='../rust-logo.png' alt='logo'></div></a><p class="location">Crate picky_asn1_der</p><div class="block version"><p>Version 0.2.4</p></div><div class="sidebar-elems"><a id="all-types" href="all.html"><p>See all picky_asn1_der's items</p></a><div class="block items"><ul><li><a href="#structs">Structs</a></li><li><a href="#enums">Enums</a></li><li><a href="#functions">Functions</a></li><li><a href="#types">Type Definitions</a></li></ul></div><div id="sidebar-vars" data-name="picky_asn1_der" data-ty="mod" data-relpath=""></div><script defer src="sidebar-items.js"></script></div></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img src="../brush.svg" width="18" height="18" alt="Pick another theme!"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../settings.html" title="settings"><img src="../wheel.svg" width="18" height="18" alt="Change settings"></a></div></form></nav><section id="main" class="content"><h1 class="fqn"><span class="in-band">Crate <a class="mod" href="#">picky_asn1_der</a><button id="copy-path" onclick="copy_path(this)" title="copy path"><img src="../clipboard.svg" width="19" height="18" alt="Copy item import" title="Copy item import to clipboard"></button></span><span class="out-of-band"><span id="render-detail"><a id="toggle-all-docs" href="javascript:void(0)" title="collapse all docs">[<span class="inner">&#x2212;</span>]</a></span><a class="srclink" href="../src/picky_asn1_der/lib.rs.html#1-154" title="goto source code">[src]</a></span></h1><details class="rustdoc-toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p><a href="https://crates.io/crates/picky-asn1-der"><img src="https://img.shields.io/crates/v/picky-asn1-der.svg" alt="Crates.io" /></a>
+<a href="https://docs.rs/picky-asn1-der"><img src="https://docs.rs/picky-asn1-der/badge.svg" alt="docs.rs" /></a>
+<img src="https://img.shields.io/crates/l/picky-asn1-der" alt="Crates.io" /></p>
+<h1 id="picky-asn1-der" class="section-header"><a href="#picky-asn1-der">picky-asn1-der</a></h1>
+<p>Portions of project <a href="https://github.com/KizzyCode/serde_asn1_der">serde_asn1_der</a> are held by
+Keziah Biermann, 2019 as part of this project.</p>
+<p>This crate implements an ASN.1-DER subset for serde.</p>
+<p>The following types have built-in support:</p>
+<ul>
+<li><code>bool</code>: The ASN.1-BOOLEAN-type</li>
+<li><code>u8</code>, <code>u16</code>, <code>u32</code>, <code>u64</code>, <code>u128</code>, <code>usize</code>: The ASN.1-INTEGER-type</li>
+<li><code>()</code>: The ASN.1-NULL-type</li>
+<li><code>&amp;[u8]</code>, <code>Vec&lt;u8&gt;</code>: The ASN.1-OctetString-type</li>
+<li><code>&amp;str</code>, <code>String</code>: The ASN.1-UTF8String-type</li>
+</ul>
+<p>More advanced types are supported through wrappers:</p>
+<ul>
+<li>Integer (as big integer)</li>
+<li>Bit String</li>
+<li>Object Identifier</li>
+<li>Utf8 String</li>
+<li>Numeric String</li>
+<li>Printable String</li>
+<li>IA5 String</li>
+<li>Generalized Time</li>
+<li>UTC Time</li>
+<li>Application Tags from 0 to 15</li>
+<li>Context Tags from 0 to 15</li>
+</ul>
+<p>Everything sequence-like combined out of this types is also supported out of the box.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered">
+<span class="kw">use</span> <span class="ident">serde</span>::{<span class="ident">Serialize</span>, <span class="ident">Deserialize</span>};
+
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Serialize</span>, <span class="ident">Deserialize</span>)]</span> <span class="comment">// Now our struct supports all DER-conversion-traits</span>
+<span class="kw">struct</span> <span class="ident">Address</span> {
+    <span class="ident">street</span>: <span class="ident">String</span>,
+    <span class="ident">house_number</span>: <span class="ident">u128</span>,
+    <span class="ident">postal_code</span>: <span class="ident">u128</span>,
+    <span class="ident">state</span>: <span class="ident">String</span>,
+    <span class="ident">country</span>: <span class="ident">String</span>
+}
+
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Serialize</span>, <span class="ident">Deserialize</span>)]</span> <span class="comment">// Now our struct supports all DER-conversion-traits too</span>
+<span class="kw">struct</span> <span class="ident">Customer</span> {
+    <span class="ident">name</span>: <span class="ident">String</span>,
+    <span class="ident">e_mail_address</span>: <span class="ident">String</span>,
+    <span class="ident">postal_address</span>: <span class="ident">Address</span>
+}</pre></div>
+<h1 id="example" class="section-header"><a href="#example">Example</a></h1>
+<div class="example-wrap"><pre class="rust rust-example-rendered">
+<span class="kw">use</span> <span class="ident">serde</span>::{<span class="ident">Serialize</span>, <span class="ident">Deserialize</span>};
+
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Serialize</span>, <span class="ident">Deserialize</span>)]</span>
+<span class="kw">struct</span> <span class="ident">TestStruct</span> {
+    <span class="ident">number</span>: <span class="ident">u8</span>,
+    <span class="attribute">#[<span class="ident">serde</span>(<span class="ident">with</span> <span class="op">=</span> <span class="string">&quot;serde_bytes&quot;</span>)]</span>
+    <span class="ident">vec</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
+    <span class="ident">tuple</span>: (<span class="ident">usize</span>, ())
+}
+
+<span class="kw">let</span> <span class="ident">plain</span> <span class="op">=</span> <span class="ident">TestStruct</span>{ <span class="ident">number</span>: <span class="number">7</span>, <span class="ident">vec</span>: <span class="string">b&quot;Testolope&quot;</span>.<span class="ident">to_vec</span>(), <span class="ident">tuple</span>: (<span class="number">4</span>, ()) };
+<span class="kw">let</span> <span class="ident">serialized</span> <span class="op">=</span> <span class="ident">picky_asn1_der::to_vec</span>(<span class="kw-2">&amp;</span><span class="ident">plain</span>).<span class="ident">unwrap</span>();
+<span class="kw">let</span> <span class="ident">deserialized</span>: <span class="ident">TestStruct</span> <span class="op">=</span> <span class="ident">picky_asn1_der::from_bytes</span>(<span class="kw-2">&amp;</span><span class="ident">serialized</span>).<span class="ident">unwrap</span>();</pre></div>
+</div></details><h2 id="structs" class="section-header"><a href="#structs">Structs</a></h2>
+<table><tr class="module-item"><td><a class="struct" href="struct.Asn1RawDer.html" title="picky_asn1_der::Asn1RawDer struct">Asn1RawDer</a></td><td class="docblock-short"><p>User-provided raw DER wrapper.</p>
+</td></tr><tr class="module-item"><td><a class="struct" href="struct.Deserializer.html" title="picky_asn1_der::Deserializer struct">Deserializer</a></td><td class="docblock-short"><p>An ASN.1-DER deserializer for <code>serde</code></p>
+</td></tr><tr class="module-item"><td><a class="struct" href="struct.Serializer.html" title="picky_asn1_der::Serializer struct">Serializer</a></td><td class="docblock-short"><p>An ASN.1-DER serializer for <code>serde</code></p>
+</td></tr></table><h2 id="enums" class="section-header"><a href="#enums">Enums</a></h2>
+<table><tr class="module-item"><td><a class="enum" href="enum.Asn1DerError.html" title="picky_asn1_der::Asn1DerError enum">Asn1DerError</a></td><td class="docblock-short"><p>A <code>picky_asn1_der</code>-related error</p>
+</td></tr></table><h2 id="functions" class="section-header"><a href="#functions">Functions</a></h2>
+<table><tr class="module-item"><td><a class="fn" href="fn.from_bytes.html" title="picky_asn1_der::from_bytes fn">from_bytes</a></td><td class="docblock-short"><p>Deserializes <code>T</code> from <code>bytes</code></p>
+</td></tr><tr class="module-item"><td><a class="fn" href="fn.from_reader.html" title="picky_asn1_der::from_reader fn">from_reader</a></td><td class="docblock-short"><p>Deserializes <code>T</code> from <code>reader</code></p>
+</td></tr><tr class="module-item"><td><a class="fn" href="fn.from_reader_with_max_len.html" title="picky_asn1_der::from_reader_with_max_len fn">from_reader_with_max_len</a></td><td class="docblock-short"><p>Deserializes <code>T</code> from <code>reader</code> reading at most n bytes.</p>
+</td></tr><tr class="module-item"><td><a class="fn" href="fn.to_byte_buf.html" title="picky_asn1_der::to_byte_buf fn">to_byte_buf</a></td><td class="docblock-short"><p>Serializes <code>value</code> to <code>buf</code> and returns the amount of serialized bytes</p>
+</td></tr><tr class="module-item"><td><a class="fn" href="fn.to_bytes.html" title="picky_asn1_der::to_bytes fn">to_bytes</a></td><td class="docblock-short"><p>Serializes <code>value</code> to <code>buf</code> and returns the amount of serialized bytes</p>
+</td></tr><tr class="module-item"><td><a class="fn" href="fn.to_vec.html" title="picky_asn1_der::to_vec fn">to_vec</a></td><td class="docblock-short"><p>Serializes <code>value</code></p>
+</td></tr><tr class="module-item"><td><a class="fn" href="fn.to_writer.html" title="picky_asn1_der::to_writer fn">to_writer</a></td><td class="docblock-short"><p>Serializes <code>value</code> to <code>writer</code> and returns the amount of serialized bytes</p>
+</td></tr></table><h2 id="types" class="section-header"><a href="#types">Type Definitions</a></h2>
+<table><tr class="module-item"><td><a class="type" href="type.Result.html" title="picky_asn1_der::Result type">Result</a></td><td class="docblock-short"></td></tr></table></section><section id="search" class="content hidden"></section><div id="rustdoc-vars" data-root-path="../" data-current-crate="picky_asn1_der" data-search-index-js="../search-index.js" data-search-js="../search.js"></div><script src="../main.js"></script></body></html>

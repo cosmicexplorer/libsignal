@@ -1,0 +1,1 @@
+initSidebarItems({"enum":[["KeyIdGenError",""],["KeyIdGenMethod","Describes which method to use to generate key identifiers."]]});

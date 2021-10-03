@@ -1,0 +1,1 @@
+initSidebarItems({"mod":[["jacobi_quartic","Helper functions for use with Lizard"],["lizard_constants","Constants for use in Lizard"],["lizard_ristretto","Defines additional methods on RistrettoPoint for Lizard"]]});

@@ -1,0 +1,1 @@
+initSidebarItems({"enum":[["PemError",""]],"fn":[["parse_pem","Parse a PEM-encoded stream from a [u8] representation"],["read_pem","Parse a PEM-encoded stream from a BufRead object."],["to_pem","Build a PEM-encoded structure into a String."]],"struct":[["Pem","Privacy-Enhanced Mail (PEM) format structured representation"]]});

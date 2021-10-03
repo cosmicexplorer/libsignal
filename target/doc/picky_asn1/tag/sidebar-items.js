@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["Tag",""],["TagPeeker","Used to peek next tag by using `Deserializer::deserialize_identifier`."]]});
