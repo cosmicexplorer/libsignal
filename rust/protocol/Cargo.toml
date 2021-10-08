@@ -30,6 +30,7 @@ log = "0.4"
 num_enum = "0.5.1"
 uuid = "0.8"
 displaydoc = "0.2"
+thiserror = { git = "https://github.com/cosmicexplorer/thiserror", rev = "2fd08ccb500231c600083f88c4d2b68ad7024255" }
 
 [features]
 armv8 = ["aes/armv8", "aes-gcm-siv/armv8"]
