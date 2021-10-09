@@ -4,13 +4,13 @@
 //
 
 use crate::{
-    Context, Direction, IdentityKeyStore, KeyPair, PreKeyBundle, PreKeySignalMessage, PreKeyStore,
-    ProtocolAddress, Result, SessionRecord, SessionStore, SignalProtocolError, SignedPreKeyStore,
+    Context, Direction, IdentityKeyStore, KeyPair, PreKeyBundle, PreKeyId, PreKeySignalMessage,
+    PreKeyStore, ProtocolAddress, Result, SessionRecord, SessionStore, SignalProtocolError,
+    SignedPreKeyStore,
 };
 
 use crate::ratchet;
 use crate::ratchet::{AliceSignalProtocolParameters, BobSignalProtocolParameters};
-use crate::state::PreKeyId;
 use rand::{CryptoRng, Rng};
 
 /*
@@ -178,7 +178,7 @@ pub async fn process_prekey_bundle<R: Rng + CryptoRng>(
     log::info!(
         "set_unacknowledged_pre_key_message for: {} with preKeyId: {}",
         remote_address,
-        their_one_time_prekey_id.map_or_else(|| "<none>".to_string(), |id| id.to_string())
+        their_one_time_prekey_id.map_or_else(|| "<none>".to_string(), |id| format!("{:?}", id))
     );
 
     session.set_unacknowledged_pre_key_message(

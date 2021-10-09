@@ -4,7 +4,7 @@
 //
 
 use crate::proto;
-use crate::state::SignedPreKeyId;
+use crate::state::{PreKeyId, SignedPreKeyId};
 use crate::{IdentityKey, PrivateKey, PublicKey, Result, SignalProtocolError};
 
 use std::convert::TryFrom;
@@ -238,7 +238,7 @@ impl TryFrom<&[u8]> for SignalMessage {
 pub struct PreKeySignalMessage {
     message_version: u8,
     registration_id: u32,
-    pre_key_id: Option<u32>,
+    pre_key_id: Option<PreKeyId>,
     signed_pre_key_id: SignedPreKeyId,
     base_key: PublicKey,
     identity_key: IdentityKey,
@@ -250,7 +250,7 @@ impl PreKeySignalMessage {
     pub fn new(
         message_version: u8,
         registration_id: u32,
-        pre_key_id: Option<u32>,
+        pre_key_id: Option<PreKeyId>,
         signed_pre_key_id: SignedPreKeyId,
         base_key: PublicKey,
         identity_key: IdentityKey,
@@ -258,7 +258,7 @@ impl PreKeySignalMessage {
     ) -> Result<Self> {
         let proto_message = proto::wire::PreKeySignalMessage {
             registration_id: Some(registration_id),
-            pre_key_id,
+            pre_key_id: pre_key_id.map(|id| id.into()),
             signed_pre_key_id: Some(signed_pre_key_id.into()),
             base_key: Some(base_key.serialize().into_vec()),
             identity_key: Some(identity_key.serialize().into_vec()),
@@ -290,7 +290,7 @@ impl PreKeySignalMessage {
     }
 
     #[inline]
-    pub fn pre_key_id(&self) -> Option<u32> {
+    pub fn pre_key_id(&self) -> Option<PreKeyId> {
         self.pre_key_id
     }
 
@@ -366,7 +366,7 @@ impl TryFrom<&[u8]> for PreKeySignalMessage {
         Ok(PreKeySignalMessage {
             message_version,
             registration_id: proto_structure.registration_id.unwrap_or(0),
-            pre_key_id: proto_structure.pre_key_id,
+            pre_key_id: proto_structure.pre_key_id.map(|id| id.into()),
             signed_pre_key_id: signed_pre_key_id.into(),
             base_key,
             identity_key: IdentityKey::try_from(identity_key.as_ref())?,

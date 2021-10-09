@@ -286,7 +286,7 @@ fn PreKeySignalMessage_New(
     PreKeySignalMessage::new(
         message_version,
         registration_id,
-        pre_key_id,
+        pre_key_id.map(|id| id.into()),
         signed_pre_key_id.into(),
         *base_key,
         IdentityKey::new(*identity_key),
@@ -520,9 +520,9 @@ fn PreKeyBundle_New(
 ) -> Result<PreKeyBundle> {
     let identity_key = IdentityKey::new(*identity_key);
 
-    let prekey = match (prekey, prekey_id) {
+    let prekey: Option<(PreKeyId, PublicKey)> = match (prekey, prekey_id) {
         (None, None) => None,
-        (Some(k), Some(id)) => Some((id, *k)),
+        (Some(k), Some(id)) => Some((id.into(), *k)),
         _ => {
             return Err(SignalProtocolError::InvalidArgument(
                 "Must supply both or neither of prekey and prekey_id".to_owned(),
@@ -589,7 +589,7 @@ bridge_get!(PreKeyRecord::private_key -> PrivateKey);
 #[bridge_fn]
 fn PreKeyRecord_New(id: u32, pub_key: &PublicKey, priv_key: &PrivateKey) -> PreKeyRecord {
     let keypair = KeyPair::new(*pub_key, *priv_key);
-    PreKeyRecord::new(id, &keypair)
+    PreKeyRecord::new(id.into(), &keypair)
 }
 
 bridge_deserialize!(SenderKeyRecord::deserialize);
