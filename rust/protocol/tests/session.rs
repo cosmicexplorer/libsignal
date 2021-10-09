@@ -17,8 +17,8 @@ fn test_basic_prekey_v3() -> Result<(), SignalProtocolError> {
     async {
         let mut csprng = OsRng;
 
-        let alice_address = ProtocolAddress::new("+14151111111".to_owned(), 1);
-        let bob_address = ProtocolAddress::new("+14151111112".to_owned(), 1);
+        let alice_address = ProtocolAddress::new("+14151111111".to_owned(), 1.into());
+        let bob_address = ProtocolAddress::new("+14151111112".to_owned(), 1.into());
 
         let mut alice_store = support::test_in_memory_protocol_store()?;
         let mut bob_store = support::test_in_memory_protocol_store()?;
@@ -38,7 +38,7 @@ fn test_basic_prekey_v3() -> Result<(), SignalProtocolError> {
 
         let bob_pre_key_bundle = PreKeyBundle::new(
             bob_store.get_local_registration_id(None).await?,
-            1,                                               // device id
+            DeviceId(1),                                     // device id
             Some((pre_key_id, bob_pre_key_pair.public_key)), // pre key
             signed_pre_key_id,                               // signed pre key id
             bob_signed_pre_key_pair.public_key,
@@ -158,7 +158,7 @@ fn test_basic_prekey_v3() -> Result<(), SignalProtocolError> {
 
         let bob_pre_key_bundle = PreKeyBundle::new(
             bob_store.get_local_registration_id(None).await?,
-            1,                                                   // device id
+            DeviceId(1),                                         // device id
             Some((pre_key_id + 1, bob_pre_key_pair.public_key)), // pre key,
             signed_pre_key_id + 1,
             bob_signed_pre_key_pair.public_key,
@@ -227,7 +227,7 @@ fn test_basic_prekey_v3() -> Result<(), SignalProtocolError> {
         // Sign pre-key with wrong key:
         let bob_pre_key_bundle = PreKeyBundle::new(
             bob_store.get_local_registration_id(None).await?,
-            1,                                               // device id
+            DeviceId(1),                                     // device id
             Some((pre_key_id, bob_pre_key_pair.public_key)), // pre key
             signed_pre_key_id,
             bob_signed_pre_key_pair.public_key,
@@ -262,8 +262,8 @@ fn chain_jump_over_limit() -> Result<(), SignalProtocolError> {
     async {
         let mut csprng = OsRng;
 
-        let alice_address = ProtocolAddress::new("+14151111111".to_owned(), 1);
-        let bob_address = ProtocolAddress::new("+14151111112".to_owned(), 1);
+        let alice_address = ProtocolAddress::new("+14151111111".to_owned(), 1.into());
+        let bob_address = ProtocolAddress::new("+14151111112".to_owned(), 1.into());
 
         let mut alice_store = support::test_in_memory_protocol_store()?;
         let mut bob_store = support::test_in_memory_protocol_store()?;
@@ -283,7 +283,7 @@ fn chain_jump_over_limit() -> Result<(), SignalProtocolError> {
 
         let bob_pre_key_bundle = PreKeyBundle::new(
             bob_store.get_local_registration_id(None).await?,
-            1,                                               // device id
+            DeviceId(1),                                     // device id
             Some((pre_key_id, bob_pre_key_pair.public_key)), // pre key
             signed_pre_key_id,                               // signed pre key id
             bob_signed_pre_key_pair.public_key,
@@ -351,8 +351,10 @@ fn chain_jump_over_limit_with_self() -> Result<(), SignalProtocolError> {
     async {
         let mut csprng = OsRng;
 
-        let a1_address = ProtocolAddress::new("+14151111111".to_owned(), 1);
-        let a2_address = ProtocolAddress::new("+14151111111".to_owned(), 2);
+        let device_id_1: DeviceId = 1.into();
+        let a1_address = ProtocolAddress::new("+14151111111".to_owned(), device_id_1);
+        let device_id_2: DeviceId = 2.into();
+        let a2_address = ProtocolAddress::new("+14151111111".to_owned(), device_id_2);
 
         let mut a1_store = support::test_in_memory_protocol_store()?;
         let mut a2_store = a1_store.clone(); // same key!
@@ -372,7 +374,7 @@ fn chain_jump_over_limit_with_self() -> Result<(), SignalProtocolError> {
 
         let a2_pre_key_bundle = PreKeyBundle::new(
             a2_store.get_local_registration_id(None).await?,
-            1,                                              // device id
+            DeviceId(1),                                    // device id
             Some((pre_key_id, a2_pre_key_pair.public_key)), // pre key
             signed_pre_key_id,                              // signed pre key id
             a2_signed_pre_key_pair.public_key,
@@ -445,7 +447,7 @@ fn chain_jump_over_limit_with_self() -> Result<(), SignalProtocolError> {
 #[allow(clippy::eval_order_dependence)]
 fn test_bad_signed_pre_key_signature() -> Result<(), SignalProtocolError> {
     async {
-        let bob_address = ProtocolAddress::new("+14151111112".to_owned(), 1);
+        let bob_address = ProtocolAddress::new("+14151111112".to_owned(), 1.into());
 
         let mut alice_store = support::test_in_memory_protocol_store()?;
         let bob_store = support::test_in_memory_protocol_store()?;
@@ -472,7 +474,7 @@ fn test_bad_signed_pre_key_signature() -> Result<(), SignalProtocolError> {
 
             let bob_pre_key_bundle = PreKeyBundle::new(
                 bob_store.get_local_registration_id(None).await?,
-                1,
+                DeviceId(1),
                 Some((pre_key_id, bob_pre_key_pair.public_key)),
                 signed_pre_key_id,
                 bob_signed_pre_key_pair.public_key,
@@ -496,7 +498,7 @@ fn test_bad_signed_pre_key_signature() -> Result<(), SignalProtocolError> {
 
         let bob_pre_key_bundle = PreKeyBundle::new(
             bob_store.get_local_registration_id(None).await?,
-            1,
+            DeviceId(1),
             Some((pre_key_id, bob_pre_key_pair.public_key)),
             signed_pre_key_id,
             bob_signed_pre_key_pair.public_key,
@@ -526,8 +528,8 @@ fn test_bad_signed_pre_key_signature() -> Result<(), SignalProtocolError> {
 #[allow(clippy::eval_order_dependence)]
 fn repeat_bundle_message_v3() -> Result<(), SignalProtocolError> {
     async {
-        let alice_address = ProtocolAddress::new("+14151111111".to_owned(), 1);
-        let bob_address = ProtocolAddress::new("+14151111112".to_owned(), 1);
+        let alice_address = ProtocolAddress::new("+14151111111".to_owned(), 1.into());
+        let bob_address = ProtocolAddress::new("+14151111112".to_owned(), 1.into());
 
         let mut alice_store = support::test_in_memory_protocol_store()?;
         let mut bob_store = support::test_in_memory_protocol_store()?;
@@ -548,7 +550,7 @@ fn repeat_bundle_message_v3() -> Result<(), SignalProtocolError> {
 
         let bob_pre_key_bundle = PreKeyBundle::new(
             bob_store.get_local_registration_id(None).await?,
-            1,                                               // device id
+            DeviceId(1),                                     // device id
             Some((pre_key_id, bob_pre_key_pair.public_key)), // pre key
             signed_pre_key_id,                               // signed pre key id
             bob_signed_pre_key_pair.public_key,
@@ -662,8 +664,8 @@ fn bad_message_bundle() -> Result<(), SignalProtocolError> {
     async {
         let mut csprng = OsRng;
 
-        let alice_address = ProtocolAddress::new("+14151111111".to_owned(), 1);
-        let bob_address = ProtocolAddress::new("+14151111112".to_owned(), 1);
+        let alice_address = ProtocolAddress::new("+14151111111".to_owned(), 1.into());
+        let bob_address = ProtocolAddress::new("+14151111112".to_owned(), 1.into());
 
         let mut alice_store = support::test_in_memory_protocol_store()?;
         let mut bob_store = support::test_in_memory_protocol_store()?;
@@ -683,7 +685,7 @@ fn bad_message_bundle() -> Result<(), SignalProtocolError> {
 
         let bob_pre_key_bundle = PreKeyBundle::new(
             bob_store.get_local_registration_id(None).await?,
-            1, // device id
+            DeviceId(1), // device id
             Some((pre_key_id, bob_pre_key_pair.public_key)),
             signed_pre_key_id, // signed pre key id
             bob_signed_pre_key_pair.public_key,
@@ -783,8 +785,8 @@ fn bad_message_bundle() -> Result<(), SignalProtocolError> {
 #[allow(clippy::eval_order_dependence)]
 fn optional_one_time_prekey() -> Result<(), SignalProtocolError> {
     async {
-        let alice_address = ProtocolAddress::new("+14151111111".to_owned(), 1);
-        let bob_address = ProtocolAddress::new("+14151111112".to_owned(), 1);
+        let alice_address = ProtocolAddress::new("+14151111111".to_owned(), 1.into());
+        let bob_address = ProtocolAddress::new("+14151111112".to_owned(), 1.into());
 
         let mut alice_store = support::test_in_memory_protocol_store()?;
         let mut bob_store = support::test_in_memory_protocol_store()?;
@@ -803,7 +805,7 @@ fn optional_one_time_prekey() -> Result<(), SignalProtocolError> {
 
         let bob_pre_key_bundle = PreKeyBundle::new(
             bob_store.get_local_registration_id(None).await?,
-            1,                 // device id
+            DeviceId(1),       // device id
             None,              // no pre key
             signed_pre_key_id, // signed pre key id
             bob_signed_pre_key_pair.public_key,
@@ -881,8 +883,8 @@ fn message_key_limits() -> Result<(), SignalProtocolError> {
     async {
         let (alice_session_record, bob_session_record) = initialize_sessions_v3()?;
 
-        let alice_address = ProtocolAddress::new("+14159999999".to_owned(), 1);
-        let bob_address = ProtocolAddress::new("+14158888888".to_owned(), 1);
+        let alice_address = ProtocolAddress::new("+14159999999".to_owned(), 1.into());
+        let bob_address = ProtocolAddress::new("+14158888888".to_owned(), 1.into());
 
         let mut alice_store = support::test_in_memory_protocol_store()?;
         let mut bob_store = support::test_in_memory_protocol_store()?;
@@ -943,8 +945,8 @@ fn run_session_interaction(
     async {
         use rand::seq::SliceRandom;
 
-        let alice_address = ProtocolAddress::new("+14159999999".to_owned(), 1);
-        let bob_address = ProtocolAddress::new("+14158888888".to_owned(), 1);
+        let alice_address = ProtocolAddress::new("+14159999999".to_owned(), 1.into());
+        let bob_address = ProtocolAddress::new("+14158888888".to_owned(), 1.into());
 
         let mut alice_store = support::test_in_memory_protocol_store()?;
         let mut bob_store = support::test_in_memory_protocol_store()?;
@@ -1149,8 +1151,8 @@ fn basic_simultaneous_initiate() -> Result<(), SignalProtocolError> {
     async {
         let mut csprng = OsRng;
 
-        let alice_address = ProtocolAddress::new("+14151111111".to_owned(), 1);
-        let bob_address = ProtocolAddress::new("+14151111112".to_owned(), 1);
+        let alice_address = ProtocolAddress::new("+14151111111".to_owned(), 1.into());
+        let bob_address = ProtocolAddress::new("+14151111112".to_owned(), 1.into());
 
         let mut alice_store = support::test_in_memory_protocol_store()?;
         let mut bob_store = support::test_in_memory_protocol_store()?;
@@ -1289,8 +1291,8 @@ fn simultaneous_initiate_with_lossage() -> Result<(), SignalProtocolError> {
     async {
         let mut csprng = OsRng;
 
-        let alice_address = ProtocolAddress::new("+14151111111".to_owned(), 1);
-        let bob_address = ProtocolAddress::new("+14151111112".to_owned(), 1);
+        let alice_address = ProtocolAddress::new("+14151111111".to_owned(), 1.into());
+        let bob_address = ProtocolAddress::new("+14151111112".to_owned(), 1.into());
 
         let mut alice_store = support::test_in_memory_protocol_store()?;
         let mut bob_store = support::test_in_memory_protocol_store()?;
@@ -1411,8 +1413,8 @@ fn simultaneous_initiate_lost_message() -> Result<(), SignalProtocolError> {
     async {
         let mut csprng = OsRng;
 
-        let alice_address = ProtocolAddress::new("+14151111111".to_owned(), 1);
-        let bob_address = ProtocolAddress::new("+14151111112".to_owned(), 1);
+        let alice_address = ProtocolAddress::new("+14151111111".to_owned(), 1.into());
+        let bob_address = ProtocolAddress::new("+14151111112".to_owned(), 1.into());
 
         let mut alice_store = support::test_in_memory_protocol_store()?;
         let mut bob_store = support::test_in_memory_protocol_store()?;
@@ -1542,8 +1544,8 @@ fn simultaneous_initiate_repeated_messages() -> Result<(), SignalProtocolError> 
     async {
         let mut csprng = OsRng;
 
-        let alice_address = ProtocolAddress::new("+14151111111".to_owned(), 1);
-        let bob_address = ProtocolAddress::new("+14151111112".to_owned(), 1);
+        let alice_address = ProtocolAddress::new("+14151111111".to_owned(), 1.into());
+        let bob_address = ProtocolAddress::new("+14151111112".to_owned(), 1.into());
 
         let mut alice_store = support::test_in_memory_protocol_store()?;
         let mut bob_store = support::test_in_memory_protocol_store()?;
@@ -1744,8 +1746,8 @@ fn simultaneous_initiate_lost_message_repeated_messages() -> Result<(), SignalPr
     async {
         let mut csprng = OsRng;
 
-        let alice_address = ProtocolAddress::new("+14151111111".to_owned(), 1);
-        let bob_address = ProtocolAddress::new("+14151111112".to_owned(), 1);
+        let alice_address = ProtocolAddress::new("+14151111111".to_owned(), 1.into());
+        let bob_address = ProtocolAddress::new("+14151111112".to_owned(), 1.into());
 
         let mut alice_store = support::test_in_memory_protocol_store()?;
         let mut bob_store = support::test_in_memory_protocol_store()?;

@@ -73,7 +73,7 @@ fn HKDF_Derive(
 
 #[bridge_fn(ffi = "address_new")]
 fn ProtocolAddress_New(name: String, device_id: u32) -> ProtocolAddress {
-    ProtocolAddress::new(name, device_id)
+    ProtocolAddress::new(name, device_id.into())
 }
 
 bridge_deserialize!(PublicKey::deserialize, ffi = publickey, jni = false);
@@ -532,7 +532,7 @@ fn PreKeyBundle_New(
 
     PreKeyBundle::new(
         registration_id,
-        device_id,
+        device_id.into(),
         prekey,
         signed_prekey_id,
         *signed_prekey,
@@ -660,7 +660,7 @@ fn SenderCertificate_New(
         sender_uuid,
         sender_e164,
         *sender_key,
-        sender_device_id,
+        sender_device_id.into(),
         expiration,
         signer_cert.clone(),
         signer_key,
@@ -1149,7 +1149,7 @@ async fn SealedSender_DecryptMessage(
         timestamp,
         local_e164,
         local_uuid,
-        local_device_id,
+        local_device_id.into(),
         identity_store,
         session_store,
         prekey_store,
