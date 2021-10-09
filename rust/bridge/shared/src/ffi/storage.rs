@@ -279,12 +279,12 @@ pub struct FfiSignedPreKeyStoreStruct {
 impl SignedPreKeyStore for &FfiSignedPreKeyStoreStruct {
     async fn get_signed_pre_key(
         &self,
-        prekey_id: u32,
+        prekey_id: SignedPreKeyId,
         ctx: Context,
     ) -> Result<SignedPreKeyRecord, SignalProtocolError> {
         let ctx = ctx.unwrap_or(std::ptr::null_mut());
         let mut record = std::ptr::null_mut();
-        let result = (self.load_signed_pre_key)(self.ctx, &mut record, prekey_id, ctx);
+        let result = (self.load_signed_pre_key)(self.ctx, &mut record, prekey_id.into(), ctx);
 
         if let Some(error) = CallbackError::check(result) {
             return Err(SignalProtocolError::ApplicationCallbackError(
@@ -304,12 +304,12 @@ impl SignedPreKeyStore for &FfiSignedPreKeyStoreStruct {
 
     async fn save_signed_pre_key(
         &mut self,
-        prekey_id: u32,
+        prekey_id: SignedPreKeyId,
         record: &SignedPreKeyRecord,
         ctx: Context,
     ) -> Result<(), SignalProtocolError> {
         let ctx = ctx.unwrap_or(std::ptr::null_mut());
-        let result = (self.store_signed_pre_key)(self.ctx, prekey_id, &*record, ctx);
+        let result = (self.store_signed_pre_key)(self.ctx, prekey_id.into(), &*record, ctx);
 
         if let Some(error) = CallbackError::check(result) {
             return Err(SignalProtocolError::ApplicationCallbackError(

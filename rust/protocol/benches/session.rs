@@ -98,9 +98,9 @@ pub fn session_encrypt_result(c: &mut Criterion) -> Result<(), SignalProtocolErr
             .get_local_registration_id(None)
             .now_or_never()
             .expect("sync")?,
-        signed_pre_key_id, // signed pre key id
         1.into(),                 // device id
         None,                     // pre key
+        signed_pre_key_id.into(), // signed pre key id
         bob_signed_pre_key_pair.public_key,
         bob_signed_pre_key_signature.to_vec(),
         *bob_store
@@ -112,9 +112,9 @@ pub fn session_encrypt_result(c: &mut Criterion) -> Result<(), SignalProtocolErr
 
     bob_store
         .save_signed_pre_key(
-            signed_pre_key_id,
+            signed_pre_key_id.into(),
             &SignedPreKeyRecord::new(
-                signed_pre_key_id,
+                signed_pre_key_id.into(),
                 /*timestamp*/ 42,
                 &bob_signed_pre_key_pair,
                 &bob_signed_pre_key_signature,

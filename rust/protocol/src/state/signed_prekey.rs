@@ -7,7 +7,21 @@ use crate::proto::storage::SignedPreKeyRecordStructure;
 use crate::{KeyPair, PrivateKey, PublicKey, Result};
 use prost::Message;
 
-pub type SignedPreKeyId = u32;
+/// A unique identifier selecting among this client's known signed pre-keys.
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, PartialOrd, Ord)]
+pub struct SignedPreKeyId(pub u32);
+
+impl From<u32> for SignedPreKeyId {
+    fn from(value: u32) -> Self {
+        Self(value)
+    }
+}
+
+impl From<SignedPreKeyId> for u32 {
+    fn from(value: SignedPreKeyId) -> Self {
+        value.0
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct SignedPreKeyRecord {
@@ -21,8 +35,8 @@ impl SignedPreKeyRecord {
         let signature = signature.to_vec();
         Self {
             signed_pre_key: SignedPreKeyRecordStructure {
-                id,
-                timestamp,
+                id: id.into(),
+                timestamp: timestamp.into(),
                 public_key,
                 private_key,
                 signature,
@@ -37,11 +51,11 @@ impl SignedPreKeyRecord {
     }
 
     pub fn id(&self) -> Result<SignedPreKeyId> {
-        Ok(self.signed_pre_key.id)
+        Ok(self.signed_pre_key.id.into())
     }
 
     pub fn timestamp(&self) -> Result<u64> {
-        Ok(self.signed_pre_key.timestamp)
+        Ok(self.signed_pre_key.timestamp.into())
     }
 
     pub fn signature(&self) -> Result<Vec<u8>> {

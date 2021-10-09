@@ -215,21 +215,21 @@ impl Finalize for NodeSignedPreKeyStore {
 impl SignedPreKeyStore for NodeSignedPreKeyStore {
     async fn get_signed_pre_key(
         &self,
-        signed_pre_key_id: u32,
+        signed_pre_key_id: SignedPreKeyId,
         _ctx: libsignal_protocol::Context,
     ) -> Result<SignedPreKeyRecord, SignalProtocolError> {
-        self.do_get_signed_pre_key(signed_pre_key_id)
+        self.do_get_signed_pre_key(signed_pre_key_id.into())
             .await
             .map_err(|s| js_error_to_rust("getSignedPreKey", s))
     }
 
     async fn save_signed_pre_key(
         &mut self,
-        signed_pre_key_id: u32,
+        signed_pre_key_id: SignedPreKeyId,
         record: &SignedPreKeyRecord,
         _ctx: libsignal_protocol::Context,
     ) -> Result<(), SignalProtocolError> {
-        self.do_save_signed_pre_key(signed_pre_key_id, record.clone())
+        self.do_save_signed_pre_key(signed_pre_key_id.into(), record.clone())
             .await
             .map_err(|s| js_error_to_rust("saveSignedPreKey", s))
     }

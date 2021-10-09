@@ -371,19 +371,19 @@ impl<'a> JniSignedPreKeyStore<'a> {
 impl<'a> SignedPreKeyStore for JniSignedPreKeyStore<'a> {
     async fn get_signed_pre_key(
         &self,
-        prekey_id: u32,
+        prekey_id: SignedPreKeyId,
         _ctx: Context,
     ) -> Result<SignedPreKeyRecord, SignalProtocolError> {
-        Ok(self.do_get_signed_pre_key(prekey_id)?)
+        Ok(self.do_get_signed_pre_key(prekey_id.into())?)
     }
 
     async fn save_signed_pre_key(
         &mut self,
-        prekey_id: u32,
+        prekey_id: SignedPreKeyId,
         record: &SignedPreKeyRecord,
         _ctx: Context,
     ) -> Result<(), SignalProtocolError> {
-        Ok(self.do_save_signed_pre_key(prekey_id, record)?)
+        Ok(self.do_save_signed_pre_key(prekey_id.into(), record)?)
     }
 }
 

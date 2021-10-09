@@ -287,7 +287,7 @@ fn PreKeySignalMessage_New(
         message_version,
         registration_id,
         pre_key_id,
-        signed_pre_key_id,
+        signed_pre_key_id.into(),
         *base_key,
         IdentityKey::new(*identity_key),
         signal_message.clone(),
@@ -534,7 +534,7 @@ fn PreKeyBundle_New(
         registration_id,
         device_id.into(),
         prekey,
-        signed_prekey_id,
+        signed_prekey_id.into(),
         *signed_prekey,
         signed_prekey_signature.to_vec(),
         identity_key,
@@ -574,7 +574,7 @@ fn SignedPreKeyRecord_New(
     signature: &[u8],
 ) -> SignedPreKeyRecord {
     let keypair = KeyPair::new(*pub_key, *priv_key);
-    SignedPreKeyRecord::new(id, timestamp, &keypair, signature)
+    SignedPreKeyRecord::new(id.into(), timestamp, &keypair, signature)
 }
 
 bridge_deserialize!(PreKeyRecord::deserialize);

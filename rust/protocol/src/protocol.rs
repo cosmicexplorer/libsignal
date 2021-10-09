@@ -4,6 +4,7 @@
 //
 
 use crate::proto;
+use crate::state::SignedPreKeyId;
 use crate::{IdentityKey, PrivateKey, PublicKey, Result, SignalProtocolError};
 
 use std::convert::TryFrom;
@@ -238,7 +239,7 @@ pub struct PreKeySignalMessage {
     message_version: u8,
     registration_id: u32,
     pre_key_id: Option<u32>,
-    signed_pre_key_id: u32,
+    signed_pre_key_id: SignedPreKeyId,
     base_key: PublicKey,
     identity_key: IdentityKey,
     message: SignalMessage,
@@ -250,7 +251,7 @@ impl PreKeySignalMessage {
         message_version: u8,
         registration_id: u32,
         pre_key_id: Option<u32>,
-        signed_pre_key_id: u32,
+        signed_pre_key_id: SignedPreKeyId,
         base_key: PublicKey,
         identity_key: IdentityKey,
         message: SignalMessage,
@@ -258,7 +259,7 @@ impl PreKeySignalMessage {
         let proto_message = proto::wire::PreKeySignalMessage {
             registration_id: Some(registration_id),
             pre_key_id,
-            signed_pre_key_id: Some(signed_pre_key_id),
+            signed_pre_key_id: Some(signed_pre_key_id.into()),
             base_key: Some(base_key.serialize().into_vec()),
             identity_key: Some(identity_key.serialize().into_vec()),
             message: Some(Vec::from(message.as_ref())),
@@ -294,7 +295,7 @@ impl PreKeySignalMessage {
     }
 
     #[inline]
-    pub fn signed_pre_key_id(&self) -> u32 {
+    pub fn signed_pre_key_id(&self) -> SignedPreKeyId {
         self.signed_pre_key_id
     }
 
@@ -366,7 +367,7 @@ impl TryFrom<&[u8]> for PreKeySignalMessage {
             message_version,
             registration_id: proto_structure.registration_id.unwrap_or(0),
             pre_key_id: proto_structure.pre_key_id,
-            signed_pre_key_id,
+            signed_pre_key_id: signed_pre_key_id.into(),
             base_key,
             identity_key: IdentityKey::try_from(identity_key.as_ref())?,
             message: SignalMessage::try_from(message.as_ref())?,
@@ -895,7 +896,7 @@ mod tests {
             3,
             365,
             None,
-            97,
+            97.into(),
             base_key_pair.public_key,
             identity_key_pair.public_key.into(),
             message,
@@ -1005,7 +1006,7 @@ mod tests {
             3,
             365,
             None,
-            97,
+            97.into(),
             base_key_pair.public_key,
             identity_key_pair.public_key.into(),
             message,

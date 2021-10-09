@@ -386,6 +386,7 @@ impl SessionState {
         signed_pre_key_id: SignedPreKeyId,
         base_key: &PublicKey,
     ) -> Result<()> {
+        let signed_pre_key_id: u32 = signed_pre_key_id.into();
         let pending = session_structure::PendingPreKey {
             pre_key_id: pre_key_id.unwrap_or(0),
             signed_pre_key_id: signed_pre_key_id as i32,
@@ -404,7 +405,7 @@ impl SessionState {
                     0 => None,
                     v => Some(v),
                 },
-                pending_pre_key.signed_pre_key_id as SignedPreKeyId,
+                (pending_pre_key.signed_pre_key_id as u32).into(),
                 PublicKey::deserialize(&pending_pre_key.base_key)?,
             )))
         } else {
