@@ -1352,57 +1352,16 @@ describe('SignalClient', () => {
         bSPreKey.getPublicKey().serialize()
       );
 
-      const bPreKeyBundle = SignalClient.PreKeyBundle.new(
-        0x4000,
-        bDeviceId,
-        bPreKeyId,
-        bPreKey.getPublicKey(),
-        bSignedPreKeyId,
-        bSPreKey.getPublicKey(),
-        bSignedPreKeySig,
-        bIdentityKey.getPublicKey()
-      );
-
-      const bAddress = SignalClient.ProtocolAddress.new(bUuid, bDeviceId);
-      await SignalClient.processPreKeyBundle(
-        bPreKeyBundle,
-        bAddress,
-        aSess,
-        aKeys
-      );
-
-      const aAddress = SignalClient.ProtocolAddress.new(aUuid, aDeviceId);
-
-      const distributionId = 'd1d1d1d1-7000-11eb-b32a-33b8a8a487a6';
-      const aSenderKeyStore = new InMemorySenderKeyStore();
-      await SignalClient.SenderKeyDistributionMessage.create(
-        aAddress,
-        distributionId,
-        aSenderKeyStore
-      );
-
-      const message = Buffer.from('0a0b0c', 'hex');
-
-      const aCtext = await SignalClient.groupEncrypt(
-        aAddress,
-        distributionId,
-        aSenderKeyStore,
-        message
-      );
-
-      const aUsmc = SignalClient.UnidentifiedSenderMessageContent.new(
-        aCtext,
-        senderCert,
-        SignalClient.ContentHint.Implicit,
-        Buffer.from([42])
-      );
-
       try {
-        await SignalClient.sealedSenderMultiRecipientEncrypt(
-          aUsmc,
-          [bAddress],
-          aKeys,
-          aSess
+        const bPreKeyBundle = SignalClient.PreKeyBundle.new(
+          0x4000,
+          bDeviceId,
+          bPreKeyId,
+          bPreKey.getPublicKey(),
+          bSignedPreKeyId,
+          bSPreKey.getPublicKey(),
+          bSignedPreKeySig,
+          bIdentityKey.getPublicKey()
         );
         assert.fail('should have thrown');
       } catch (e) {

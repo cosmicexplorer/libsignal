@@ -77,7 +77,10 @@ impl IdentityKeyStore for &FfiIdentityKeyStoreStruct {
         Ok(IdentityKeyPair::new(IdentityKey::new(pub_key), *priv_key))
     }
 
-    async fn get_local_registration_id(&self, ctx: Context) -> Result<u32, SignalProtocolError> {
+    async fn get_local_registration_id(
+        &self,
+        ctx: Context,
+    ) -> Result<RegistrationId, SignalProtocolError> {
         let ctx = ctx.unwrap_or(std::ptr::null_mut());
         let mut id = 0;
         let result = (self.get_local_registration_id)(self.ctx, &mut id, ctx);
@@ -89,7 +92,7 @@ impl IdentityKeyStore for &FfiIdentityKeyStoreStruct {
             ));
         }
 
-        Ok(id)
+        Ok(RegistrationId::unsafe_from_value(id))
     }
 
     async fn save_identity(

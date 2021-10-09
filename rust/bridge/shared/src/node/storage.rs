@@ -516,10 +516,12 @@ impl IdentityKeyStore for NodeIdentityKeyStore {
     async fn get_local_registration_id(
         &self,
         _ctx: libsignal_protocol::Context,
-    ) -> Result<u32, SignalProtocolError> {
-        self.do_get_local_registration_id()
-            .await
-            .map_err(|s| js_error_to_rust("getLocalRegistrationId", s))
+    ) -> Result<RegistrationId, SignalProtocolError> {
+        Ok(RegistrationId::unsafe_from_value(
+            self.do_get_local_registration_id()
+                .await
+                .map_err(|s| js_error_to_rust("getLocalRegistrationId", s))?,
+        ))
     }
 
     async fn get_identity(

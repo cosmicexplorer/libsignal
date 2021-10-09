@@ -5,8 +5,8 @@
 
 use crate::{
     Context, Direction, IdentityKeyStore, KeyPair, PreKeyBundle, PreKeyId, PreKeySignalMessage,
-    PreKeyStore, ProtocolAddress, Result, SessionRecord, SessionStore, SignalProtocolError,
-    SignedPreKeyStore,
+    PreKeyStore, ProtocolAddress, RegistrationId, Result, SessionRecord, SessionStore,
+    SignalProtocolError, SignedPreKeyStore,
 };
 
 use crate::ratchet;
@@ -116,8 +116,11 @@ async fn process_prekey_v3(
 
     let mut new_session = ratchet::initialize_bob_session(&parameters)?;
 
-    new_session.set_local_registration_id(identity_store.get_local_registration_id(ctx).await?)?;
-    new_session.set_remote_registration_id(message.registration_id())?;
+    new_session
+        .set_local_registration_id(identity_store.get_local_registration_id(ctx).await?.into())?;
+    let remote_registration_id =
+        RegistrationId::deserialize(message.registration_id().into(), remote_address)?;
+    new_session.set_remote_registration_id(remote_registration_id)?;
     new_session.set_alice_base_key(&message.base_key().serialize())?;
 
     session_record.promote_state(new_session)?;
@@ -187,8 +190,9 @@ pub async fn process_prekey_bundle<R: Rng + CryptoRng>(
         &our_base_key_pair.public_key,
     )?;
 
-    session.set_local_registration_id(identity_store.get_local_registration_id(ctx).await?)?;
-    session.set_remote_registration_id(bundle.registration_id()?)?;
+    session
+        .set_local_registration_id(identity_store.get_local_registration_id(ctx).await?.into())?;
+    session.set_remote_registration_id(bundle.registration_id()?.into())?;
     session.set_alice_base_key(&our_base_key_pair.public_key.serialize())?;
 
     identity_store

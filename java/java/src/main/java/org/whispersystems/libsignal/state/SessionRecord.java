@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2014-2016 Open Whisper Systems
+ * Copyright (C) 2014-2021 Open Whisper Systems
  *
  * Licensed according to the LICENSE file in this repository.
  */
@@ -56,11 +56,11 @@ public class SessionRecord {
   }
 
   public int getRemoteRegistrationId() {
-    return Native.SessionRecord_GetRemoteRegistrationId(this.handle);
+    return Native.SessionRecord_GetUnsafeRemoteRegistrationId(this.handle);
   }
 
   public int getLocalRegistrationId() {
-    return Native.SessionRecord_GetLocalRegistrationId(this.handle);
+    return Native.SessionRecord_GetUnsafeLocalRegistrationId(this.handle);
   }
 
   public IdentityKey getRemoteIdentityKey() {

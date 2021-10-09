@@ -265,12 +265,12 @@ public final class Native {
   public static native long SessionRecord_FromSingleSessionState(byte[] sessionState);
   public static native byte[] SessionRecord_GetAliceBaseKey(long obj);
   public static native byte[] SessionRecord_GetLocalIdentityKeyPublic(long obj);
-  public static native int SessionRecord_GetLocalRegistrationId(long obj);
   public static native byte[] SessionRecord_GetReceiverChainKeyValue(long sessionState, long key);
   public static native byte[] SessionRecord_GetRemoteIdentityKeyPublic(long obj);
-  public static native int SessionRecord_GetRemoteRegistrationId(long obj);
   public static native byte[] SessionRecord_GetSenderChainKeyValue(long obj);
   public static native int SessionRecord_GetSessionVersion(long s);
+  public static native int SessionRecord_GetUnsafeLocalRegistrationId(long obj);
+  public static native int SessionRecord_GetUnsafeRemoteRegistrationId(long obj);
   public static native boolean SessionRecord_HasSenderChain(long obj);
   public static native long SessionRecord_InitializeAliceSession(long identityKeyPrivate, long identityKeyPublic, long basePrivate, long basePublic, long theirIdentityKey, long theirSignedPrekey, long theirRatchetKey);
   public static native long SessionRecord_InitializeBobSession(long identityKeyPrivate, long identityKeyPublic, long signedPrekeyPrivate, long signedPrekeyPublic, long ephPrivate, long ephPublic, long theirIdentityKey, long theirBaseKey);

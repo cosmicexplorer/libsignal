@@ -170,8 +170,13 @@ impl<'a> IdentityKeyStore for JniIdentityKeyStore<'a> {
         Ok(self.do_get_identity_key_pair()?)
     }
 
-    async fn get_local_registration_id(&self, _ctx: Context) -> Result<u32, SignalProtocolError> {
-        Ok(self.do_get_local_registration_id()?)
+    async fn get_local_registration_id(
+        &self,
+        _ctx: Context,
+    ) -> Result<RegistrationId, SignalProtocolError> {
+        Ok(RegistrationId::unsafe_from_value(
+            self.do_get_local_registration_id()?,
+        ))
     }
 
     async fn save_identity(

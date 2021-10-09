@@ -159,8 +159,8 @@ export function SessionCipher_EncryptMessage(ptext: Buffer, protocolAddress: Wra
 export function SessionRecord_ArchiveCurrentState(sessionRecord: Wrapper<SessionRecord>): void;
 export function SessionRecord_CurrentRatchetKeyMatches(s: Wrapper<SessionRecord>, key: Wrapper<PublicKey>): boolean;
 export function SessionRecord_Deserialize(buffer: Buffer): SessionRecord;
-export function SessionRecord_GetLocalRegistrationId(obj: Wrapper<SessionRecord>): number;
-export function SessionRecord_GetRemoteRegistrationId(obj: Wrapper<SessionRecord>): number;
+export function SessionRecord_GetUnsafeLocalRegistrationId(obj: Wrapper<SessionRecord>): number;
+export function SessionRecord_GetUnsafeRemoteRegistrationId(obj: Wrapper<SessionRecord>): number;
 export function SessionRecord_HasCurrentState(obj: Wrapper<SessionRecord>): boolean;
 export function SessionRecord_Serialize(obj: Wrapper<SessionRecord>): Buffer;
 export function SignalMessage_Deserialize(buffer: Buffer): SignalMessage;

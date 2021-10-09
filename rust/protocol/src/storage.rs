@@ -12,7 +12,7 @@ pub use {
         InMemSignalProtocolStore, InMemSignedPreKeyStore,
     },
     traits::{
-        Context, Direction, IdentityKeyStore, PreKeyStore, ProtocolStore, SenderKeyStore,
-        SessionStore, SignedPreKeyStore,
+        Context, Direction, IdentityKeyStore, PreKeyStore, ProtocolStore, RegistrationId,
+        SenderKeyStore, SessionStore, SignedPreKeyStore,
     },
 };

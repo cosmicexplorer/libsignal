@@ -285,7 +285,7 @@ fn PreKeySignalMessage_New(
 ) -> Result<PreKeySignalMessage> {
     PreKeySignalMessage::new(
         message_version,
-        registration_id,
+        RegistrationId::unsafe_from_value(registration_id),
         pre_key_id.map(|id| id.into()),
         signed_pre_key_id.into(),
         *base_key,
@@ -531,7 +531,7 @@ fn PreKeyBundle_New(
     };
 
     PreKeyBundle::new(
-        registration_id,
+        RegistrationId::unsafe_from_value(registration_id),
         device_id.into(),
         prekey,
         signed_prekey_id.into(),
@@ -864,8 +864,8 @@ bridge_get_optional_bytearray!(
     ffi = false,
     node = false
 );
-bridge_get!(SessionRecord::local_registration_id -> u32);
-bridge_get!(SessionRecord::remote_registration_id -> u32);
+bridge_get!(SessionRecord::unsafe_local_registration_id -> u32);
+bridge_get!(SessionRecord::unsafe_remote_registration_id -> u32);
 bridge_get!(SessionRecord::has_sender_chain as HasSenderChain -> bool, ffi = false, node = false);
 
 bridge_get!(SealedSenderDecryptionResult::sender_uuid -> String, ffi = false, jni = false);

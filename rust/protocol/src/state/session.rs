@@ -6,7 +6,10 @@
 use prost::Message;
 
 use crate::ratchet::{ChainKey, MessageKeys, RootKey};
-use crate::{IdentityKey, KeyPair, PrivateKey, PublicKey, Result, SignalProtocolError, HKDF};
+use crate::{
+    IdentityKey, KeyPair, PrivateKey, ProtocolAddress, PublicKey, RegistrationId, Result,
+    SignalProtocolError, HKDF,
+};
 
 use crate::consts;
 use crate::proto::storage::session_structure;
@@ -418,21 +421,38 @@ impl SessionState {
         Ok(())
     }
 
-    pub(crate) fn set_remote_registration_id(&mut self, registration_id: u32) -> Result<()> {
-        self.session.remote_registration_id = registration_id;
+    pub(crate) fn set_remote_registration_id(
+        &mut self,
+        registration_id: RegistrationId,
+    ) -> Result<()> {
+        self.session.remote_registration_id = registration_id.into();
         Ok(())
     }
 
-    pub(crate) fn remote_registration_id(&self) -> Result<u32> {
+    pub(crate) fn remote_registration_id(
+        &self,
+        remote: &ProtocolAddress,
+    ) -> Result<RegistrationId> {
+        RegistrationId::deserialize(self.session.remote_registration_id, remote)
+    }
+
+    pub(crate) fn unsafe_remote_registration_id(&self) -> Result<u32> {
         Ok(self.session.remote_registration_id)
     }
 
-    pub(crate) fn set_local_registration_id(&mut self, registration_id: u32) -> Result<()> {
-        self.session.local_registration_id = registration_id;
+    pub(crate) fn set_local_registration_id(
+        &mut self,
+        registration_id: RegistrationId,
+    ) -> Result<()> {
+        self.session.local_registration_id = registration_id.into();
         Ok(())
     }
 
-    pub(crate) fn local_registration_id(&self) -> Result<u32> {
+    pub(crate) fn local_registration_id(&self, remote: &ProtocolAddress) -> Result<RegistrationId> {
+        RegistrationId::deserialize(self.session.local_registration_id, remote)
+    }
+
+    pub(crate) fn unsafe_local_registration_id(&self) -> Result<u32> {
         Ok(self.session.local_registration_id)
     }
 }
@@ -596,12 +616,20 @@ impl SessionRecord {
         Ok(record.encode_to_vec())
     }
 
-    pub fn remote_registration_id(&self) -> Result<u32> {
-        self.session_state()?.remote_registration_id()
+    pub fn remote_registration_id(&self, remote: &ProtocolAddress) -> Result<RegistrationId> {
+        self.session_state()?.remote_registration_id(remote)
     }
 
-    pub fn local_registration_id(&self) -> Result<u32> {
-        self.session_state()?.local_registration_id()
+    pub fn unsafe_remote_registration_id(&self) -> Result<u32> {
+        self.session_state()?.unsafe_remote_registration_id()
+    }
+
+    pub fn local_registration_id(&self, remote: &ProtocolAddress) -> Result<RegistrationId> {
+        self.session_state()?.local_registration_id(remote)
+    }
+
+    pub fn unsafe_local_registration_id(&self) -> Result<u32> {
+        self.session_state()?.unsafe_local_registration_id()
     }
 
     pub fn session_version(&self) -> Result<u32> {

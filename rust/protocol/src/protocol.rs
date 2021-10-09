@@ -5,7 +5,7 @@
 
 use crate::proto;
 use crate::state::{PreKeyId, SignedPreKeyId};
-use crate::{IdentityKey, PrivateKey, PublicKey, Result, SignalProtocolError};
+use crate::{IdentityKey, PrivateKey, PublicKey, RegistrationId, Result, SignalProtocolError};
 
 use std::convert::TryFrom;
 
@@ -249,13 +249,14 @@ pub struct PreKeySignalMessage {
 impl PreKeySignalMessage {
     pub fn new(
         message_version: u8,
-        registration_id: u32,
+        registration_id: RegistrationId,
         pre_key_id: Option<PreKeyId>,
         signed_pre_key_id: SignedPreKeyId,
         base_key: PublicKey,
         identity_key: IdentityKey,
         message: SignalMessage,
     ) -> Result<Self> {
+        let registration_id: u32 = registration_id.into();
         let proto_message = proto::wire::PreKeySignalMessage {
             registration_id: Some(registration_id),
             pre_key_id: pre_key_id.map(|id| id.into()),
@@ -894,7 +895,7 @@ mod tests {
         let message = create_signal_message(&mut csprng)?;
         let pre_key_signal_message = PreKeySignalMessage::new(
             3,
-            365,
+            RegistrationId::unsafe_from_value(365),
             None,
             97.into(),
             base_key_pair.public_key,
@@ -1004,7 +1005,7 @@ mod tests {
 
         let pre_key_signal_message = PreKeySignalMessage::new(
             3,
-            365,
+            RegistrationId::unsafe_from_value(365),
             None,
             97.into(),
             base_key_pair.public_key,

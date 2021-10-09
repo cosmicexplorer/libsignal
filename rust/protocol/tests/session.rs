@@ -37,7 +37,7 @@ fn test_basic_prekey_v3() -> Result<(), SignalProtocolError> {
         let signed_pre_key_id = 22;
 
         let bob_pre_key_bundle = PreKeyBundle::new(
-            bob_store.get_local_registration_id(None).await?,
+            bob_store.get_local_registration_id(None).await?.into(),
             DeviceId(1),                                            // device id
             Some((pre_key_id.into(), bob_pre_key_pair.public_key)), // pre key
             signed_pre_key_id.into(),                               // signed pre key id
@@ -157,7 +157,7 @@ fn test_basic_prekey_v3() -> Result<(), SignalProtocolError> {
         let signed_pre_key_id = 22;
 
         let bob_pre_key_bundle = PreKeyBundle::new(
-            bob_store.get_local_registration_id(None).await?,
+            bob_store.get_local_registration_id(None).await?.into(),
             DeviceId(1),                                                  // device id
             Some(((pre_key_id + 1).into(), bob_pre_key_pair.public_key)), // pre key,
             (signed_pre_key_id + 1).into(),
@@ -226,7 +226,7 @@ fn test_basic_prekey_v3() -> Result<(), SignalProtocolError> {
 
         // Sign pre-key with wrong key:
         let bob_pre_key_bundle = PreKeyBundle::new(
-            bob_store.get_local_registration_id(None).await?,
+            bob_store.get_local_registration_id(None).await?.into(),
             DeviceId(1),                                            // device id
             Some((pre_key_id.into(), bob_pre_key_pair.public_key)), // pre key
             signed_pre_key_id.into(),
@@ -282,7 +282,7 @@ fn chain_jump_over_limit() -> Result<(), SignalProtocolError> {
         let signed_pre_key_id = 22;
 
         let bob_pre_key_bundle = PreKeyBundle::new(
-            bob_store.get_local_registration_id(None).await?,
+            bob_store.get_local_registration_id(None).await?.into(),
             DeviceId(1),                                            // device id
             Some((pre_key_id.into(), bob_pre_key_pair.public_key)), // pre key
             signed_pre_key_id.into(),                               // signed pre key id
@@ -373,7 +373,7 @@ fn chain_jump_over_limit_with_self() -> Result<(), SignalProtocolError> {
         let signed_pre_key_id = 22;
 
         let a2_pre_key_bundle = PreKeyBundle::new(
-            a2_store.get_local_registration_id(None).await?,
+            a2_store.get_local_registration_id(None).await?.into(),
             DeviceId(1),                                           // device id
             Some((pre_key_id.into(), a2_pre_key_pair.public_key)), // pre key
             signed_pre_key_id.into(),                              // signed pre key id
@@ -473,7 +473,7 @@ fn test_bad_signed_pre_key_signature() -> Result<(), SignalProtocolError> {
             bad_signature[bit / 8] ^= 0x01u8 << (bit % 8);
 
             let bob_pre_key_bundle = PreKeyBundle::new(
-                bob_store.get_local_registration_id(None).await?,
+                bob_store.get_local_registration_id(None).await?.into(),
                 DeviceId(1),
                 Some((pre_key_id.into(), bob_pre_key_pair.public_key)),
                 signed_pre_key_id.into(),
@@ -497,7 +497,7 @@ fn test_bad_signed_pre_key_signature() -> Result<(), SignalProtocolError> {
         // Finally check that the non-corrupted signature is accepted:
 
         let bob_pre_key_bundle = PreKeyBundle::new(
-            bob_store.get_local_registration_id(None).await?,
+            bob_store.get_local_registration_id(None).await?.into(),
             DeviceId(1),
             Some((pre_key_id.into(), bob_pre_key_pair.public_key)),
             signed_pre_key_id.into(),
@@ -549,7 +549,7 @@ fn repeat_bundle_message_v3() -> Result<(), SignalProtocolError> {
         let signed_pre_key_id = 22;
 
         let bob_pre_key_bundle = PreKeyBundle::new(
-            bob_store.get_local_registration_id(None).await?,
+            bob_store.get_local_registration_id(None).await?.into(),
             DeviceId(1),                                            // device id
             Some((pre_key_id.into(), bob_pre_key_pair.public_key)), // pre key
             signed_pre_key_id.into(),                               // signed pre key id
@@ -684,7 +684,7 @@ fn bad_message_bundle() -> Result<(), SignalProtocolError> {
         let signed_pre_key_id = 22;
 
         let bob_pre_key_bundle = PreKeyBundle::new(
-            bob_store.get_local_registration_id(None).await?,
+            bob_store.get_local_registration_id(None).await?.into(),
             DeviceId(1), // device id
             Some((pre_key_id.into(), bob_pre_key_pair.public_key)),
             signed_pre_key_id.into(), // signed pre key id
@@ -807,7 +807,7 @@ fn optional_one_time_prekey() -> Result<(), SignalProtocolError> {
         let signed_pre_key_id = 22;
 
         let bob_pre_key_bundle = PreKeyBundle::new(
-            bob_store.get_local_registration_id(None).await?,
+            bob_store.get_local_registration_id(None).await?.into(),
             DeviceId(1),              // device id
             None,                     // no pre key
             signed_pre_key_id.into(), // signed pre key id

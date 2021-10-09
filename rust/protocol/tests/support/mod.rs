@@ -9,9 +9,14 @@ use rand::{rngs::OsRng, CryptoRng, Rng};
 pub fn test_in_memory_protocol_store() -> Result<InMemSignalProtocolStore, SignalProtocolError> {
     let mut csprng = OsRng;
     let identity_key = IdentityKeyPair::generate(&mut csprng);
-    let registration_id = 5; // fixme randomly generate this
+    // We want to generate a 14-bit value, and u16 will often produce invalid such values, so we use
+    // u8 to ensure the value is small enough.
+    let registration_id: u8 = csprng.gen();
 
-    InMemSignalProtocolStore::new(identity_key, registration_id)
+    InMemSignalProtocolStore::new(
+        identity_key,
+        RegistrationId::unsafe_from_value(registration_id as u32),
+    )
 }
 
 #[allow(dead_code)]
@@ -70,7 +75,7 @@ pub async fn create_pre_key_bundle<R: Rng + CryptoRng>(
     let signed_pre_key_id: u32 = csprng.gen();
 
     let pre_key_bundle = PreKeyBundle::new(
-        store.get_local_registration_id(None).await?,
+        store.get_local_registration_id(None).await?.into(),
         device_id.into(),
         Some((pre_key_id.into(), pre_key_pair.public_key)),
         signed_pre_key_id.into(),

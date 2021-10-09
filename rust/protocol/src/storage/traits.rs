@@ -9,7 +9,7 @@ use uuid::Uuid;
 use crate::state::{PreKeyId, SignedPreKeyId};
 use crate::{
     IdentityKey, IdentityKeyPair, PreKeyRecord, ProtocolAddress, Result, SenderKeyRecord,
-    SessionRecord, SignedPreKeyRecord,
+    SessionRecord, SignalProtocolError, SignedPreKeyRecord,
 };
 
 pub type Context = Option<*mut std::ffi::c_void>;
@@ -20,11 +20,49 @@ pub enum Direction {
     Receiving,
 }
 
+/// A locally-generated random number used to construct the initial value of a message chain.
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
+pub struct RegistrationId(u16);
+
+impl RegistrationId {
+    /// Ensure the registration id `value` fits into 14 bits, panicking if not.
+    pub fn unsafe_from_value(value: u32) -> Self {
+        if value & 0x3FFF != value {
+            panic!("registration id {:X} did not fit into 14 bits", value)
+        }
+        Self(value as u16)
+    }
+
+    /// Ensure the registration id `value` fits into 14 bits.
+    pub fn deserialize(value: u32, destination: &ProtocolAddress) -> Result<Self> {
+        if value & 0x3FFF != value {
+            Err(SignalProtocolError::InvalidRegistrationId(
+                destination.clone(),
+                value,
+            ))
+        } else {
+            Ok(Self(value as u16))
+        }
+    }
+}
+
+impl From<RegistrationId> for u16 {
+    fn from(value: RegistrationId) -> Self {
+        value.0
+    }
+}
+
+impl From<RegistrationId> for u32 {
+    fn from(value: RegistrationId) -> Self {
+        value.0 as u32
+    }
+}
+
 #[async_trait(?Send)]
 pub trait IdentityKeyStore {
     async fn get_identity_key_pair(&self, ctx: Context) -> Result<IdentityKeyPair>;
 
-    async fn get_local_registration_id(&self, ctx: Context) -> Result<u32>;
+    async fn get_local_registration_id(&self, ctx: Context) -> Result<RegistrationId>;
 
     async fn save_identity(
         &mut self,
@@ -113,3 +151,20 @@ pub trait SenderKeyStore {
 }
 
 pub trait ProtocolStore: SessionStore + PreKeyStore + SignedPreKeyStore + IdentityKeyStore {}
+
+#[test]
+fn test_bad_registration_id() {
+    let bob_device_id: crate::DeviceId = 42.into();
+
+    let bob_uuid = "796abedb-ca4e-4f18-8803-1fde5b921f9f".to_string();
+
+    let bob_uuid_address = ProtocolAddress::new(bob_uuid.clone(), bob_device_id);
+
+    match RegistrationId::deserialize(0x4000, &bob_uuid_address) {
+        Err(SignalProtocolError::InvalidRegistrationId(addr, num)) => {
+            assert_eq!(addr, bob_uuid_address);
+            assert_eq!(num, 0x4000);
+        }
+        _ => panic!("failed!"),
+    }
+}

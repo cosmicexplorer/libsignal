@@ -46,7 +46,7 @@ pub async fn message_encrypt(
     let ctext = crypto::aes_256_cbc_encrypt(ptext, message_keys.cipher_key(), message_keys.iv())?;
 
     let message = if let Some(items) = session_state.unacknowledged_pre_key_message_items()? {
-        let local_registration_id = session_state.local_registration_id()?;
+        let local_registration_id = session_state.local_registration_id(remote_address)?;
 
         log::info!(
             "Building PreKeyWhisperMessage for: {} with preKeyId: {}",
@@ -69,7 +69,7 @@ pub async fn message_encrypt(
 
         CiphertextMessage::PreKeySignalMessage(PreKeySignalMessage::new(
             session_version,
-            local_registration_id,
+            local_registration_id.into(),
             items.pre_key_id()?,
             items.signed_pre_key_id()?,
             *items.base_key()?,

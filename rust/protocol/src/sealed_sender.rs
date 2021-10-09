@@ -1289,28 +1289,21 @@ pub async fn sealed_sender_multi_recipient_encrypt<R: Rng + CryptoRng>(
             .await?
             .ok_or_else(|| SignalProtocolError::SessionNotFound(format!("{}", destination)))?;
 
-        let their_registration_id = session.remote_registration_id().map_err(|_| {
-            SignalProtocolError::InvalidState(
-                "sealed_sender_multi_recipient_encrypt",
-                format!(
-                    concat!(
-                        "cannot get registration ID from session with {} ",
-                        "(maybe it was recently archived)"
+        let their_registration_id: u16 = session
+            .remote_registration_id(destination)
+            .map_err(|_| {
+                SignalProtocolError::InvalidState(
+                    "sealed_sender_multi_recipient_encrypt",
+                    format!(
+                        concat!(
+                            "cannot get registration ID from session with {} ",
+                            "(maybe it was recently archived)"
+                        ),
+                        destination
                     ),
-                    destination
-                ),
-            )
-        })?;
-        // Valid registration IDs fit in 14 bits.
-        // TODO: move this into a RegistrationId strong type.
-        if their_registration_id & 0x3FFF != their_registration_id {
-            return Err(SignalProtocolError::InvalidRegistrationId(
-                destination.clone(),
-                their_registration_id,
-            ));
-        }
-        let their_registration_id =
-            u16::try_from(their_registration_id).expect("just checked range");
+                )
+            })?
+            .into();
 
         let end_of_previous_recipient_data = serialized.len();
 

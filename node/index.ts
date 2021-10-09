@@ -591,11 +591,11 @@ export class SessionRecord {
   }
 
   localRegistrationId(): number {
-    return NativeImpl.SessionRecord_GetLocalRegistrationId(this);
+    return NativeImpl.SessionRecord_GetUnsafeLocalRegistrationId(this);
   }
 
   remoteRegistrationId(): number {
-    return NativeImpl.SessionRecord_GetRemoteRegistrationId(this);
+    return NativeImpl.SessionRecord_GetUnsafeRemoteRegistrationId(this);
   }
 
   hasCurrentState(): boolean {
