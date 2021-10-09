@@ -1,9 +1,46 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020-2021 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
 use std::cmp::Ordering;
+
+use crate::error::Result;
+
+pub trait MessageVersionSpecification {
+    fn deserialize_four_bit_value(value: u8) -> Result<Self>
+    where
+        Self: Sized;
+    fn serialize_four_bit_value(self) -> u8;
+}
+
+pub struct MessageVersionCompatibility<Spec: MessageVersionSpecification> {
+    pub message_version: Spec,
+    pub required_version: Spec,
+}
+
+impl<Spec: MessageVersionSpecification> MessageVersionCompatibility<Spec> {
+    pub fn deserialize(value: u8) -> Result<Self> {
+        let required_version = Spec::deserialize_four_bit_value(value >> 4)?;
+        let message_version = Spec::deserialize_four_bit_value((value << 4) >> 4)?;
+        Ok(Self {
+            message_version,
+            required_version,
+        })
+    }
+
+    pub fn serialize(self) -> u8 {
+        let Self {
+            message_version,
+            required_version,
+        } = self;
+        let required = required_version.serialize_four_bit_value();
+        assert_eq!(0, required >> 4);
+        let message = message_version.serialize_four_bit_value();
+        assert_eq!(0, message >> 4);
+        (required << 4) | message
+    }
+}
 
 fn expand_top_bit(a: u8) -> u8 {
     //if (a >> 7) == 1 { 0xFF } else { 0 }

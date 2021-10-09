@@ -5,9 +5,10 @@
 
 use crate::{
     message_encrypt, CiphertextMessageType, Context, DeviceId, Direction, IdentityKey,
-    IdentityKeyPair, IdentityKeyStore, KeyPair, PreKeySignalMessage, PreKeyStore, PrivateKey,
-    ProtocolAddress, PublicKey, Result, SessionRecord, SessionStore, SignalMessage,
-    SignalProtocolError, SignedPreKeyStore, HKDF,
+    IdentityKeyPair, IdentityKeyStore, KeyPair, MessageVersionCompatibility,
+    MessageVersionSpecification, PreKeySignalMessage, PreKeyStore, PrivateKey, ProtocolAddress,
+    PublicKey, Result, SessionRecord, SessionStore, SignalMessage, SignalProtocolError,
+    SignedPreKeyStore, HKDF,
 };
 
 use crate::crypto;
@@ -529,8 +530,39 @@ enum UnidentifiedSenderMessage {
     },
 }
 
-const SEALED_SENDER_V1_VERSION: u8 = 1;
-const SEALED_SENDER_V2_VERSION: u8 = 2;
+#[derive(
+    Copy,
+    Clone,
+    Ord,
+    PartialOrd,
+    Eq,
+    PartialEq,
+    Debug,
+    num_enum::TryFromPrimitive,
+    num_enum::IntoPrimitive,
+)]
+#[repr(u8)]
+enum SealedSenderMessageVersion {
+    V1 = 1,
+    V2 = 2,
+}
+
+impl MessageVersionSpecification for SealedSenderMessageVersion {
+    fn deserialize_four_bit_value(value: u8) -> Result<Self> {
+        log::debug!("validating UnidentifiedSenderMessage version {}", value);
+        if value == 0 {
+            // XXX should we really be accepting version == 0 here?
+            Ok(Self::V1)
+        } else {
+            Self::try_from(value)
+                .map_err(|_| SignalProtocolError::UnknownSealedSenderVersion(value))
+        }
+    }
+
+    fn serialize_four_bit_value(self) -> u8 {
+        self.into()
+    }
+}
 
 impl UnidentifiedSenderMessage {
     fn deserialize(data: &[u8]) -> Result<Self> {
@@ -539,15 +571,11 @@ impl UnidentifiedSenderMessage {
                 "Message was empty".to_owned(),
             ));
         }
-        let version = data[0] >> 4;
-        log::debug!(
-            "deserializing UnidentifiedSenderMessage with version {}",
-            version
-        );
+        let compatibility =
+            MessageVersionCompatibility::<SealedSenderMessageVersion>::deserialize(data[0])?;
 
-        match version {
-            0 | SEALED_SENDER_V1_VERSION => {
-                // XXX should we really be accepted version == 0 here?
+        match compatibility.required_version {
+            SealedSenderMessageVersion::V1 => {
                 let pb = proto::sealed_sender::UnidentifiedSenderMessage::decode(&data[1..])?;
 
                 let ephemeral_public = pb
@@ -568,7 +596,7 @@ impl UnidentifiedSenderMessage {
                     encrypted_message,
                 })
             }
-            SEALED_SENDER_V2_VERSION => {
+            SealedSenderMessageVersion::V2 => {
                 // Uses a flat representation: C || AT || E.pub || ciphertext
                 let remaining = &data[1..];
                 if remaining.len()
@@ -592,7 +620,6 @@ impl UnidentifiedSenderMessage {
                     encrypted_message: encrypted_message.into(),
                 })
             }
-            _ => Err(SignalProtocolError::UnknownSealedSenderVersion(version)),
         }
     }
 }
@@ -892,8 +919,11 @@ pub async fn sealed_sender_encrypt_from_usmc<R: Rng + CryptoRng>(
         &static_keys.mac_key,
     )?;
 
-    let version = SEALED_SENDER_V1_VERSION;
-    let mut serialized = vec![version | (version << 4)];
+    let compatibility = MessageVersionCompatibility {
+        message_version: SealedSenderMessageVersion::V1,
+        required_version: SealedSenderMessageVersion::V1,
+    };
+    let mut serialized = vec![compatibility.serialize()];
     let pb = proto::sealed_sender::UnidentifiedSenderMessage {
         ephemeral_public: Some(ephemeral.public_key.serialize().to_vec()),
         encrypted_static: Some(static_key_ctext),
@@ -1268,8 +1298,11 @@ pub async fn sealed_sender_multi_recipient_encrypt<R: Rng + CryptoRng>(
     };
 
     // Uses a flat representation: count || UUID_i || deviceId_i || registrationId_i || C_i || AT_i || ... || E.pub || ciphertext
-    let version = SEALED_SENDER_V2_VERSION;
-    let mut serialized: Vec<u8> = vec![(version | (version << 4))];
+    let compatibility = MessageVersionCompatibility {
+        message_version: SealedSenderMessageVersion::V2,
+        required_version: SealedSenderMessageVersion::V2,
+    };
+    let mut serialized: Vec<u8> = vec![compatibility.serialize()];
 
     prost::encode_length_delimiter(destinations.len(), &mut serialized)
         .expect("cannot fail encoding to Vec");
@@ -1363,10 +1396,16 @@ pub async fn sealed_sender_multi_recipient_encrypt<R: Rng + CryptoRng>(
 ///
 /// [Routing messages to recipients]: sealed_sender_multi_recipient_encrypt#routing-messages-to-recipients
 pub fn sealed_sender_multi_recipient_fan_out(data: &[u8]) -> Result<Vec<Vec<u8>>> {
-    let version = data[0] >> 4;
-    if version != SEALED_SENDER_V2_VERSION {
-        return Err(SignalProtocolError::UnknownSealedSenderVersion(version));
-    }
+    match MessageVersionCompatibility::<SealedSenderMessageVersion>::deserialize(data[0])?
+        .message_version
+    {
+        SealedSenderMessageVersion::V2 => (),
+        x => {
+            return Err(SignalProtocolError::UnknownSealedSenderVersion(
+                x.serialize_four_bit_value(),
+            ));
+        }
+    };
 
     fn advance<'a>(buf: &mut &'a [u8], n: usize) -> Result<&'a [u8]> {
         if n > buf.len() {

@@ -84,4 +84,5 @@ pub use {
         PreKeyStore, ProtocolStore, RegistrationId, SenderKeyStore, SessionStore,
         SignedPreKeyStore,
     },
+    utils::{MessageVersionCompatibility, MessageVersionSpecification},
 };
