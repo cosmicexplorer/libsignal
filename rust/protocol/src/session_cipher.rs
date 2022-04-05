@@ -11,7 +11,7 @@ use crate::{
 
 use crate::consts::MAX_FORWARD_JUMPS;
 use crate::crypto;
-use crate::ratchet::{ChainKey, MessageKeys, RatchetingMessageKeys};
+use crate::ratchet::{ChainKey, RatchetingMessageKeys};
 use crate::session;
 use crate::state::{CommonChain, SessionState, SessionStructure};
 
@@ -34,7 +34,7 @@ pub async fn message_encrypt<S: SessionStructure>(
 
     let chain_key = session_state.get_sender_chain_key();
 
-    let message_keys = chain_key.message_keys::<MessageKeys>();
+    let message_keys = chain_key.message_keys::<<<S as SessionStructure>::C as CommonChain>::Key>();
 
     let sender_ephemeral = session_state.sender_ratchet_key();
     let previous_counter = session_state.previous_counter();
