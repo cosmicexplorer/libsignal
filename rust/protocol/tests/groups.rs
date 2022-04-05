@@ -1,5 +1,5 @@
 //
-// Copyright 2020, 2021 Signal Messenger, LLC.
+// Copyright 2020-2022 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
@@ -341,7 +341,8 @@ fn group_sealed_sender() -> Result<(), SignalProtocolError> {
             .session_store
             .load_existing_sessions(&recipients_slice, None)
             .await?;
-        let record_refs: Vec<&SessionRecord> = records.into_iter().collect();
+        let record_refs: Vec<&SessionRecord<StandardSessionStructure>> =
+            records.into_iter().collect();
         let alice_ctext = sealed_sender_multi_recipient_encrypt(
             &recipients_slice,
             record_refs.as_ref(),

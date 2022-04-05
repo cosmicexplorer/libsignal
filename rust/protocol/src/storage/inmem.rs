@@ -8,7 +8,7 @@ use crate::{
     SessionRecord, SignalProtocolError, SignedPreKeyRecord,
 };
 
-use crate::state::{PreKeyId, SignedPreKeyId};
+use crate::state::{PreKeyId, SessionStructure, SignedPreKeyId};
 use crate::storage::traits;
 use crate::storage::Context;
 
@@ -205,11 +205,14 @@ impl traits::SignedPreKeyStore for InMemSignedPreKeyStore {
 
 /// Reference implementation of [traits::SessionStore].
 #[derive(Debug, Clone)]
-pub struct InMemSessionStore {
-    pub sessions: HashMap<ProtocolAddress, SessionRecord>,
+pub struct InMemSessionStore<S: SessionStructure> {
+    pub sessions: HashMap<ProtocolAddress, SessionRecord<S>>,
 }
 
-impl InMemSessionStore {
+impl<S> InMemSessionStore<S>
+where
+    S: SessionStructure,
+{
     pub fn new() -> Self {
         Self {
             sessions: HashMap::new(),
@@ -217,19 +220,26 @@ impl InMemSessionStore {
     }
 }
 
-impl Default for InMemSessionStore {
+impl<S> Default for InMemSessionStore<S>
+where
+    S: SessionStructure,
+{
     fn default() -> Self {
         Self::new()
     }
 }
 
 #[async_trait(?Send)]
-impl traits::SessionStore for InMemSessionStore {
+impl<S> traits::SessionStore for InMemSessionStore<S>
+where
+    S: SessionStructure,
+{
+    type S = S;
     async fn load_session(
         &self,
         address: &ProtocolAddress,
         _ctx: Context,
-    ) -> Result<Option<SessionRecord>> {
+    ) -> Result<Option<SessionRecord<S>>> {
         match self.sessions.get(address) {
             None => Ok(None),
             Some(s) => Ok(Some(s.clone())),
@@ -239,7 +249,7 @@ impl traits::SessionStore for InMemSessionStore {
     async fn store_session(
         &mut self,
         address: &ProtocolAddress,
-        record: &SessionRecord,
+        record: &SessionRecord<S>,
         _ctx: Context,
     ) -> Result<()> {
         self.sessions.insert(address.clone(), record.clone());
@@ -250,7 +260,7 @@ impl traits::SessionStore for InMemSessionStore {
         &self,
         addresses: &[&ProtocolAddress],
         _ctx: Context,
-    ) -> Result<Vec<SessionRecord>> {
+    ) -> Result<Vec<SessionRecord<S>>> {
         addresses
             .iter()
             .map(|&address| {
@@ -316,15 +326,18 @@ impl traits::SenderKeyStore for InMemSenderKeyStore {
 
 /// Reference implementation of [traits::ProtocolStore].
 #[derive(Debug, Clone)]
-pub struct InMemSignalProtocolStore {
-    pub session_store: InMemSessionStore,
+pub struct InMemSignalProtocolStore<S: SessionStructure> {
+    pub session_store: InMemSessionStore<S>,
     pub pre_key_store: InMemPreKeyStore,
     pub signed_pre_key_store: InMemSignedPreKeyStore,
     pub identity_store: InMemIdentityKeyStore,
     pub sender_key_store: InMemSenderKeyStore,
 }
 
-impl InMemSignalProtocolStore {
+impl<S> InMemSignalProtocolStore<S>
+where
+    S: SessionStructure,
+{
     pub fn new(key_pair: IdentityKeyPair, registration_id: u32) -> Result<Self> {
         Ok(Self {
             session_store: InMemSessionStore::new(),
@@ -337,7 +350,10 @@ impl InMemSignalProtocolStore {
 }
 
 #[async_trait(?Send)]
-impl traits::IdentityKeyStore for InMemSignalProtocolStore {
+impl<S> traits::IdentityKeyStore for InMemSignalProtocolStore<S>
+where
+    S: SessionStructure,
+{
     async fn get_identity_key_pair(&self, ctx: Context) -> Result<IdentityKeyPair> {
         self.identity_store.get_identity_key_pair(ctx).await
     }
@@ -379,7 +395,10 @@ impl traits::IdentityKeyStore for InMemSignalProtocolStore {
 }
 
 #[async_trait(?Send)]
-impl traits::PreKeyStore for InMemSignalProtocolStore {
+impl<S> traits::PreKeyStore for InMemSignalProtocolStore<S>
+where
+    S: SessionStructure,
+{
     async fn get_pre_key(&self, id: PreKeyId, ctx: Context) -> Result<PreKeyRecord> {
         self.pre_key_store.get_pre_key(id, ctx).await
     }
@@ -399,7 +418,10 @@ impl traits::PreKeyStore for InMemSignalProtocolStore {
 }
 
 #[async_trait(?Send)]
-impl traits::SignedPreKeyStore for InMemSignalProtocolStore {
+impl<S> traits::SignedPreKeyStore for InMemSignalProtocolStore<S>
+where
+    S: SessionStructure,
+{
     async fn get_signed_pre_key(
         &self,
         id: SignedPreKeyId,
@@ -421,19 +443,23 @@ impl traits::SignedPreKeyStore for InMemSignalProtocolStore {
 }
 
 #[async_trait(?Send)]
-impl traits::SessionStore for InMemSignalProtocolStore {
+impl<S> traits::SessionStore for InMemSignalProtocolStore<S>
+where
+    S: SessionStructure,
+{
+    type S = S;
     async fn load_session(
         &self,
         address: &ProtocolAddress,
         ctx: Context,
-    ) -> Result<Option<SessionRecord>> {
+    ) -> Result<Option<SessionRecord<Self::S>>> {
         self.session_store.load_session(address, ctx).await
     }
 
     async fn store_session(
         &mut self,
         address: &ProtocolAddress,
-        record: &SessionRecord,
+        record: &SessionRecord<Self::S>,
         ctx: Context,
     ) -> Result<()> {
         self.session_store.store_session(address, record, ctx).await
@@ -443,7 +469,7 @@ impl traits::SessionStore for InMemSignalProtocolStore {
         &self,
         addresses: &[&ProtocolAddress],
         ctx: Context,
-    ) -> Result<Vec<SessionRecord>> {
+    ) -> Result<Vec<SessionRecord<Self::S>>> {
         self.session_store
             .load_existing_sessions(addresses, ctx)
             .await
@@ -451,7 +477,10 @@ impl traits::SessionStore for InMemSignalProtocolStore {
 }
 
 #[async_trait(?Send)]
-impl traits::SenderKeyStore for InMemSignalProtocolStore {
+impl<S> traits::SenderKeyStore for InMemSignalProtocolStore<S>
+where
+    S: SessionStructure,
+{
     async fn store_sender_key(
         &mut self,
         sender: &ProtocolAddress,
@@ -476,4 +505,4 @@ impl traits::SenderKeyStore for InMemSignalProtocolStore {
     }
 }
 
-impl traits::ProtocolStore for InMemSignalProtocolStore {}
+impl<S> traits::ProtocolStore for InMemSignalProtocolStore<S> where S: SessionStructure {}

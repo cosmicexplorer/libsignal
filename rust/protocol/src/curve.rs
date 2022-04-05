@@ -1,5 +1,5 @@
 //
-// Copyright 2020-2021 Signal Messenger, LLC.
+// Copyright 2020-2022 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
@@ -73,7 +73,6 @@ impl PublicKey {
         let key_type = KeyType::try_from(value[0])?;
         match key_type {
             KeyType::Djb => {
-                // We allow trailing data after the public key (why?)
                 if value.len() < curve25519::PUBLIC_KEY_LENGTH + 1 {
                     return Err(SignalProtocolError::BadKeyLength(
                         KeyType::Djb,
@@ -83,6 +82,7 @@ impl PublicKey {
                     ));
                 }
                 let mut key = [0u8; curve25519::PUBLIC_KEY_LENGTH];
+                // We allow trailing data after the public key (why?)
                 key.copy_from_slice(&value[1..][..curve25519::PUBLIC_KEY_LENGTH]);
                 Ok(PublicKey {
                     key: PublicKeyData::DjbPublicKey(key),
@@ -91,9 +91,9 @@ impl PublicKey {
         }
     }
 
-    pub fn public_key_bytes(&self) -> Result<&[u8]> {
+    pub fn public_key_bytes(&self) -> &[u8] {
         match &self.key {
-            PublicKeyData::DjbPublicKey(v) => Ok(v),
+            PublicKeyData::DjbPublicKey(v) => v,
         }
     }
 

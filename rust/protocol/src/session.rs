@@ -1,5 +1,5 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020-2022 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
@@ -10,7 +10,7 @@ use crate::{
 
 use crate::ratchet;
 use crate::ratchet::{AliceSignalProtocolParameters, BobSignalProtocolParameters};
-use crate::state::PreKeyId;
+use crate::state::{PreKeyId, SessionStructure};
 use rand::{CryptoRng, Rng};
 
 /*
@@ -22,10 +22,10 @@ its reference to the various data stores, instead the functions are
 free standing.
  */
 
-pub async fn process_prekey(
+pub async fn process_prekey<S: SessionStructure>(
     message: &PreKeySignalMessage,
     remote_address: &ProtocolAddress,
-    session_record: &mut SessionRecord,
+    session_record: &mut SessionRecord<S>,
     identity_store: &mut dyn IdentityKeyStore,
     pre_key_store: &mut dyn PreKeyStore,
     signed_prekey_store: &mut dyn SignedPreKeyStore,
@@ -65,10 +65,10 @@ pub async fn process_prekey(
     Ok(unsigned_pre_key_id)
 }
 
-async fn process_prekey_v3(
+async fn process_prekey_v3<S: SessionStructure>(
     message: &PreKeySignalMessage,
     remote_address: &ProtocolAddress,
-    session_record: &mut SessionRecord,
+    session_record: &mut SessionRecord<S>,
     signed_prekey_store: &mut dyn SignedPreKeyStore,
     pre_key_store: &mut dyn PreKeyStore,
     identity_store: &mut dyn IdentityKeyStore,
@@ -118,16 +118,16 @@ async fn process_prekey_v3(
 
     new_session.set_local_registration_id(identity_store.get_local_registration_id(ctx).await?);
     new_session.set_remote_registration_id(message.registration_id());
-    new_session.set_alice_base_key(&message.base_key().serialize());
+    new_session.set_alice_base_key(&message.base_key());
 
     session_record.promote_state(new_session);
 
     Ok(message.pre_key_id())
 }
 
-pub async fn process_prekey_bundle<R: Rng + CryptoRng>(
+pub async fn process_prekey_bundle<R: Rng + CryptoRng, S: SessionStructure>(
     remote_address: &ProtocolAddress,
-    session_store: &mut dyn SessionStore,
+    session_store: &mut dyn SessionStore<S = S>,
     identity_store: &mut dyn IdentityKeyStore,
     bundle: &PreKeyBundle,
     mut csprng: &mut R,
@@ -189,7 +189,7 @@ pub async fn process_prekey_bundle<R: Rng + CryptoRng>(
 
     session.set_local_registration_id(identity_store.get_local_registration_id(ctx).await?);
     session.set_remote_registration_id(bundle.registration_id()?);
-    session.set_alice_base_key(&our_base_key_pair.public_key.serialize());
+    session.set_alice_base_key(&our_base_key_pair.public_key);
 
     identity_store
         .save_identity(remote_address, their_identity_key, ctx)

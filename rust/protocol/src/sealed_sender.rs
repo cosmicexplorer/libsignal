@@ -7,6 +7,7 @@ use crate::crypto;
 use crate::curve;
 use crate::proto;
 use crate::session_cipher;
+use crate::state::SessionStructure;
 use crate::{
     message_encrypt, CiphertextMessageType, Context, Direction, IdentityKey, IdentityKeyPair,
     IdentityKeyStore, KeyPair, PreKeySignalMessage, PreKeyStore, PrivateKey, ProtocolAddress,
@@ -777,11 +778,11 @@ mod sealed_sender_v1 {
 /// This is a simple way to encrypt a message in a 1:1 using [Sealed Sender v1].
 ///
 /// [Sealed Sender v1]: sealed_sender_encrypt_from_usmc
-pub async fn sealed_sender_encrypt<R: Rng + CryptoRng>(
+pub async fn sealed_sender_encrypt<R: Rng + CryptoRng, S: SessionStructure>(
     destination: &ProtocolAddress,
     sender_cert: &SenderCertificate,
     ptext: &[u8],
-    session_store: &mut dyn SessionStore,
+    session_store: &mut dyn SessionStore<S = S>,
     identity_store: &mut dyn IdentityKeyStore,
     ctx: Context,
     rng: &mut R,
@@ -1066,8 +1067,8 @@ mod sealed_sender_v2 {
 pub use sealed_sender_v2::{apply_agreement_xor, DerivedKeys};
 
 #[derive(Debug, Copy, Clone)]
-pub enum SealedSenderDestinationSessions<'a> {
-    ExistingSessions(&'a [&'a SessionRecord]),
+pub enum SealedSenderDestinationSessions<'a, S: SessionStructure> {
+    ExistingSessions(&'a [&'a SessionRecord<S>]),
     CreateSessions,
 }
 
@@ -1226,9 +1227,9 @@ pub enum SealedSenderDestinationSessions<'a> {
 /// "variant". For Sealed Sender's purposes, this is not important except for
 /// debug-printing, since UUIDs are always treated as opaque identifiers matched
 /// byte-for-byte.
-pub async fn sealed_sender_multi_recipient_encrypt<R: Rng + CryptoRng>(
+pub async fn sealed_sender_multi_recipient_encrypt<R: Rng + CryptoRng, S: SessionStructure>(
     destinations: &[&ProtocolAddress],
-    destination_sessions: &[&SessionRecord],
+    destination_sessions: &[&SessionRecord<S>],
     usmc: &UnidentifiedSenderMessageContent,
     identity_store: &mut dyn IdentityKeyStore,
     ctx: Context,
@@ -1249,15 +1250,15 @@ pub async fn sealed_sender_multi_recipient_encrypt<R: Rng + CryptoRng>(
 ///
 /// [sealed_sender_multi_recipient_encrypt] will just wrap `destination_sessions` in
 /// a [SealedSenderDestinationSessions] instance.
-pub async fn sealed_sender_multi_recipient_encrypt_full<R: Rng + CryptoRng>(
+pub async fn sealed_sender_multi_recipient_encrypt_full<R: Rng + CryptoRng, S: SessionStructure>(
     destinations: &[&ProtocolAddress],
-    destination_sessions: SealedSenderDestinationSessions<'_>,
+    destination_sessions: SealedSenderDestinationSessions<'_, S>,
     usmc: &UnidentifiedSenderMessageContent,
     identity_store: &mut dyn IdentityKeyStore,
     ctx: Context,
     rng: &mut R,
 ) -> Result<Vec<u8>> {
-    let destination_sessions: Option<&[&SessionRecord]> = match destination_sessions {
+    let destination_sessions: Option<&[&SessionRecord<S>]> = match destination_sessions {
         SealedSenderDestinationSessions::ExistingSessions(destination_sessions) => {
             if destinations.len() != destination_sessions.len() {
                 return Err(SignalProtocolError::InvalidArgument(
@@ -1318,7 +1319,7 @@ pub async fn sealed_sender_multi_recipient_encrypt_full<R: Rng + CryptoRng>(
                 // Returned as a SessionNotFound error because (a) we don't have an identity error
                 // that includes the address, and (b) re-establishing the session should re-fetch
                 // the identity.
-                SignalProtocolError::SessionNotFound(destination.clone())
+                SignalProtocolError::SessionNotFound(destination.clone().clone())
             })?;
 
         let their_registration_id = if let Some(destination_sessions) = destination_sessions {
@@ -1388,7 +1389,7 @@ pub async fn sealed_sender_multi_recipient_encrypt_full<R: Rng + CryptoRng>(
         previous_their_identity = Some(their_identity);
     }
 
-    serialized.extend_from_slice(e_pub.public_key_bytes()?);
+    serialized.extend_from_slice(e_pub.public_key_bytes());
     serialized.extend_from_slice(&ciphertext);
 
     Ok(serialized)
@@ -1642,7 +1643,7 @@ impl SealedSenderDecryptionResult {
 /// is then validated against the `trust_root` baked into the client to ensure that the sender's
 /// identity was not forged.
 #[allow(clippy::too_many_arguments)]
-pub async fn sealed_sender_decrypt(
+pub async fn sealed_sender_decrypt<S: SessionStructure>(
     ciphertext: &[u8],
     trust_root: &PublicKey,
     timestamp: u64,
@@ -1650,7 +1651,7 @@ pub async fn sealed_sender_decrypt(
     local_uuid: String,
     local_device_id: u32,
     identity_store: &mut dyn IdentityKeyStore,
-    session_store: &mut dyn SessionStore,
+    session_store: &mut dyn SessionStore<S = S>,
     pre_key_store: &mut dyn PreKeyStore,
     signed_pre_key_store: &mut dyn SignedPreKeyStore,
     ctx: Context,
@@ -1897,9 +1898,9 @@ pub async fn encrypt_pre_key_bundle_message<R: CryptoRng + Rng>(
 
     let result: Vec<u8> = encrypted_secret_key
         .iter()
-        .chain(public_secret_key.public_key_bytes()?)
+        .chain(public_secret_key.public_key_bytes())
         .chain(encrypted_iv.as_ref())
-        .chain(public_iv_key.public_key_bytes()?)
+        .chain(public_iv_key.public_key_bytes())
         .chain(&ciphertext)
         .cloned()
         .collect();

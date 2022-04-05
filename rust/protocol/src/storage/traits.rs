@@ -6,7 +6,7 @@
 use async_trait::async_trait;
 use uuid::Uuid;
 
-use crate::state::{PreKeyId, SignedPreKeyId};
+use crate::state::{PreKeyId, SessionStructure, SignedPreKeyId};
 use crate::{
     IdentityKey, IdentityKeyPair, PreKeyRecord, ProtocolAddress, Result, SenderKeyRecord,
     SessionRecord, SignedPreKeyRecord,
@@ -80,16 +80,17 @@ pub trait SignedPreKeyStore {
 
 #[async_trait(?Send)]
 pub trait SessionStore {
+    type S: SessionStructure;
     async fn load_session(
         &self,
         address: &ProtocolAddress,
         ctx: Context,
-    ) -> Result<Option<SessionRecord>>;
+    ) -> Result<Option<SessionRecord<Self::S>>>;
 
     async fn store_session(
         &mut self,
         address: &ProtocolAddress,
-        record: &SessionRecord,
+        record: &SessionRecord<Self::S>,
         ctx: Context,
     ) -> Result<()>;
 
@@ -102,7 +103,7 @@ pub trait SessionStore {
         &self,
         addresses: &[&ProtocolAddress],
         ctx: Context,
-    ) -> Result<Vec<SessionRecord>>;
+    ) -> Result<Vec<SessionRecord<Self::S>>>;
 }
 
 #[async_trait(?Send)]

@@ -1,5 +1,5 @@
 //
-// Copyright 2020-2021 Signal Messenger, LLC.
+// Copyright 2020-2022 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
@@ -61,6 +61,26 @@ impl CiphertextMessage {
             CiphertextMessage::PlaintextContent(x) => x.serialized(),
             CiphertextMessage::EncryptedPreKeyBundle(x) => x.serialized(),
         }
+    }
+}
+
+pub trait ViaProtobuf {
+    type Proto: Message + Default;
+    fn into_protobuf(&self) -> Self::Proto;
+    fn serialize(&self) -> Vec<u8> {
+        self.into_protobuf().encode_to_vec()
+    }
+
+    fn from_protobuf(proto: &Self::Proto) -> Result<Self>
+    where
+        Self: Sized;
+    fn deserialize(data: &[u8]) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        let decoded =
+            Self::Proto::decode(data).map_err(|_| SignalProtocolError::InvalidProtobufEncoding)?;
+        Self::from_protobuf(&decoded)
     }
 }
 

@@ -1,5 +1,5 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020-2022 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
@@ -68,6 +68,17 @@ fn test_basic_prekey_v3() -> Result<(), SignalProtocolError> {
                 .session_version()?,
             3
         );
+        assert!(alice_store
+            .load_session(&bob_address, None)
+            .await?
+            .expect("session found")
+            .has_sender_chain());
+        assert!(!alice_store
+            .load_session(&bob_address, None)
+            .await?
+            .expect("session found")
+            .needs_pni_signature()
+            .expect("has current state"));
 
         let original_message = "L'homme est condamné à être libre";
 
@@ -120,7 +131,14 @@ fn test_basic_prekey_v3() -> Result<(), SignalProtocolError> {
             .await?
             .expect("session found");
         assert_eq!(bobs_session_with_alice.session_version()?, 3);
-        assert_eq!(bobs_session_with_alice.alice_base_key()?.len(), 32 + 1);
+        assert_eq!(
+            bobs_session_with_alice.alice_base_key()?.serialize().len(),
+            32 + 1
+        );
+        assert!(bobs_session_with_alice.has_sender_chain());
+        assert!(!bobs_session_with_alice
+            .needs_pni_signature()
+            .expect("has current state"));
 
         let bob_outgoing = encrypt(&mut bob_store, &alice_address, bobs_response).await?;
 
@@ -937,8 +955,8 @@ fn message_key_limits() -> Result<(), SignalProtocolError> {
 
 #[allow(clippy::needless_range_loop)]
 fn run_session_interaction(
-    alice_session: SessionRecord,
-    bob_session: SessionRecord,
+    alice_session: SessionRecord<StandardSessionStructure>,
+    bob_session: SessionRecord<StandardSessionStructure>,
 ) -> Result<(), SignalProtocolError> {
     async {
         use rand::seq::SliceRandom;
@@ -1037,9 +1055,9 @@ fn run_session_interaction(
 }
 
 async fn run_interaction(
-    alice_store: &mut InMemSignalProtocolStore,
+    alice_store: &mut InMemSignalProtocolStore<StandardSessionStructure>,
     alice_address: &ProtocolAddress,
-    bob_store: &mut InMemSignalProtocolStore,
+    bob_store: &mut InMemSignalProtocolStore<StandardSessionStructure>,
     bob_address: &ProtocolAddress,
 ) -> Result<(), SignalProtocolError> {
     let alice_ptext = "It's rabbit season";
@@ -1127,9 +1145,9 @@ async fn run_interaction(
 
 #[allow(clippy::eval_order_dependence)]
 async fn is_session_id_equal(
-    alice_store: &dyn ProtocolStore,
+    alice_store: &dyn ProtocolStore<S = StandardSessionStructure>,
     alice_address: &ProtocolAddress,
-    bob_store: &dyn ProtocolStore,
+    bob_store: &dyn ProtocolStore<S = StandardSessionStructure>,
     bob_address: &ProtocolAddress,
 ) -> Result<bool, SignalProtocolError> {
     Ok(alice_store

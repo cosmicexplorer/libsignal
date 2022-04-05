@@ -8,11 +8,12 @@ mod params;
 
 use std::convert::TryInto;
 
-pub(crate) use self::keys::{ChainKey, MessageKeys, RootKey};
+pub use self::keys::{
+    ChainKey, HeaderEncryptedMessageKeys, HeaderEncryptedRatchetingMessageKeys, MessageKeys,
+    RatchetingMessageKeys, RootKey,
+};
 pub use self::params::{AliceSignalProtocolParameters, BobSignalProtocolParameters};
-use crate::proto::storage::SessionStructure;
-use crate::protocol::CIPHERTEXT_MESSAGE_CURRENT_VERSION;
-use crate::state::SessionState;
+use crate::state::{SessionState, SessionStructure};
 use crate::{KeyPair, Result, SessionRecord};
 use rand::{CryptoRng, Rng};
 
@@ -29,10 +30,10 @@ fn derive_keys(secret_input: &[u8]) -> (RootKey, ChainKey) {
     (root_key, chain_key)
 }
 
-pub(crate) fn initialize_alice_session<R: Rng + CryptoRng>(
+pub(crate) fn initialize_alice_session<R: Rng + CryptoRng, S: SessionStructure>(
     parameters: &AliceSignalProtocolParameters,
     mut csprng: &mut R,
-) -> Result<SessionState> {
+) -> Result<SessionState<S>> {
     let local_identity = parameters.our_identity_key_pair().identity_key();
 
     let sending_ratchet_key = KeyPair::generate(&mut csprng);
@@ -70,19 +71,14 @@ pub(crate) fn initialize_alice_session<R: Rng + CryptoRng>(
         &sending_ratchet_key.private_key,
     )?;
 
-    let session = SessionStructure {
-        session_version: CIPHERTEXT_MESSAGE_CURRENT_VERSION as u32,
-        local_identity_public: local_identity.public_key().serialize().to_vec(),
-        remote_identity_public: parameters.their_identity_key().serialize().to_vec(),
-        root_key: sending_chain_root_key.key().to_vec(),
-        previous_counter: 0,
-        sender_chain: None,
-        receiver_chains: vec![],
-        pending_pre_key: None,
-        remote_registration_id: 0,
-        local_registration_id: 0,
-        alice_base_key: vec![],
-    };
+    let session = S::initialize(
+        *local_identity.public_key(),
+        *parameters.their_identity_key().public_key(),
+        sending_chain_root_key,
+        Some((*parameters.their_ratchet_key(), chain_key)),
+        sending_ratchet_key,
+        sending_chain_chain_key,
+    );
 
     let mut session = SessionState::new(session);
 
@@ -92,9 +88,9 @@ pub(crate) fn initialize_alice_session<R: Rng + CryptoRng>(
     Ok(session)
 }
 
-pub(crate) fn initialize_bob_session(
+pub(crate) fn initialize_bob_session<S: SessionStructure>(
     parameters: &BobSignalProtocolParameters,
-) -> Result<SessionState> {
+) -> Result<SessionState<S>> {
     let local_identity = parameters.our_identity_key_pair().identity_key();
 
     let mut secrets = Vec::with_capacity(32 * 5);
@@ -132,19 +128,14 @@ pub(crate) fn initialize_bob_session(
 
     let (root_key, chain_key) = derive_keys(&secrets);
 
-    let session = SessionStructure {
-        session_version: CIPHERTEXT_MESSAGE_CURRENT_VERSION as u32,
-        local_identity_public: local_identity.public_key().serialize().to_vec(),
-        remote_identity_public: parameters.their_identity_key().serialize().to_vec(),
-        root_key: root_key.key().to_vec(),
-        previous_counter: 0,
-        sender_chain: None,
-        receiver_chains: vec![],
-        pending_pre_key: None,
-        remote_registration_id: 0,
-        local_registration_id: 0,
-        alice_base_key: vec![],
-    };
+    let session = S::initialize(
+        *local_identity.public_key(),
+        *parameters.their_identity_key().public_key(),
+        root_key,
+        None,
+        *parameters.our_ratchet_key_pair(),
+        chain_key,
+    );
 
     let mut session = SessionState::new(session);
 
@@ -153,17 +144,17 @@ pub(crate) fn initialize_bob_session(
     Ok(session)
 }
 
-pub fn initialize_alice_session_record<R: Rng + CryptoRng>(
+pub fn initialize_alice_session_record<R: Rng + CryptoRng, S: SessionStructure>(
     parameters: &AliceSignalProtocolParameters,
     csprng: &mut R,
-) -> Result<SessionRecord> {
+) -> Result<SessionRecord<S>> {
     Ok(SessionRecord::new(initialize_alice_session(
         parameters, csprng,
     )?))
 }
 
-pub fn initialize_bob_session_record(
+pub fn initialize_bob_session_record<S: SessionStructure>(
     parameters: &BobSignalProtocolParameters,
-) -> Result<SessionRecord> {
+) -> Result<SessionRecord<S>> {
     Ok(SessionRecord::new(initialize_bob_session(parameters)?))
 }

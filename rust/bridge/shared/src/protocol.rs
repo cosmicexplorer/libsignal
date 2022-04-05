@@ -1,5 +1,5 @@
 //
-// Copyright 2021 Signal Messenger, LLC.
+// Copyright 2021-2022 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
@@ -790,7 +790,9 @@ fn SessionRecord_NewFresh() -> SessionRecord {
 
 #[bridge_fn(ffi = false, node = false)]
 fn SessionRecord_FromSingleSessionState(session_state: &[u8]) -> Result<SessionRecord> {
-    SessionRecord::from_single_session_state(session_state)
+    let session = StandardSessionStructure::deserialize(session_state)?;
+    let session_state = SessionState::<StandardSessionStructure>::new(session);
+    SessionRecord::new(session_state)
 }
 
 // For historical reasons Android assumes this function will return zero if there is no session state

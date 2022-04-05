@@ -1,12 +1,13 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020-2022 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
 use libsignal_protocol::*;
 use rand::{rngs::OsRng, CryptoRng, Rng};
 
-pub fn test_in_memory_protocol_store() -> Result<InMemSignalProtocolStore, SignalProtocolError> {
+pub fn test_in_memory_protocol_store(
+) -> Result<InMemSignalProtocolStore<StandardSessionStructure>, SignalProtocolError> {
     let mut csprng = OsRng;
     let identity_key = IdentityKeyPair::generate(&mut csprng);
     let registration_id = 5; // fixme randomly generate this
@@ -16,7 +17,7 @@ pub fn test_in_memory_protocol_store() -> Result<InMemSignalProtocolStore, Signa
 
 #[allow(dead_code)]
 pub async fn encrypt(
-    store: &mut InMemSignalProtocolStore,
+    store: &mut InMemSignalProtocolStore<StandardSessionStructure>,
     remote_address: &ProtocolAddress,
     msg: &str,
 ) -> Result<CiphertextMessage, SignalProtocolError> {
@@ -32,7 +33,7 @@ pub async fn encrypt(
 
 #[allow(dead_code)]
 pub async fn decrypt(
-    store: &mut InMemSignalProtocolStore,
+    store: &mut InMemSignalProtocolStore<StandardSessionStructure>,
     remote_address: &ProtocolAddress,
     msg: &CiphertextMessage,
 ) -> Result<Vec<u8>, SignalProtocolError> {
@@ -52,7 +53,7 @@ pub async fn decrypt(
 
 #[allow(dead_code, clippy::eval_order_dependence)]
 pub async fn create_pre_key_bundle<R: Rng + CryptoRng>(
-    store: &mut dyn ProtocolStore,
+    store: &mut dyn ProtocolStore<S = StandardSessionStructure>,
     mut csprng: &mut R,
 ) -> Result<PreKeyBundle, SignalProtocolError> {
     let pre_key_pair = KeyPair::generate(&mut csprng);
@@ -106,7 +107,13 @@ pub async fn create_pre_key_bundle<R: Rng + CryptoRng>(
 }
 
 #[allow(dead_code)]
-pub fn initialize_sessions_v3() -> Result<(SessionRecord, SessionRecord), SignalProtocolError> {
+pub fn initialize_sessions_v3() -> Result<
+    (
+        SessionRecord<StandardSessionStructure>,
+        SessionRecord<StandardSessionStructure>,
+    ),
+    SignalProtocolError,
+> {
     let mut csprng = OsRng;
     let alice_identity = IdentityKeyPair::generate(&mut csprng);
     let bob_identity = IdentityKeyPair::generate(&mut csprng);

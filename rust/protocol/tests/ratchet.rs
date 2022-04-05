@@ -1,5 +1,5 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020-2022 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
@@ -65,18 +65,14 @@ fn test_ratcheting_session_as_bob() -> Result<(), SignalProtocolError> {
         alice_base_public_key,
     );
 
-    let bob_record = initialize_bob_session_record(&bob_parameters)?;
+    let bob_record = initialize_bob_session_record::<StandardSessionStructure>(&bob_parameters)?;
 
     assert_eq!(
         hex::encode(bob_record.local_identity_key_bytes()?),
         hex::encode(bob_identity_public)
     );
     assert_eq!(
-        hex::encode(
-            bob_record
-                .remote_identity_key_bytes()?
-                .expect("value exists")
-        ),
+        hex::encode(bob_record.remote_identity_key_bytes()?),
         hex::encode(alice_identity_public)
     );
     assert_eq!(
@@ -144,18 +140,17 @@ fn test_ratcheting_session_as_alice() -> Result<(), SignalProtocolError> {
     );
 
     let mut csprng = rand::rngs::OsRng;
-    let alice_record = initialize_alice_session_record(&alice_parameters, &mut csprng)?;
+    let alice_record = initialize_alice_session_record::<_, StandardSessionStructure>(
+        &alice_parameters,
+        &mut csprng,
+    )?;
 
     assert_eq!(
         hex::encode(alice_record.local_identity_key_bytes()?),
         hex::encode(alice_identity_public),
     );
     assert_eq!(
-        hex::encode(
-            alice_record
-                .remote_identity_key_bytes()?
-                .expect("value exists")
-        ),
+        hex::encode(alice_record.remote_identity_key_bytes()?),
         hex::encode(bob_identity_public)
     );
 

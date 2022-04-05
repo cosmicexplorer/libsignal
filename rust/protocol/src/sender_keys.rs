@@ -25,7 +25,7 @@ impl std::fmt::Display for InvalidSessionError {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct SenderMessageKey {
+pub struct SenderMessageKey {
     iteration: u32,
     iv: Vec<u8>,
     cipher_key: Vec<u8>,
@@ -124,7 +124,7 @@ impl SenderChainKey {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct SenderKeyState {
+pub struct SenderKeyState {
     state: storage_proto::SenderKeyStateStructure,
 }
 

@@ -1,5 +1,5 @@
 //
-// Copyright 2020-2021 Signal Messenger, LLC.
+// Copyright 2020-2022 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
@@ -56,11 +56,12 @@ pub use {
     protocol::{
         extract_decryption_error_message_from_serialized_content, CiphertextMessage,
         CiphertextMessageType, DecryptionErrorMessage, PlaintextContent, PreKeySignalMessage,
-        SenderKeyDistributionMessage, SenderKeyMessage, SignalMessage,
+        SenderKeyDistributionMessage, SenderKeyMessage, SignalMessage, ViaProtobuf,
     },
     ratchet::{
         initialize_alice_session_record, initialize_bob_session_record,
-        AliceSignalProtocolParameters, BobSignalProtocolParameters,
+        AliceSignalProtocolParameters, BobSignalProtocolParameters, HeaderEncryptedMessageKeys,
+        MessageKeys,
     },
     sealed_sender::{
         apply_agreement_xor, encrypt_pre_key_bundle_message, sealed_sender_decrypt,
@@ -75,7 +76,13 @@ pub use {
     session_cipher::{
         message_decrypt, message_decrypt_prekey, message_decrypt_signal, message_encrypt,
     },
-    state::{PreKeyBundle, PreKeyRecord, SessionRecord, SignedPreKeyRecord},
+    state::{
+        CommonChain, HeaderEncryptedMessageChain, HeaderEncryptedRecordStructure,
+        HeaderEncryptedSessionStructure, PreKeyBundle, PreKeyRecord, ReceiverChain,
+        ReceiverChainInstance, RecordStructure, SenderChain, SenderChainInstance, SessionRecord,
+        SessionStructure, SignedPreKeyRecord, StandardMessageChain, StandardRecordStructure,
+        StandardSessionStructure,
+    },
     storage::{
         Context, Direction, IdentityKeyStore, InMemIdentityKeyStore, InMemPreKeyStore,
         InMemSenderKeyStore, InMemSessionStore, InMemSignalProtocolStore, InMemSignedPreKeyStore,
