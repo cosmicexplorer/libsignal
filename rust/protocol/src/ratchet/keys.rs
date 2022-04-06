@@ -29,13 +29,6 @@ pub trait RatchetingMessageKeys: ViaProtobuf + Clone {
     fn counter(&self) -> u32;
 }
 
-const HEADER_KEY_LEN: usize = 32;
-
-pub trait HeaderEncryptedRatchetingMessageKeys: RatchetingMessageKeys {
-    fn header_key(&self) -> &[u8; HEADER_KEY_LEN];
-    fn next_header_key(&self) -> &[u8; HEADER_KEY_LEN];
-}
-
 #[derive(Copy, Clone, Debug)]
 pub struct MessageKeys {
     cipher_key: [u8; CIPHER_KEY_LEN],
@@ -138,6 +131,13 @@ impl RatchetingMessageKeys for MessageKeys {
     fn counter(&self) -> u32 {
         self.counter
     }
+}
+
+const HEADER_KEY_LEN: usize = 32;
+
+pub trait HeaderEncryptedRatchetingMessageKeys: RatchetingMessageKeys {
+    fn header_key(&self) -> &[u8; HEADER_KEY_LEN];
+    fn next_header_key(&self) -> &[u8; HEADER_KEY_LEN];
 }
 
 #[derive(Copy, Clone, Debug)]
