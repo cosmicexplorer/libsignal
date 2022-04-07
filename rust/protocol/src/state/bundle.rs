@@ -1,12 +1,12 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020-2022 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
 use crate::state::{PreKeyId, SignedPreKeyId};
 use crate::{IdentityKey, PublicKey, Result};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreKeyBundle {
     registration_id: u32,
     device_id: u32,
