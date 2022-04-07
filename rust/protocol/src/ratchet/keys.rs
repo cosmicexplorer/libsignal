@@ -104,12 +104,10 @@ impl RatchetingMessageKeys for MessageKeys {
             .expand(b"WhisperMessageKeys", &mut okm)
             .expect("valid output length");
 
-        MessageKeys {
-            cipher_key: *array_ref![okm, 0, CIPHER_KEY_LEN],
-            mac_key: *array_ref![okm, CIPHER_KEY_LEN, MAC_KEY_LEN],
-            iv: *array_ref![okm, CIPHER_KEY_LEN + MAC_KEY_LEN, IV_LEN],
-            counter,
-        }
+        let cipher_key = array_ref![okm, 0, CIPHER_KEY_LEN];
+        let mac_key = array_ref![okm, CIPHER_KEY_LEN, MAC_KEY_LEN];
+        let iv = array_ref![okm, CIPHER_KEY_LEN + MAC_KEY_LEN, IV_LEN];
+        Self::new(*cipher_key, *mac_key, *iv, counter)
     }
 
     #[inline]
@@ -220,11 +218,14 @@ impl RatchetingMessageKeys for HeaderEncryptedMessageKeys {
             HEADER_KEY_LEN
         ];
 
-        Self {
-            inner: MessageKeys::new(*cipher_key, *mac_key, *iv, counter),
-            header_key: *header_key,
-            next_header_key: *next_header_key,
-        }
+        Self::new(
+            *cipher_key,
+            *mac_key,
+            *iv,
+            counter,
+            *header_key,
+            *next_header_key,
+        )
     }
 
     #[inline]
