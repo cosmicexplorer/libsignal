@@ -41,7 +41,7 @@ impl IdentityKey {
         Ok(Self { public_key: pk })
     }
 
-    pub fn verify_alternate_identity(&self, other: &IdentityKey, signature: &[u8]) -> Result<bool> {
+    pub fn verify_alternate_identity(&self, other: &IdentityKey, signature: &[u8]) -> bool {
         self.public_key.verify_signature_for_multipart_message(
             &[
                 ALTERNATE_IDENTITY_SIGNATURE_PREFIX_1,
@@ -126,7 +126,7 @@ impl IdentityKeyPair {
         &self,
         other: &IdentityKey,
         rng: &mut R,
-    ) -> Result<Box<[u8]>> {
+    ) -> Box<[u8]> {
         self.private_key.calculate_signature_for_multipart_message(
             &[
                 ALTERNATE_IDENTITY_SIGNATURE_PREFIX_1,
@@ -163,12 +163,10 @@ impl TryFrom<&[u8]> for IdentityKeyPair {
     }
 }
 
-impl TryFrom<PrivateKey> for IdentityKeyPair {
-    type Error = SignalProtocolError;
-
-    fn try_from(private_key: PrivateKey) -> Result<Self> {
-        let identity_key = IdentityKey::new(private_key.public_key()?);
-        Ok(Self::new(identity_key, private_key))
+impl From<PrivateKey> for IdentityKeyPair {
+    fn from(private_key: PrivateKey) -> Self {
+        let key_pair: KeyPair = private_key.into();
+        key_pair.into()
     }
 }
 
@@ -223,34 +221,32 @@ mod tests {
     }
 
     #[test]
-    fn test_alternate_identity_signing() -> Result<()> {
+    fn test_alternate_identity_signing() {
         let primary = IdentityKeyPair::generate(&mut OsRng);
         let secondary = IdentityKeyPair::generate(&mut OsRng);
 
-        let signature = secondary.sign_alternate_identity(primary.identity_key(), &mut OsRng)?;
+        let signature = secondary.sign_alternate_identity(primary.identity_key(), &mut OsRng);
         assert!(secondary
             .identity_key()
-            .verify_alternate_identity(primary.identity_key(), &signature)?);
+            .verify_alternate_identity(primary.identity_key(), &signature));
         // Not symmetric.
         assert!(!primary
             .identity_key()
-            .verify_alternate_identity(secondary.identity_key(), &signature)?);
+            .verify_alternate_identity(secondary.identity_key(), &signature));
 
         let another_signature =
-            secondary.sign_alternate_identity(primary.identity_key(), &mut OsRng)?;
+            secondary.sign_alternate_identity(primary.identity_key(), &mut OsRng);
         assert_ne!(signature, another_signature);
         assert!(secondary
             .identity_key()
-            .verify_alternate_identity(primary.identity_key(), &another_signature)?);
+            .verify_alternate_identity(primary.identity_key(), &another_signature));
 
         let unrelated = IdentityKeyPair::generate(&mut OsRng);
         assert!(!secondary
             .identity_key()
-            .verify_alternate_identity(unrelated.identity_key(), &signature)?);
+            .verify_alternate_identity(unrelated.identity_key(), &signature));
         assert!(!unrelated
             .identity_key()
-            .verify_alternate_identity(primary.identity_key(), &signature)?);
-
-        Ok(())
+            .verify_alternate_identity(primary.identity_key(), &signature));
     }
 }

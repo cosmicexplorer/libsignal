@@ -70,7 +70,7 @@ pub async fn message_encrypt<S: SessionStructure>(
             &ctext,
             &local_identity_key,
             &their_identity_key,
-        )?;
+        );
 
         CiphertextMessage::PreKeySignalMessage(PreKeySignalMessage::new(
             session_version,
@@ -80,7 +80,7 @@ pub async fn message_encrypt<S: SessionStructure>(
             *items.base_key(),
             local_identity_key,
             message,
-        )?)
+        ))
     } else {
         CiphertextMessage::SignalMessage(SignalMessage::new(
             session_version,
@@ -91,7 +91,7 @@ pub async fn message_encrypt<S: SessionStructure>(
             &ctext,
             &local_identity_key,
             &their_identity_key,
-        )?)
+        ))
     };
 
     session_state.set_sender_chain_key(&chain_key.next_chain_key());
@@ -529,7 +529,7 @@ fn decrypt_message_with_state<R: Rng + CryptoRng, S: SessionStructure>(
         &their_identity_key,
         &state.local_identity_key(),
         message_keys.mac_key(),
-    )?;
+    );
 
     if !mac_valid {
         return Err(SignalProtocolError::InvalidMessage(
@@ -583,11 +583,11 @@ fn get_or_create_chain_key<R: Rng + CryptoRng, S: SessionStructure>(
 
     let root_key = state.root_key();
     let our_ephemeral = state.sender_ratchet_private_key();
-    let receiver_chain = root_key.create_chain(their_ephemeral, &our_ephemeral)?;
+    let receiver_chain = root_key.create_chain(their_ephemeral, &our_ephemeral);
     let our_new_ephemeral = KeyPair::generate(csprng);
     let sender_chain = receiver_chain
         .0
-        .create_chain(their_ephemeral, &our_new_ephemeral.private_key)?;
+        .create_chain(their_ephemeral, &our_new_ephemeral.private_key);
 
     state.set_root_key(&sender_chain.0);
     state.add_receiver_chain(their_ephemeral, &receiver_chain.1);

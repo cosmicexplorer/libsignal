@@ -147,7 +147,7 @@ pub async fn process_prekey_bundle<R: Rng + CryptoRng, S: SessionStructure>(
     if !their_identity_key.public_key().verify_signature(
         &bundle.signed_pre_key_public()?.serialize(),
         bundle.signed_pre_key_signature()?,
-    )? {
+    ) {
         return Err(SignalProtocolError::SignatureValidationFailed);
     }
 

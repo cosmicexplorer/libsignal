@@ -4,6 +4,7 @@
 //
 
 use crate::proto;
+use crate::ratchet;
 use crate::{IdentityKey, PrivateKey, PublicKey, Result, SignalProtocolError};
 
 use std::convert::TryFrom;
@@ -100,14 +101,14 @@ impl SignalMessage {
 
     pub fn new(
         message_version: u8,
-        mac_key: &[u8],
+        mac_key: &[u8; ratchet::MAC_KEY_LEN],
         sender_ratchet_key: PublicKey,
         counter: u32,
         previous_counter: u32,
         ciphertext: &[u8],
         sender_identity_key: &IdentityKey,
         receiver_identity_key: &IdentityKey,
-    ) -> Result<Self> {
+    ) -> Self {
         let message = proto::wire::SignalMessage {
             ratchet_key: Some(sender_ratchet_key.serialize().into_vec()),
             counter: Some(counter),
@@ -125,17 +126,17 @@ impl SignalMessage {
             receiver_identity_key,
             mac_key,
             &serialized,
-        )?;
+        );
         serialized.extend_from_slice(&mac);
         let serialized = serialized.into_boxed_slice();
-        Ok(Self {
+        Self {
             message_version,
             sender_ratchet_key,
             counter,
             previous_counter,
             ciphertext: ciphertext.into(),
             serialized,
-        })
+        }
     }
 
     #[inline]
@@ -167,14 +168,14 @@ impl SignalMessage {
         &self,
         sender_identity_key: &IdentityKey,
         receiver_identity_key: &IdentityKey,
-        mac_key: &[u8],
-    ) -> Result<bool> {
+        mac_key: &[u8; ratchet::MAC_KEY_LEN],
+    ) -> bool {
         let our_mac = &Self::compute_mac(
             sender_identity_key,
             receiver_identity_key,
             mac_key,
             &self.serialized[..self.serialized.len() - Self::MAC_LENGTH],
-        )?;
+        );
         let their_mac = &self.serialized[self.serialized.len() - Self::MAC_LENGTH..];
         let result: bool = our_mac.ct_eq(their_mac).into();
         if !result {
@@ -185,18 +186,15 @@ impl SignalMessage {
                 hex::encode(our_mac)
             );
         }
-        Ok(result)
+        result
     }
 
     fn compute_mac(
         sender_identity_key: &IdentityKey,
         receiver_identity_key: &IdentityKey,
-        mac_key: &[u8],
+        mac_key: &[u8; ratchet::MAC_KEY_LEN],
         message: &[u8],
-    ) -> Result<[u8; Self::MAC_LENGTH]> {
-        if mac_key.len() != 32 {
-            return Err(SignalProtocolError::InvalidMacKeyLength(mac_key.len()));
-        }
+    ) -> [u8; Self::MAC_LENGTH] {
         let mut mac = Hmac::<Sha256>::new_from_slice(mac_key)
             .expect("HMAC-SHA256 should accept any size key");
 
@@ -205,7 +203,7 @@ impl SignalMessage {
         mac.update(message);
         let mut result = [0u8; Self::MAC_LENGTH];
         result.copy_from_slice(&mac.finalize().into_bytes()[..Self::MAC_LENGTH]);
-        Ok(result)
+        result
     }
 }
 
@@ -283,7 +281,7 @@ impl PreKeySignalMessage {
         base_key: PublicKey,
         identity_key: IdentityKey,
         message: SignalMessage,
-    ) -> Result<Self> {
+    ) -> Self {
         let proto_message = proto::wire::PreKeySignalMessage {
             registration_id: Some(registration_id),
             pre_key_id,
@@ -298,7 +296,7 @@ impl PreKeySignalMessage {
         proto_message
             .encode(&mut serialized)
             .expect("can always append to a Vec");
-        Ok(Self {
+        Self {
             message_version,
             registration_id,
             pre_key_id,
@@ -307,7 +305,7 @@ impl PreKeySignalMessage {
             identity_key,
             message,
             serialized: serialized.into_boxed_slice(),
-        })
+        }
     }
 
     #[inline]
@@ -429,7 +427,7 @@ impl SenderKeyMessage {
         ciphertext: Box<[u8]>,
         csprng: &mut R,
         signature_key: &PrivateKey,
-    ) -> Result<Self> {
+    ) -> Self {
         let proto_message = proto::wire::SenderKeyMessage {
             distribution_uuid: Some(distribution_id.as_bytes().to_vec()),
             chain_id: Some(chain_id),
@@ -443,25 +441,23 @@ impl SenderKeyMessage {
         proto_message
             .encode(&mut serialized)
             .expect("can always append to a buffer");
-        let signature = signature_key.calculate_signature(&serialized, csprng)?;
+        let signature = signature_key.calculate_signature(&serialized, csprng);
         serialized.extend_from_slice(&signature[..]);
-        Ok(Self {
+        Self {
             message_version: SENDERKEY_MESSAGE_CURRENT_VERSION,
             distribution_id,
             chain_id,
             iteration,
             ciphertext,
             serialized: serialized.into_boxed_slice(),
-        })
+        }
     }
 
-    pub fn verify_signature(&self, signature_key: &PublicKey) -> Result<bool> {
-        let valid = signature_key.verify_signature(
+    pub fn verify_signature(&self, signature_key: &PublicKey) -> bool {
+        signature_key.verify_signature(
             &self.serialized[..self.serialized.len() - Self::SIGNATURE_LEN],
             &self.serialized[self.serialized.len() - Self::SIGNATURE_LEN..],
-        )?;
-
-        Ok(valid)
+        )
     }
 
     #[inline]
@@ -880,7 +876,7 @@ mod tests {
     use rand::rngs::OsRng;
     use rand::{CryptoRng, Rng};
 
-    fn create_signal_message<T>(csprng: &mut T) -> Result<SignalMessage>
+    fn create_signal_message<T>(csprng: &mut T) -> SignalMessage
     where
         T: Rng + CryptoRng,
     {
@@ -918,21 +914,20 @@ mod tests {
     }
 
     #[test]
-    fn test_signal_message_serialize_deserialize() -> Result<()> {
+    fn test_signal_message_serialize_deserialize() {
         let mut csprng = OsRng;
-        let message = create_signal_message(&mut csprng)?;
+        let message = create_signal_message(&mut csprng);
         let deser_message =
             SignalMessage::try_from(message.as_ref()).expect("should deserialize without error");
         assert_signal_message_equals(&message, &deser_message);
-        Ok(())
     }
 
     #[test]
-    fn test_pre_key_signal_message_serialize_deserialize() -> Result<()> {
+    fn test_pre_key_signal_message_serialize_deserialize() {
         let mut csprng = OsRng;
         let identity_key_pair = KeyPair::generate(&mut csprng);
         let base_key_pair = KeyPair::generate(&mut csprng);
-        let message = create_signal_message(&mut csprng)?;
+        let message = create_signal_message(&mut csprng);
         let pre_key_signal_message = PreKeySignalMessage::new(
             3,
             365,
@@ -941,7 +936,7 @@ mod tests {
             base_key_pair.public_key,
             identity_key_pair.public_key.into(),
             message,
-        )?;
+        );
         let deser_pre_key_signal_message =
             PreKeySignalMessage::try_from(pre_key_signal_message.as_ref())
                 .expect("should deserialize without error");
@@ -977,11 +972,10 @@ mod tests {
             pre_key_signal_message.serialized,
             deser_pre_key_signal_message.serialized
         );
-        Ok(())
     }
 
     #[test]
-    fn test_sender_key_message_serialize_deserialize() -> Result<()> {
+    fn test_sender_key_message_serialize_deserialize() {
         let mut csprng = OsRng;
         let signature_key_pair = KeyPair::generate(&mut csprng);
         let sender_key_message = SenderKeyMessage::new(
@@ -992,7 +986,7 @@ mod tests {
             [1u8, 2, 3].into(),
             &mut csprng,
             &signature_key_pair.private_key,
-        )?;
+        );
         let deser_sender_key_message = SenderKeyMessage::try_from(sender_key_message.as_ref())
             .expect("should deserialize without error");
         assert_eq!(
@@ -1015,7 +1009,6 @@ mod tests {
             sender_key_message.serialized,
             deser_sender_key_message.serialized
         );
-        Ok(())
     }
 
     #[test]
@@ -1023,7 +1016,7 @@ mod tests {
         let mut csprng = OsRng;
         let identity_key_pair = KeyPair::generate(&mut csprng);
         let base_key_pair = KeyPair::generate(&mut csprng);
-        let message = create_signal_message(&mut csprng)?;
+        let message = create_signal_message(&mut csprng);
         let timestamp = 0x2_0000_0001;
         let device_id = 0x8086_2021;
 
@@ -1051,7 +1044,7 @@ mod tests {
             base_key_pair.public_key,
             identity_key_pair.public_key.into(),
             message,
-        )?;
+        );
 
         {
             let error_message = DecryptionErrorMessage::for_original(
@@ -1077,7 +1070,7 @@ mod tests {
             Box::from(b"test".to_owned()),
             &mut csprng,
             &base_key_pair.private_key,
-        )?;
+        );
 
         {
             let error_message = DecryptionErrorMessage::for_original(

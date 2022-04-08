@@ -16,7 +16,7 @@ use std::fmt;
 use arrayref::array_ref;
 
 const CIPHER_KEY_LEN: usize = 32;
-const MAC_KEY_LEN: usize = 32;
+pub const MAC_KEY_LEN: usize = 32;
 const IV_LEN: usize = 16;
 
 pub trait RatchetingMessageKeys: ViaProtobuf + Clone {
@@ -154,6 +154,8 @@ impl HeaderEncryptedMessageKeys {
         header_key: [u8; HEADER_KEY_LEN],
         next_header_key: [u8; HEADER_KEY_LEN],
     ) -> Self {
+        eprintln!("header_key: {:?}", header_key);
+        eprintln!("next_header_key: {:?}", next_header_key);
         Self {
             inner: MessageKeys::new(cipher_key, mac_key, iv, counter),
             header_key,
@@ -350,14 +352,14 @@ impl RootKey {
         &self,
         their_ratchet_key: &PublicKey,
         our_ratchet_key: &PrivateKey,
-    ) -> Result<(RootKey, ChainKey)> {
-        let shared_secret = our_ratchet_key.calculate_agreement(their_ratchet_key)?;
+    ) -> (RootKey, ChainKey) {
+        let shared_secret = our_ratchet_key.calculate_agreement(their_ratchet_key);
         let mut derived_secret_bytes = [0; ROOT_KEY_LEN + CHAIN_KEY_LEN];
         hkdf::Hkdf::<sha2::Sha256>::new(Some(&self.key), &shared_secret)
             .expand(b"WhisperRatchet", &mut derived_secret_bytes)
             .expect("valid output length");
 
-        Ok((
+        (
             RootKey {
                 key: *array_ref![derived_secret_bytes, 0, ROOT_KEY_LEN],
             },
@@ -365,7 +367,7 @@ impl RootKey {
                 key: *array_ref![derived_secret_bytes, ROOT_KEY_LEN, CHAIN_KEY_LEN],
                 index: 0,
             },
-        ))
+        )
     }
 }
 

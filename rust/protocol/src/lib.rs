@@ -80,8 +80,8 @@ pub use {
         CommonChain, HeaderEncryptedMessageChain, HeaderEncryptedRecordStructure,
         HeaderEncryptedSessionStructure, PreKeyBundle, PreKeyRecord, ReceiverChain,
         ReceiverChainInstance, RecordStructure, SenderChain, SenderChainInstance, SessionRecord,
-        SessionStructure, SignedPreKeyRecord, StandardMessageChain, StandardRecordStructure,
-        StandardSessionStructure,
+        SessionState, SessionStructure, SignedPreKeyRecord, StandardMessageChain,
+        StandardRecordStructure, StandardSessionStructure,
     },
     storage::{
         Context, Direction, IdentityKeyStore, InMemIdentityKeyStore, InMemPreKeyStore,

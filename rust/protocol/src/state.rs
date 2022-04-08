@@ -10,11 +10,10 @@ mod signed_prekey;
 
 pub use bundle::PreKeyBundle;
 pub use prekey::{PreKeyId, PreKeyRecord};
-pub(crate) use session::SessionState;
 pub use session::{
     CommonChain, HeaderEncryptedMessageChain, HeaderEncryptedRecordStructure,
     HeaderEncryptedSessionStructure, ReceiverChain, ReceiverChainInstance, RecordStructure,
-    SenderChain, SenderChainInstance, SessionRecord, SessionStructure, StandardMessageChain,
-    StandardRecordStructure, StandardSessionStructure,
+    SenderChain, SenderChainInstance, SessionRecord, SessionState, SessionStructure,
+    StandardMessageChain, StandardRecordStructure, StandardSessionStructure,
 };
 pub use signed_prekey::{SignedPreKeyId, SignedPreKeyRecord};

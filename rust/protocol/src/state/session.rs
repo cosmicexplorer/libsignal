@@ -1154,7 +1154,7 @@ impl SessionStructure for HeaderEncryptedSessionStructure {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct SessionState<S: SessionStructure> {
+pub struct SessionState<S: SessionStructure> {
     session: S,
 }
 

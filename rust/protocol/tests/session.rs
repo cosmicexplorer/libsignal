@@ -31,7 +31,7 @@ fn test_basic_prekey_v3() -> Result<(), SignalProtocolError> {
             .get_identity_key_pair(None)
             .await?
             .private_key()
-            .calculate_signature(&bob_signed_pre_key_public, &mut csprng)?;
+            .calculate_signature(&bob_signed_pre_key_public, &mut csprng);
 
         let pre_key_id = 31337;
         let signed_pre_key_id = 22;
@@ -169,7 +169,7 @@ fn test_basic_prekey_v3() -> Result<(), SignalProtocolError> {
             .get_identity_key_pair(None)
             .await?
             .private_key()
-            .calculate_signature(&bob_signed_pre_key_public, &mut csprng)?;
+            .calculate_signature(&bob_signed_pre_key_public, &mut csprng);
 
         let pre_key_id = 31337;
         let signed_pre_key_id = 22;
@@ -294,7 +294,7 @@ fn chain_jump_over_limit() -> Result<(), SignalProtocolError> {
             .get_identity_key_pair(None)
             .await?
             .private_key()
-            .calculate_signature(&bob_signed_pre_key_public, &mut csprng)?;
+            .calculate_signature(&bob_signed_pre_key_public, &mut csprng);
 
         let pre_key_id = 31337;
         let signed_pre_key_id = 22;
@@ -383,7 +383,7 @@ fn chain_jump_over_limit_with_self() -> Result<(), SignalProtocolError> {
             .get_identity_key_pair(None)
             .await?
             .private_key()
-            .calculate_signature(&a2_signed_pre_key_public, &mut csprng)?;
+            .calculate_signature(&a2_signed_pre_key_public, &mut csprng);
 
         let pre_key_id = 31337;
         let signed_pre_key_id = 22;
@@ -477,7 +477,7 @@ fn test_bad_signed_pre_key_signature() -> Result<(), SignalProtocolError> {
             .get_identity_key_pair(None)
             .await?
             .private_key()
-            .calculate_signature(&bob_signed_pre_key_public, &mut csprng)?
+            .calculate_signature(&bob_signed_pre_key_public, &mut csprng)
             .to_vec();
 
         let pre_key_id = 31337;
@@ -559,7 +559,7 @@ fn repeat_bundle_message_v3() -> Result<(), SignalProtocolError> {
             .get_identity_key_pair(None)
             .await?
             .private_key()
-            .calculate_signature(&bob_signed_pre_key_public, &mut csprng)?;
+            .calculate_signature(&bob_signed_pre_key_public, &mut csprng);
 
         let pre_key_id = 31337;
         let signed_pre_key_id = 22;
@@ -694,7 +694,7 @@ fn bad_message_bundle() -> Result<(), SignalProtocolError> {
             .get_identity_key_pair(None)
             .await?
             .private_key()
-            .calculate_signature(&bob_signed_pre_key_public, &mut csprng)?;
+            .calculate_signature(&bob_signed_pre_key_public, &mut csprng);
 
         let pre_key_id = 31337;
         let signed_pre_key_id = 22;
@@ -815,7 +815,7 @@ fn optional_one_time_prekey() -> Result<(), SignalProtocolError> {
             .get_identity_key_pair(None)
             .await?
             .private_key()
-            .calculate_signature(&bob_signed_pre_key_public, &mut csprng)?;
+            .calculate_signature(&bob_signed_pre_key_public, &mut csprng);
 
         let signed_pre_key_id = 22;
 

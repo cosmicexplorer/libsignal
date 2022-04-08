@@ -96,7 +96,7 @@ impl ServerCertificate {
 
         let certificate = certificate_pb.encode_to_vec();
 
-        let signature = trust_root.calculate_signature(&certificate, rng)?.to_vec();
+        let signature = trust_root.calculate_signature(&certificate, rng).to_vec();
 
         let serialized = proto::sealed_sender::ServerCertificate {
             certificate: Some(certificate.clone()),
@@ -120,19 +120,19 @@ impl ServerCertificate {
         })
     }
 
-    pub fn validate(&self, trust_root: &PublicKey) -> Result<bool> {
-        if REVOKED_SERVER_CERTIFICATE_KEY_IDS.contains(&self.key_id()?) {
+    pub fn validate(&self, trust_root: &PublicKey) -> bool {
+        if REVOKED_SERVER_CERTIFICATE_KEY_IDS.contains(&self.key_id()) {
             log::error!(
                 "received server certificate with revoked ID {:x}",
-                self.key_id()?
+                self.key_id()
             );
-            return Ok(false);
+            return false;
         }
         trust_root.verify_signature(&self.certificate, &self.signature)
     }
 
-    pub fn key_id(&self) -> Result<u32> {
-        Ok(self.key_id)
+    pub fn key_id(&self) -> u32 {
+        self.key_id
     }
 
     pub fn public_key(&self) -> Result<PublicKey> {
@@ -236,7 +236,7 @@ impl SenderCertificate {
 
         let certificate = certificate_pb.encode_to_vec();
 
-        let signature = signer_key.calculate_signature(&certificate, rng)?.to_vec();
+        let signature = signer_key.calculate_signature(&certificate, rng).to_vec();
 
         let serialized = proto::sealed_sender::SenderCertificate {
             certificate: Some(certificate.clone()),
@@ -258,7 +258,7 @@ impl SenderCertificate {
     }
 
     pub fn validate(&self, trust_root: &PublicKey, validation_time: u64) -> Result<bool> {
-        if !self.signer.validate(trust_root)? {
+        if !self.signer.validate(trust_root) {
             log::error!("received server certificate not signed by trust root");
             return Ok(false);
         }
@@ -266,7 +266,7 @@ impl SenderCertificate {
         if !self
             .signer
             .public_key()?
-            .verify_signature(&self.certificate, &self.signature)?
+            .verify_signature(&self.certificate, &self.signature)
         {
             log::error!("received sender certificate not signed by server");
             return Ok(false);
@@ -617,7 +617,7 @@ mod sealed_sender_v1 {
             our_keys: &KeyPair,
             their_public: &PublicKey,
             direction: Direction,
-        ) -> Result<Self> {
+        ) -> Self {
             let our_pub_key = our_keys.public_key.serialize();
             let their_pub_key = their_public.serialize();
             let ephemeral_salt = match direction {
@@ -626,17 +626,17 @@ mod sealed_sender_v1 {
             }
             .concat();
 
-            let shared_secret = our_keys.private_key.calculate_agreement(their_public)?;
+            let shared_secret = our_keys.private_key.calculate_agreement(their_public);
             let mut derived_values = [0; EPHEMERAL_KEYS_KDF_LEN];
             hkdf::Hkdf::<sha2::Sha256>::new(Some(&ephemeral_salt), &shared_secret)
                 .expand(&[], &mut derived_values)
                 .expect("valid output length");
 
-            Ok(Self {
+            Self {
                 chain_key: *array_ref![&derived_values, 0, 32],
                 cipher_key: *array_ref![&derived_values, 32, 32],
                 mac_key: *array_ref![&derived_values, 64, 32],
-            })
+            }
         }
     }
 
@@ -677,10 +677,10 @@ mod sealed_sender_v1 {
             their_key: &PublicKey,
             chain_key: &[u8; 32],
             ctext: &[u8],
-        ) -> Result<Self> {
+        ) -> Self {
             let salt = [chain_key, ctext].concat();
 
-            let shared_secret = our_keys.private_key().calculate_agreement(their_key)?;
+            let shared_secret = our_keys.private_key().calculate_agreement(their_key);
             // 96 bytes are derived, but the first 32 are discarded/unused. This is intended to
             // mirror the way the EphemeralKeys are derived, even though StaticKeys does not end up
             // requiring a third "chain key".
@@ -689,10 +689,10 @@ mod sealed_sender_v1 {
                 .expand(&[], &mut derived_values)
                 .expect("valid output length");
 
-            Ok(Self {
+            Self {
                 cipher_key: *array_ref![&derived_values, 32, 32],
                 mac_key: *array_ref![&derived_values, 64, 32],
-            })
+            }
         }
     }
 
@@ -710,7 +710,7 @@ mod sealed_sender_v1 {
             &sender_ephemeral,
             recipient_identity.public_key(),
             Direction::Sending,
-        )?;
+        );
 
         // Encrypt the sender's public key with AES-256 CTR and a MAC.
         let sender_static_key_ctext = crypto::aes256_ctr_hmacsha256_encrypt(
@@ -726,7 +726,7 @@ mod sealed_sender_v1 {
             recipient_identity.public_key(),
             &sender_eph_keys.chain_key,
             &sender_static_key_ctext,
-        )?;
+        );
 
         let sender_message_contents = b"this is a binary message";
         let sender_message_data = crypto::aes256_ctr_hmacsha256_encrypt(
@@ -741,7 +741,7 @@ mod sealed_sender_v1 {
             &recipient_identity.into(),
             &ephemeral_public,
             Direction::Receiving,
-        )?;
+        );
         assert_eq!(sender_eph_keys, recipient_eph_keys);
 
         let recipient_message_key_bytes = crypto::aes256_ctr_hmacsha256_decrypt(
@@ -758,7 +758,7 @@ mod sealed_sender_v1 {
             &sender_public_key,
             &recipient_eph_keys.chain_key,
             &sender_static_key_ctext,
-        )?;
+        );
 
         let recipient_message_contents = crypto::aes256_ctr_hmacsha256_decrypt(
             &sender_message_data,
@@ -787,6 +787,17 @@ pub async fn sealed_sender_encrypt<R: Rng + CryptoRng, S: SessionStructure>(
     ctx: Context,
     rng: &mut R,
 ) -> Result<Vec<u8>> {
+    /* let mut session_record = session_store */
+    /*     .load_session(destination, ctx) */
+    /*     .await? */
+    /*     .ok_or_else(|| SignalProtocolError::SessionNotFound(destination.clone()))?; */
+    /* let session_state = session_record */
+    /*     .session_state_mut() */
+    /*     .ok_or_else(|| SignalProtocolError::SessionNotFound(destination.clone()))?; */
+
+    /* let chain_key = session_state.get_sender_chain_key(); */
+    /* let message_keys = chain_key.message_keys::<<<S as SessionStructure>::C as CommonChain>::Key>(); */
+
     let message = message_encrypt(ptext, destination, session_store, identity_store, ctx).await?;
     let usmc = UnidentifiedSenderMessageContent::new(
         message.message_type(),
@@ -867,7 +878,7 @@ pub async fn sealed_sender_encrypt_from_usmc<R: Rng + CryptoRng>(
         &ephemeral,
         their_identity.public_key(),
         Direction::Sending,
-    )?;
+    );
 
     let static_key_ctext = crypto::aes256_ctr_hmacsha256_encrypt(
         &our_identity.public_key().serialize(),
@@ -881,7 +892,7 @@ pub async fn sealed_sender_encrypt_from_usmc<R: Rng + CryptoRng>(
         their_identity.public_key(),
         &eph_keys.chain_key,
         &static_key_ctext,
-    )?;
+    );
 
     let message_data = crypto::aes256_ctr_hmacsha256_encrypt(
         usmc.serialized()?,
@@ -949,8 +960,8 @@ mod sealed_sender_v2 {
         their_key: &PublicKey,
         direction: Direction,
         input: &[u8; MESSAGE_KEY_LEN],
-    ) -> Result<[u8; MESSAGE_KEY_LEN]> {
-        let agreement = our_keys.calculate_agreement(their_key)?;
+    ) -> [u8; MESSAGE_KEY_LEN] {
+        let agreement = our_keys.calculate_agreement(their_key);
         let agreement_key_input = match direction {
             Direction::Sending => [
                 agreement,
@@ -973,7 +984,7 @@ mod sealed_sender_v2 {
             .iter_mut()
             .zip(input)
             .for_each(|(result_byte, input_byte)| *result_byte ^= input_byte);
-        Ok(result)
+        result
     }
 
     /// Compute an [authentication tag] for the bytes `encrypted_message_key` using a shared secret
@@ -990,10 +1001,10 @@ mod sealed_sender_v2 {
         direction: Direction,
         ephemeral_pub_key: &PublicKey,
         encrypted_message_key: &[u8; MESSAGE_KEY_LEN],
-    ) -> Result<[u8; AUTH_TAG_LEN]> {
+    ) -> [u8; AUTH_TAG_LEN] {
         let agreement = our_keys
             .private_key()
-            .calculate_agreement(their_key.public_key())?;
+            .calculate_agreement(their_key.public_key());
         let mut agreement_key_input = agreement.into_vec();
         agreement_key_input.extend_from_slice(&ephemeral_pub_key.serialize());
         agreement_key_input.extend_from_slice(encrypted_message_key);
@@ -1012,7 +1023,7 @@ mod sealed_sender_v2 {
         hkdf::Hkdf::<sha2::Sha256>::new(None, &agreement_key_input)
             .expand(LABEL_DH_S, &mut result)
             .expect("valid output length");
-        Ok(result)
+        result
     }
 
     #[test]
@@ -1033,7 +1044,7 @@ mod sealed_sender_v2 {
             recipient_identity.public_key(),
             Direction::Sending,
             &m,
-        )?;
+        );
         // Compute an authentication tag for the encrypted key pair.
         let sender_at_0 = compute_authentication_tag(
             &sender_identity,
@@ -1041,7 +1052,7 @@ mod sealed_sender_v2 {
             Direction::Sending,
             &ephemeral_public_key,
             &sender_c_0,
-        )?;
+        );
 
         // The message recipient calculates the original random bytes and authenticates the result.
         let recv_m = apply_agreement_xor(
@@ -1049,7 +1060,7 @@ mod sealed_sender_v2 {
             &ephemeral_public_key,
             Direction::Receiving,
             &sender_c_0,
-        )?;
+        );
         assert_eq!(&recv_m, &m);
 
         let recv_at_0 = compute_authentication_tag(
@@ -1058,7 +1069,7 @@ mod sealed_sender_v2 {
             Direction::Receiving,
             &ephemeral_public_key,
             &sender_c_0,
-        )?;
+        );
         assert_eq!(&recv_at_0, &sender_at_0);
 
         Ok(())
@@ -1373,7 +1384,7 @@ pub async fn sealed_sender_multi_recipient_encrypt_full<R: Rng + CryptoRng, S: S
                 their_identity.public_key(),
                 Direction::Sending,
                 &m,
-            )?;
+            );
             serialized.extend_from_slice(&c_i);
 
             let at_i = sealed_sender_v2::compute_authentication_tag(
@@ -1382,7 +1393,7 @@ pub async fn sealed_sender_multi_recipient_encrypt_full<R: Rng + CryptoRng, S: S
                 Direction::Sending,
                 e_pub,
                 &c_i,
-            )?;
+            );
             serialized.extend_from_slice(&at_i);
         }
 
@@ -1481,7 +1492,7 @@ pub async fn sealed_sender_decrypt_to_usmc(
                 &our_identity.into(),
                 &ephemeral_public,
                 Direction::Receiving,
-            )?;
+            );
 
             let message_key_bytes = match crypto::aes256_ctr_hmacsha256_decrypt(
                 &encrypted_static,
@@ -1507,7 +1518,7 @@ pub async fn sealed_sender_decrypt_to_usmc(
                 &static_key,
                 &eph_keys.chain_key,
                 &encrypted_static,
-            )?;
+            );
 
             let message_bytes = match crypto::aes256_ctr_hmacsha256_decrypt(
                 &encrypted_message,
@@ -1558,7 +1569,7 @@ pub async fn sealed_sender_decrypt_to_usmc(
                 &ephemeral_public,
                 Direction::Receiving,
                 &encrypted_message_key,
-            )?;
+            );
 
             let keys = sealed_sender_v2::DerivedKeys::calculate(&m);
             if !bool::from(keys.e.public_key.ct_eq(&ephemeral_public)) {
@@ -1597,7 +1608,7 @@ pub async fn sealed_sender_decrypt_to_usmc(
                 Direction::Receiving,
                 &ephemeral_public,
                 &encrypted_message_key,
-            )?;
+            );
             if !bool::from(authentication_tag.ct_eq(&at)) {
                 return Err(SignalProtocolError::InvalidSealedSenderMessage(
                     "sender certificate key does not match authentication tag".to_string(),
@@ -1731,13 +1742,13 @@ pub async fn sealed_sender_decrypt<S: SessionStructure>(
                 &public_secret_key,
                 Direction::Receiving,
                 &encrypted_secret_key,
-            )?;
+            );
             let secret_iv = sealed_sender_v2::apply_agreement_xor(
                 &our_identity,
                 &public_iv_key,
                 Direction::Receiving,
                 &encrypted_iv,
-            )?;
+            );
 
             crypto::aes_256_cbc_decrypt(ciphertext, &secret_key, &secret_iv[..16]).map_err(|e| {
                 match e {
@@ -1839,7 +1850,7 @@ fn test_lossless_round_trip() -> Result<()> {
 
     let sender_certificate =
         SenderCertificate::deserialize(&sender_certificate_data.encode_to_vec())?;
-    assert!(sender_certificate.validate(&trust_root.public_key()?, 31336)?);
+    assert!(sender_certificate.validate(&trust_root.public_key(), 31336)?);
     Ok(())
 }
 
@@ -1866,7 +1877,7 @@ pub async fn encrypt_pre_key_bundle_message<R: CryptoRng + Rng>(
             dest_pubkey.public_key(),
             Direction::Sending,
             &m,
-        )?;
+        );
         (m, send, keys.e.public_key)
     };
     /* This will be cut down to 16 bytes. */
@@ -1882,7 +1893,7 @@ pub async fn encrypt_pre_key_bundle_message<R: CryptoRng + Rng>(
             dest_pubkey.public_key(),
             Direction::Sending,
             &m,
-        )?;
+        );
         (m, send, keys.e.public_key)
     };
 

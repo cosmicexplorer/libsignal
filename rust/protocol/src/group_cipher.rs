@@ -1,5 +1,5 @@
 //
-// Copyright 2020-2021 Signal Messenger, LLC.
+// Copyright 2020-2022 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
@@ -63,7 +63,7 @@ pub async fn group_encrypt<R: Rng + CryptoRng>(
         ciphertext.into_boxed_slice(),
         csprng,
         &signing_key,
-    )?;
+    );
 
     sender_key_state.set_sender_chain_key(sender_chain_key.next());
 
@@ -164,7 +164,7 @@ pub async fn group_decrypt(
     let signing_key = sender_key_state
         .signing_key_public()
         .map_err(|_| SignalProtocolError::InvalidSenderKeySession { distribution_id })?;
-    if !skm.verify_signature(&signing_key)? {
+    if !skm.verify_signature(&signing_key) {
         return Err(SignalProtocolError::SignatureValidationFailed);
     }
 
