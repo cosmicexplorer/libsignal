@@ -1,10 +1,9 @@
 //
-// Copyright 2021 Signal Messenger, LLC.
+// Copyright 2021-2022 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
 use super::*;
-use async_trait::async_trait;
 use libc::{c_int, c_uint, c_void};
 use uuid::Uuid;
 
@@ -50,7 +49,6 @@ pub struct FfiIdentityKeyStoreStruct {
     is_trusted_identity: IsTrustedIdentity,
 }
 
-#[async_trait(?Send)]
 impl IdentityKeyStore for &FfiIdentityKeyStoreStruct {
     async fn get_identity_key_pair(
         &self,
@@ -193,7 +191,6 @@ pub struct FfiPreKeyStoreStruct {
     remove_pre_key: RemovePreKey,
 }
 
-#[async_trait(?Send)]
 impl PreKeyStore for &FfiPreKeyStoreStruct {
     async fn get_pre_key(
         &self,
@@ -278,7 +275,6 @@ pub struct FfiSignedPreKeyStoreStruct {
     store_signed_pre_key: StoreSignedPreKey,
 }
 
-#[async_trait(?Send)]
 impl SignedPreKeyStore for &FfiSignedPreKeyStoreStruct {
     async fn get_signed_pre_key(
         &self,
@@ -346,7 +342,6 @@ pub struct FfiSessionStoreStruct {
     store_session: StoreSession,
 }
 
-#[async_trait(?Send)]
 impl SessionStore for &FfiSessionStoreStruct {
     async fn load_session(
         &self,
@@ -416,7 +411,6 @@ pub struct FfiSenderKeyStoreStruct {
     store_sender_key: StoreSenderKey,
 }
 
-#[async_trait(?Send)]
 impl SenderKeyStore for &FfiSenderKeyStoreStruct {
     async fn store_sender_key(
         &mut self,

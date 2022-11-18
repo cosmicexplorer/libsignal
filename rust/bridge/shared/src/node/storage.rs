@@ -1,11 +1,10 @@
 //
-// Copyright 2021 Signal Messenger, LLC.
+// Copyright 2021-2022 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
 use super::*;
 
-use async_trait::async_trait;
 use signal_neon_futures::*;
 use std::cell::RefCell;
 use std::sync::Arc;
@@ -101,7 +100,6 @@ impl Finalize for NodePreKeyStore {
     }
 }
 
-#[async_trait(?Send)]
 impl PreKeyStore for NodePreKeyStore {
     async fn get_pre_key(
         &self,
@@ -206,7 +204,6 @@ impl Finalize for NodeSignedPreKeyStore {
     }
 }
 
-#[async_trait(?Send)]
 impl SignedPreKeyStore for NodeSignedPreKeyStore {
     async fn get_signed_pre_key(
         &self,
@@ -307,7 +304,6 @@ impl Finalize for NodeSessionStore {
     }
 }
 
-#[async_trait(?Send)]
 impl SessionStore for NodeSessionStore {
     async fn load_session(
         &self,
@@ -489,7 +485,6 @@ impl Finalize for NodeIdentityKeyStore {
     }
 }
 
-#[async_trait(?Send)]
 impl IdentityKeyStore for NodeIdentityKeyStore {
     async fn get_identity_key_pair(
         &self,
@@ -637,7 +632,6 @@ impl Finalize for NodeSenderKeyStore {
     }
 }
 
-#[async_trait(?Send)]
 impl SenderKeyStore for NodeSenderKeyStore {
     async fn load_sender_key(
         &mut self,

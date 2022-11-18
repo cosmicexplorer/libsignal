@@ -1,10 +1,9 @@
 //
-// Copyright 2021 Signal Messenger, LLC.
+// Copyright 2021-2022 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
 use super::*;
-use async_trait::async_trait;
 use uuid::Uuid;
 
 pub type JavaIdentityKeyStore<'a> = JObject<'a>;
@@ -150,7 +149,6 @@ impl<'a> JniIdentityKeyStore<'a> {
     }
 }
 
-#[async_trait(?Send)]
 impl<'a> IdentityKeyStore for JniIdentityKeyStore<'a> {
     async fn get_identity_key_pair(
         &self,
@@ -249,7 +247,6 @@ impl<'a> JniPreKeyStore<'a> {
     }
 }
 
-#[async_trait(?Send)]
 impl<'a> PreKeyStore for JniPreKeyStore<'a> {
     async fn get_pre_key(
         &self,
@@ -327,7 +324,6 @@ impl<'a> JniSignedPreKeyStore<'a> {
     }
 }
 
-#[async_trait(?Send)]
 impl<'a> SignedPreKeyStore for JniSignedPreKeyStore<'a> {
     async fn get_signed_pre_key(
         &self,
@@ -397,7 +393,6 @@ impl<'a> JniSessionStore<'a> {
     }
 }
 
-#[async_trait(?Send)]
 impl<'a> SessionStore for JniSessionStore<'a> {
     async fn load_session(
         &self,
@@ -473,7 +468,6 @@ impl<'a> JniSenderKeyStore<'a> {
     }
 }
 
-#[async_trait(?Send)]
 impl<'a> SenderKeyStore for JniSenderKeyStore<'a> {
     async fn store_sender_key(
         &mut self,
