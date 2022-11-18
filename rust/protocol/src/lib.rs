@@ -1,5 +1,5 @@
 //
-// Copyright 2020-2021 Signal Messenger, LLC.
+// Copyright 2020-2022 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
@@ -16,6 +16,7 @@
 
 #![warn(clippy::unwrap_used)]
 #![deny(unsafe_code)]
+#![feature(async_fn_in_trait)]
 
 // TODO(https://github.com/signalapp/libsignal/issues/285): it should be an aspiration to
 // eventually warn and then error for public members without docstrings. Also see

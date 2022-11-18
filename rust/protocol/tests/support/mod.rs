@@ -1,5 +1,5 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020, 2022 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
@@ -52,10 +52,14 @@ pub async fn decrypt(
 }
 
 #[allow(dead_code)]
-pub async fn create_pre_key_bundle<R: Rng + CryptoRng>(
-    store: &mut dyn ProtocolStore,
+pub async fn create_pre_key_bundle<PS, R>(
+    store: &mut PS,
     mut csprng: &mut R,
-) -> Result<PreKeyBundle, SignalProtocolError> {
+) -> Result<PreKeyBundle, SignalProtocolError>
+where
+    PS: ProtocolStore,
+    R: Rng + CryptoRng,
+{
     let pre_key_pair = KeyPair::generate(&mut csprng);
     let signed_pre_key_pair = KeyPair::generate(&mut csprng);
 

@@ -3,9 +3,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
+#![feature(async_fn_in_trait)]
+
 mod support;
 
-use async_trait::async_trait;
 use futures_util::FutureExt;
 use libsignal_protocol::*;
 use rand::rngs::OsRng;
@@ -53,7 +54,6 @@ impl ContextUsingSenderKeyStore {
     }
 }
 
-#[async_trait(?Send)]
 impl SenderKeyStore for ContextUsingSenderKeyStore {
     async fn store_sender_key(
         &mut self,

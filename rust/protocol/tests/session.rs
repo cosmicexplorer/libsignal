@@ -1123,12 +1123,15 @@ async fn run_interaction(
     Ok(())
 }
 
-async fn is_session_id_equal(
-    alice_store: &dyn ProtocolStore,
+async fn is_session_id_equal<PS>(
+    alice_store: &PS,
     alice_address: &ProtocolAddress,
-    bob_store: &dyn ProtocolStore,
+    bob_store: &PS,
     bob_address: &ProtocolAddress,
-) -> Result<bool, SignalProtocolError> {
+) -> Result<bool, SignalProtocolError>
+where
+    PS: ProtocolStore,
+{
     Ok(alice_store
         .load_session(bob_address, None)
         .await?

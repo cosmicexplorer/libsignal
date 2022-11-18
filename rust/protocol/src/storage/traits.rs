@@ -1,9 +1,8 @@
 //
-// Copyright 2020 Signal Messenger, LLC.
+// Copyright 2020, 2022 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-use async_trait::async_trait;
 use uuid::Uuid;
 
 use crate::state::{PreKeyId, SignedPreKeyId};
@@ -20,7 +19,6 @@ pub enum Direction {
     Receiving,
 }
 
-#[async_trait(?Send)]
 pub trait IdentityKeyStore {
     async fn get_identity_key_pair(&self, ctx: Context) -> Result<IdentityKeyPair>;
 
@@ -48,7 +46,6 @@ pub trait IdentityKeyStore {
     ) -> Result<Option<IdentityKey>>;
 }
 
-#[async_trait(?Send)]
 pub trait PreKeyStore {
     async fn get_pre_key(&self, prekey_id: PreKeyId, ctx: Context) -> Result<PreKeyRecord>;
 
@@ -62,7 +59,6 @@ pub trait PreKeyStore {
     async fn remove_pre_key(&mut self, prekey_id: PreKeyId, ctx: Context) -> Result<()>;
 }
 
-#[async_trait(?Send)]
 pub trait SignedPreKeyStore {
     async fn get_signed_pre_key(
         &self,
@@ -78,7 +74,6 @@ pub trait SignedPreKeyStore {
     ) -> Result<()>;
 }
 
-#[async_trait(?Send)]
 pub trait SessionStore {
     async fn load_session(
         &self,
@@ -94,7 +89,6 @@ pub trait SessionStore {
     ) -> Result<()>;
 }
 
-#[async_trait(?Send)]
 pub trait SenderKeyStore {
     async fn store_sender_key(
         &mut self,
