@@ -16,13 +16,17 @@ use crate::{crypto, session};
 
 use rand::{CryptoRng, Rng};
 
-pub async fn message_encrypt(
+pub async fn message_encrypt<SS, IKS>(
     ptext: &[u8],
     remote_address: &ProtocolAddress,
-    session_store: &mut dyn SessionStore,
-    identity_store: &mut dyn IdentityKeyStore,
+    session_store: &mut SS,
+    identity_store: &mut IKS,
     ctx: Context,
-) -> Result<CiphertextMessage> {
+) -> Result<CiphertextMessage>
+where
+    SS: SessionStore,
+    IKS: IdentityKeyStore,
+{
     let mut session_record = session_store
         .load_session(remote_address, ctx)
         .await?
@@ -128,16 +132,23 @@ pub async fn message_encrypt(
     Ok(message)
 }
 
-pub async fn message_decrypt<R: Rng + CryptoRng>(
+pub async fn message_decrypt<SS, IKS, PKS, SPKS, R>(
     ciphertext: &CiphertextMessage,
     remote_address: &ProtocolAddress,
-    session_store: &mut dyn SessionStore,
-    identity_store: &mut dyn IdentityKeyStore,
-    pre_key_store: &mut dyn PreKeyStore,
-    signed_pre_key_store: &mut dyn SignedPreKeyStore,
+    session_store: &mut SS,
+    identity_store: &mut IKS,
+    pre_key_store: &mut PKS,
+    signed_pre_key_store: &mut SPKS,
     csprng: &mut R,
     ctx: Context,
-) -> Result<Vec<u8>> {
+) -> Result<Vec<u8>>
+where
+    SS: SessionStore,
+    IKS: IdentityKeyStore,
+    PKS: PreKeyStore,
+    SPKS: SignedPreKeyStore,
+    R: Rng + CryptoRng,
+{
     match ciphertext {
         CiphertextMessage::SignalMessage(m) => {
             message_decrypt_signal(
@@ -170,16 +181,23 @@ pub async fn message_decrypt<R: Rng + CryptoRng>(
     }
 }
 
-pub async fn message_decrypt_prekey<R: Rng + CryptoRng>(
+pub async fn message_decrypt_prekey<SS, IKS, PKS, SPKS, R>(
     ciphertext: &PreKeySignalMessage,
     remote_address: &ProtocolAddress,
-    session_store: &mut dyn SessionStore,
-    identity_store: &mut dyn IdentityKeyStore,
-    pre_key_store: &mut dyn PreKeyStore,
-    signed_pre_key_store: &mut dyn SignedPreKeyStore,
+    session_store: &mut SS,
+    identity_store: &mut IKS,
+    pre_key_store: &mut PKS,
+    signed_pre_key_store: &mut SPKS,
     csprng: &mut R,
     ctx: Context,
-) -> Result<Vec<u8>> {
+) -> Result<Vec<u8>>
+where
+    SS: SessionStore,
+    IKS: IdentityKeyStore,
+    PKS: PreKeyStore,
+    SPKS: SignedPreKeyStore,
+    R: Rng + CryptoRng,
+{
     let mut session_record = session_store
         .load_session(remote_address, ctx)
         .await?
@@ -234,14 +252,19 @@ pub async fn message_decrypt_prekey<R: Rng + CryptoRng>(
     Ok(ptext)
 }
 
-pub async fn message_decrypt_signal<R: Rng + CryptoRng>(
+pub async fn message_decrypt_signal<SS, IKS, R>(
     ciphertext: &SignalMessage,
     remote_address: &ProtocolAddress,
-    session_store: &mut dyn SessionStore,
-    identity_store: &mut dyn IdentityKeyStore,
+    session_store: &mut SS,
+    identity_store: &mut IKS,
     csprng: &mut R,
     ctx: Context,
-) -> Result<Vec<u8>> {
+) -> Result<Vec<u8>>
+where
+    SS: SessionStore,
+    IKS: IdentityKeyStore,
+    R: Rng + CryptoRng,
+{
     let mut session_record = session_store
         .load_session(remote_address, ctx)
         .await?

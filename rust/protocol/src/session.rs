@@ -22,15 +22,20 @@ its reference to the various data stores, instead the functions are
 free standing.
  */
 
-pub async fn process_prekey(
+pub async fn process_prekey<IKS, PKS, SPKS>(
     message: &PreKeySignalMessage,
     remote_address: &ProtocolAddress,
     session_record: &mut SessionRecord,
-    identity_store: &mut dyn IdentityKeyStore,
-    pre_key_store: &mut dyn PreKeyStore,
-    signed_prekey_store: &mut dyn SignedPreKeyStore,
+    identity_store: &mut IKS,
+    pre_key_store: &mut PKS,
+    signed_prekey_store: &mut SPKS,
     ctx: Context,
-) -> Result<Option<PreKeyId>> {
+) -> Result<Option<PreKeyId>>
+where
+    IKS: IdentityKeyStore,
+    PKS: PreKeyStore,
+    SPKS: SignedPreKeyStore,
+{
     let their_identity_key = message.identity_key();
 
     if !identity_store
@@ -65,15 +70,20 @@ pub async fn process_prekey(
     Ok(unsigned_pre_key_id)
 }
 
-async fn process_prekey_v3(
+async fn process_prekey_v3<SPKS, PKS, IKS>(
     message: &PreKeySignalMessage,
     remote_address: &ProtocolAddress,
     session_record: &mut SessionRecord,
-    signed_prekey_store: &mut dyn SignedPreKeyStore,
-    pre_key_store: &mut dyn PreKeyStore,
-    identity_store: &mut dyn IdentityKeyStore,
+    signed_prekey_store: &mut SPKS,
+    pre_key_store: &mut PKS,
+    identity_store: &mut IKS,
     ctx: Context,
-) -> Result<Option<PreKeyId>> {
+) -> Result<Option<PreKeyId>>
+where
+    SPKS: SignedPreKeyStore,
+    PKS: PreKeyStore,
+    IKS: IdentityKeyStore,
+{
     if session_record.has_session_state(
         message.message_version() as u32,
         &message.base_key().serialize(),
@@ -125,14 +135,19 @@ async fn process_prekey_v3(
     Ok(message.pre_key_id())
 }
 
-pub async fn process_prekey_bundle<R: Rng + CryptoRng>(
+pub async fn process_prekey_bundle<SS, IKS, R>(
     remote_address: &ProtocolAddress,
-    session_store: &mut dyn SessionStore,
-    identity_store: &mut dyn IdentityKeyStore,
+    session_store: &mut SS,
+    identity_store: &mut IKS,
     bundle: &PreKeyBundle,
     mut csprng: &mut R,
     ctx: Context,
-) -> Result<()> {
+) -> Result<()>
+where
+    SS: SessionStore,
+    IKS: IdentityKeyStore,
+    R: Rng + CryptoRng,
+{
     let their_identity_key = bundle.identity_key()?;
 
     if !identity_store

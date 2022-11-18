@@ -772,15 +772,20 @@ mod sealed_sender_v1 {
 /// This is a simple way to encrypt a message in a 1:1 using [Sealed Sender v1].
 ///
 /// [Sealed Sender v1]: sealed_sender_encrypt_from_usmc
-pub async fn sealed_sender_encrypt<R: Rng + CryptoRng>(
+pub async fn sealed_sender_encrypt<SS, IKS, R>(
     destination: &ProtocolAddress,
     sender_cert: &SenderCertificate,
     ptext: &[u8],
-    session_store: &mut dyn SessionStore,
-    identity_store: &mut dyn IdentityKeyStore,
+    session_store: &mut SS,
+    identity_store: &mut IKS,
     ctx: Context,
     rng: &mut R,
-) -> Result<Vec<u8>> {
+) -> Result<Vec<u8>>
+where
+    SS: SessionStore,
+    IKS: IdentityKeyStore,
+    R: Rng + CryptoRng,
+{
     let message = message_encrypt(ptext, destination, session_store, identity_store, ctx).await?;
     let usmc = UnidentifiedSenderMessageContent::new(
         message.message_type(),
@@ -842,13 +847,17 @@ pub async fn sealed_sender_encrypt<R: Rng + CryptoRng>(
 /// `sealed_sender.proto`, prepended with an additional byte to indicate the version of Sealed
 /// Sender in use (see [further documentation on the version
 /// byte](sealed_sender_multi_recipient_encrypt#the-version-byte)).
-pub async fn sealed_sender_encrypt_from_usmc<R: Rng + CryptoRng>(
+pub async fn sealed_sender_encrypt_from_usmc<IKS, R>(
     destination: &ProtocolAddress,
     usmc: &UnidentifiedSenderMessageContent,
-    identity_store: &mut dyn IdentityKeyStore,
+    identity_store: &mut IKS,
     ctx: Context,
     rng: &mut R,
-) -> Result<Vec<u8>> {
+) -> Result<Vec<u8>>
+where
+    IKS: IdentityKeyStore,
+    R: Rng + CryptoRng,
+{
     let our_identity = identity_store.get_identity_key_pair(ctx).await?;
     let their_identity = identity_store
         .get_identity(destination, ctx)
@@ -1214,14 +1223,18 @@ mod sealed_sender_v2 {
 /// "variant". For Sealed Sender's purposes, this is not important except for
 /// debug-printing, since UUIDs are always treated as opaque identifiers matched
 /// byte-for-byte.
-pub async fn sealed_sender_multi_recipient_encrypt<R: Rng + CryptoRng>(
+pub async fn sealed_sender_multi_recipient_encrypt<IKS, R>(
     destinations: &[&ProtocolAddress],
     destination_sessions: &[&SessionRecord],
     usmc: &UnidentifiedSenderMessageContent,
-    identity_store: &mut dyn IdentityKeyStore,
+    identity_store: &mut IKS,
     ctx: Context,
     rng: &mut R,
-) -> Result<Vec<u8>> {
+) -> Result<Vec<u8>>
+where
+    IKS: IdentityKeyStore,
+    R: Rng + CryptoRng,
+{
     if destinations.len() != destination_sessions.len() {
         return Err(SignalProtocolError::InvalidArgument(
             "must have the same number of destination sessions as addresses".to_string(),
@@ -1417,11 +1430,14 @@ pub fn sealed_sender_multi_recipient_fan_out(data: &[u8]) -> Result<Vec<Vec<u8>>
 ///
 /// [`sealed_sender_decrypt`] consumes the output of this method to validate the sender's identity
 /// before decrypting the underlying message.
-pub async fn sealed_sender_decrypt_to_usmc(
+pub async fn sealed_sender_decrypt_to_usmc<IKS>(
     ciphertext: &[u8],
-    identity_store: &mut dyn IdentityKeyStore,
+    identity_store: &mut IKS,
     ctx: Context,
-) -> Result<UnidentifiedSenderMessageContent> {
+) -> Result<UnidentifiedSenderMessageContent>
+where
+    IKS: IdentityKeyStore,
+{
     let our_identity = identity_store.get_identity_key_pair(ctx).await?;
 
     match UnidentifiedSenderMessage::deserialize(ciphertext)? {
@@ -1592,19 +1608,25 @@ impl SealedSenderDecryptionResult {
 /// is then validated against the `trust_root` baked into the client to ensure that the sender's
 /// identity was not forged.
 #[allow(clippy::too_many_arguments)]
-pub async fn sealed_sender_decrypt(
+pub async fn sealed_sender_decrypt<IKS, SS, PKS, SPKS>(
     ciphertext: &[u8],
     trust_root: &PublicKey,
     timestamp: u64,
     local_e164: Option<String>,
     local_uuid: String,
     local_device_id: DeviceId,
-    identity_store: &mut dyn IdentityKeyStore,
-    session_store: &mut dyn SessionStore,
-    pre_key_store: &mut dyn PreKeyStore,
-    signed_pre_key_store: &mut dyn SignedPreKeyStore,
+    identity_store: &mut IKS,
+    session_store: &mut SS,
+    pre_key_store: &mut PKS,
+    signed_pre_key_store: &mut SPKS,
     ctx: Context,
-) -> Result<SealedSenderDecryptionResult> {
+) -> Result<SealedSenderDecryptionResult>
+where
+    IKS: IdentityKeyStore,
+    SS: SessionStore,
+    PKS: PreKeyStore,
+    SPKS: SignedPreKeyStore,
+{
     let usmc = sealed_sender_decrypt_to_usmc(ciphertext, identity_store, ctx).await?;
 
     if !usmc.sender()?.validate(trust_root, timestamp)? {

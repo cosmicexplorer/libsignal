@@ -1,5 +1,5 @@
 //
-// Copyright 2020-2021 Signal Messenger, LLC.
+// Copyright 2020-2022 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
@@ -17,14 +17,18 @@ use rand::{CryptoRng, Rng};
 use std::convert::TryFrom;
 use uuid::Uuid;
 
-pub async fn group_encrypt<R: Rng + CryptoRng>(
-    sender_key_store: &mut dyn SenderKeyStore,
+pub async fn group_encrypt<SKS, R: Rng + CryptoRng>(
+    sender_key_store: &mut SKS,
     sender: &ProtocolAddress,
     distribution_id: Uuid,
     plaintext: &[u8],
     csprng: &mut R,
     ctx: Context,
-) -> Result<SenderKeyMessage> {
+) -> Result<SenderKeyMessage>
+where
+    SKS: SenderKeyStore,
+    R: Rng + CryptoRng,
+{
     let mut record = sender_key_store
         .load_sender_key(sender, distribution_id, ctx)
         .await?
@@ -124,12 +128,15 @@ fn get_sender_key(
     Ok(sender_chain_key.sender_message_key())
 }
 
-pub async fn group_decrypt(
+pub async fn group_decrypt<SKS>(
     skm_bytes: &[u8],
-    sender_key_store: &mut dyn SenderKeyStore,
+    sender_key_store: &mut SKS,
     sender: &ProtocolAddress,
     ctx: Context,
-) -> Result<Vec<u8>> {
+) -> Result<Vec<u8>>
+where
+    SKS: SenderKeyStore,
+{
     let skm = SenderKeyMessage::try_from(skm_bytes)?;
 
     let distribution_id = skm.distribution_id();
@@ -200,12 +207,15 @@ pub async fn group_decrypt(
     Ok(plaintext)
 }
 
-pub async fn process_sender_key_distribution_message(
+pub async fn process_sender_key_distribution_message<SKS>(
     sender: &ProtocolAddress,
     skdm: &SenderKeyDistributionMessage,
-    sender_key_store: &mut dyn SenderKeyStore,
+    sender_key_store: &mut SKS,
     ctx: Context,
-) -> Result<()> {
+) -> Result<()>
+where
+    SKS: SenderKeyStore,
+{
     let distribution_id = skdm.distribution_id()?;
     log::info!(
         "{} Processing SenderKey distribution {} with chain ID {}",
@@ -233,13 +243,17 @@ pub async fn process_sender_key_distribution_message(
     Ok(())
 }
 
-pub async fn create_sender_key_distribution_message<R: Rng + CryptoRng>(
+pub async fn create_sender_key_distribution_message<SKS, R>(
     sender: &ProtocolAddress,
     distribution_id: Uuid,
-    sender_key_store: &mut dyn SenderKeyStore,
+    sender_key_store: &mut SKS,
     csprng: &mut R,
     ctx: Context,
-) -> Result<SenderKeyDistributionMessage> {
+) -> Result<SenderKeyDistributionMessage>
+where
+    SKS: SenderKeyStore,
+    R: Rng + CryptoRng,
+{
     let sender_key_record = sender_key_store
         .load_sender_key(sender, distribution_id, ctx)
         .await?;
