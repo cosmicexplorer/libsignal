@@ -32,9 +32,9 @@ pub async fn process_prekey<IKS, PKS, SPKS>(
     ctx: Context,
 ) -> Result<Option<PreKeyId>>
 where
-    IKS: IdentityKeyStore,
-    PKS: PreKeyStore,
-    SPKS: SignedPreKeyStore,
+    IKS: IdentityKeyStore + ?Sized,
+    PKS: PreKeyStore + ?Sized,
+    SPKS: SignedPreKeyStore + ?Sized,
 {
     let their_identity_key = message.identity_key();
 
@@ -80,9 +80,9 @@ async fn process_prekey_v3<SPKS, PKS, IKS>(
     ctx: Context,
 ) -> Result<Option<PreKeyId>>
 where
-    SPKS: SignedPreKeyStore,
-    PKS: PreKeyStore,
-    IKS: IdentityKeyStore,
+    SPKS: SignedPreKeyStore + ?Sized,
+    PKS: PreKeyStore + ?Sized,
+    IKS: IdentityKeyStore + ?Sized,
 {
     if session_record.has_session_state(
         message.message_version() as u32,
@@ -144,8 +144,8 @@ pub async fn process_prekey_bundle<SS, IKS, R>(
     ctx: Context,
 ) -> Result<()>
 where
-    SS: SessionStore,
-    IKS: IdentityKeyStore,
+    SS: SessionStore + ?Sized,
+    IKS: IdentityKeyStore + ?Sized,
     R: Rng + CryptoRng,
 {
     let their_identity_key = bundle.identity_key()?;

@@ -24,8 +24,8 @@ pub async fn message_encrypt<SS, IKS>(
     ctx: Context,
 ) -> Result<CiphertextMessage>
 where
-    SS: SessionStore,
-    IKS: IdentityKeyStore,
+    SS: SessionStore + ?Sized,
+    IKS: IdentityKeyStore + ?Sized,
 {
     let mut session_record = session_store
         .load_session(remote_address, ctx)
@@ -143,10 +143,10 @@ pub async fn message_decrypt<SS, IKS, PKS, SPKS, R>(
     ctx: Context,
 ) -> Result<Vec<u8>>
 where
-    SS: SessionStore,
-    IKS: IdentityKeyStore,
-    PKS: PreKeyStore,
-    SPKS: SignedPreKeyStore,
+    SS: SessionStore + ?Sized,
+    IKS: IdentityKeyStore + ?Sized,
+    PKS: PreKeyStore + ?Sized,
+    SPKS: SignedPreKeyStore + ?Sized,
     R: Rng + CryptoRng,
 {
     match ciphertext {
@@ -192,10 +192,10 @@ pub async fn message_decrypt_prekey<SS, IKS, PKS, SPKS, R>(
     ctx: Context,
 ) -> Result<Vec<u8>>
 where
-    SS: SessionStore,
-    IKS: IdentityKeyStore,
-    PKS: PreKeyStore,
-    SPKS: SignedPreKeyStore,
+    SS: SessionStore + ?Sized,
+    IKS: IdentityKeyStore + ?Sized,
+    PKS: PreKeyStore + ?Sized,
+    SPKS: SignedPreKeyStore + ?Sized,
     R: Rng + CryptoRng,
 {
     let mut session_record = session_store
@@ -261,8 +261,8 @@ pub async fn message_decrypt_signal<SS, IKS, R>(
     ctx: Context,
 ) -> Result<Vec<u8>>
 where
-    SS: SessionStore,
-    IKS: IdentityKeyStore,
+    SS: SessionStore + ?Sized,
+    IKS: IdentityKeyStore + ?Sized,
     R: Rng + CryptoRng,
 {
     let mut session_record = session_store

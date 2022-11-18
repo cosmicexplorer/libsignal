@@ -26,7 +26,7 @@ pub async fn group_encrypt<SKS, R: Rng + CryptoRng>(
     ctx: Context,
 ) -> Result<SenderKeyMessage>
 where
-    SKS: SenderKeyStore,
+    SKS: SenderKeyStore + ?Sized,
     R: Rng + CryptoRng,
 {
     let mut record = sender_key_store
@@ -135,7 +135,7 @@ pub async fn group_decrypt<SKS>(
     ctx: Context,
 ) -> Result<Vec<u8>>
 where
-    SKS: SenderKeyStore,
+    SKS: SenderKeyStore + ?Sized,
 {
     let skm = SenderKeyMessage::try_from(skm_bytes)?;
 

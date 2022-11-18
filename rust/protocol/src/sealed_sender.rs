@@ -782,8 +782,8 @@ pub async fn sealed_sender_encrypt<SS, IKS, R>(
     rng: &mut R,
 ) -> Result<Vec<u8>>
 where
-    SS: SessionStore,
-    IKS: IdentityKeyStore,
+    SS: SessionStore + ?Sized,
+    IKS: IdentityKeyStore + ?Sized,
     R: Rng + CryptoRng,
 {
     let message = message_encrypt(ptext, destination, session_store, identity_store, ctx).await?;
@@ -855,7 +855,7 @@ pub async fn sealed_sender_encrypt_from_usmc<IKS, R>(
     rng: &mut R,
 ) -> Result<Vec<u8>>
 where
-    IKS: IdentityKeyStore,
+    IKS: IdentityKeyStore + ?Sized,
     R: Rng + CryptoRng,
 {
     let our_identity = identity_store.get_identity_key_pair(ctx).await?;
@@ -1232,7 +1232,7 @@ pub async fn sealed_sender_multi_recipient_encrypt<IKS, R>(
     rng: &mut R,
 ) -> Result<Vec<u8>>
 where
-    IKS: IdentityKeyStore,
+    IKS: IdentityKeyStore + ?Sized,
     R: Rng + CryptoRng,
 {
     if destinations.len() != destination_sessions.len() {
@@ -1436,7 +1436,7 @@ pub async fn sealed_sender_decrypt_to_usmc<IKS>(
     ctx: Context,
 ) -> Result<UnidentifiedSenderMessageContent>
 where
-    IKS: IdentityKeyStore,
+    IKS: IdentityKeyStore + ?Sized,
 {
     let our_identity = identity_store.get_identity_key_pair(ctx).await?;
 
@@ -1622,10 +1622,10 @@ pub async fn sealed_sender_decrypt<IKS, SS, PKS, SPKS>(
     ctx: Context,
 ) -> Result<SealedSenderDecryptionResult>
 where
-    IKS: IdentityKeyStore,
-    SS: SessionStore,
-    PKS: PreKeyStore,
-    SPKS: SignedPreKeyStore,
+    IKS: IdentityKeyStore + ?Sized,
+    SS: SessionStore + ?Sized,
+    PKS: PreKeyStore + ?Sized,
+    SPKS: SignedPreKeyStore + ?Sized,
 {
     let usmc = sealed_sender_decrypt_to_usmc(ciphertext, identity_store, ctx).await?;
 
