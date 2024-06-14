@@ -4,7 +4,7 @@ name: Lints
 
 on:
   push:
-    branches: [ master ]
+    branches: [ main ]
     paths: ['**/*.sh', '**/*.py']
   pull_request:
     paths: ['**/*.sh', '**/*.py']
@@ -16,7 +16,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
-    - run: pip3 install flake8
+    - uses: actions/checkout@v3
+    - run: pip3 install flake8 mypy
     - run: shellcheck **/*.sh
     - run: python3 -m flake8 .
+    # Only include typed Python scripts here.
+    - run: python3 -m mypy bin/fetch_archive.py --python-version 3.6 --strict

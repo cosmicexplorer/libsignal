@@ -1,5 +1,5 @@
 //
-// Copyright 2020-2021 Signal Messenger, LLC.
+// Copyright 2020-2022 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
@@ -21,7 +21,7 @@ use crate::util::*;
 
 #[no_mangle]
 pub unsafe extern "C" fn signal_print_ptr(p: *const std::ffi::c_void) {
-    println!("In rust thats {:?}", p);
+    println!("In rust that's {:?}", p);
 }
 
 #[no_mangle]
@@ -29,7 +29,7 @@ pub unsafe extern "C" fn signal_free_string(buf: *const c_char) {
     if buf.is_null() {
         return;
     }
-    CString::from_raw(buf as _);
+    drop(CString::from_raw(buf as _));
 }
 
 #[no_mangle]
@@ -37,7 +37,10 @@ pub unsafe extern "C" fn signal_free_buffer(buf: *const c_uchar, buf_len: size_t
     if buf.is_null() {
         return;
     }
-    Box::from_raw(std::slice::from_raw_parts_mut(buf as *mut c_uchar, buf_len));
+    drop(Box::from_raw(std::slice::from_raw_parts_mut(
+        buf as *mut c_uchar,
+        buf_len,
+    )));
 }
 
 #[no_mangle]
@@ -50,7 +53,7 @@ pub unsafe extern "C" fn signal_error_get_message(
             return Err(SignalFfiError::NullPointer);
         }
         let msg = format!("{}", *err);
-        write_cstr_to(out, Ok(msg))
+        write_result_to(out, msg)
     })();
 
     match result {
@@ -69,7 +72,34 @@ pub unsafe extern "C" fn signal_error_get_address(
         let err = err.as_ref().ok_or(SignalFfiError::NullPointer)?;
         match err {
             SignalFfiError::Signal(SignalProtocolError::InvalidRegistrationId(addr, _value)) => {
-                box_object(out, Ok(addr.clone()))?;
+                write_result_to(out, addr.clone())?;
+            }
+            _ => {
+                return Err(SignalFfiError::Signal(
+                    SignalProtocolError::InvalidArgument(format!(
+                        "cannot get address from error ({})",
+                        err
+                    )),
+                ));
+            }
+        }
+        Ok(())
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn signal_error_get_uuid(
+    err: *const SignalFfiError,
+    out: *mut [u8; 16],
+) -> *mut SignalFfiError {
+    let err = AssertUnwindSafe(err);
+    run_ffi_safe(|| {
+        let err = err.as_ref().ok_or(SignalFfiError::NullPointer)?;
+        match err {
+            SignalFfiError::Signal(SignalProtocolError::InvalidSenderKeySession {
+                distribution_id,
+            }) => {
+                write_result_to(out, *distribution_id.as_bytes())?;
             }
             _ => {
                 return Err(SignalFfiError::Signal(
@@ -106,26 +136,24 @@ pub unsafe extern "C" fn signal_error_free(err: *mut SignalFfiError) {
 pub unsafe extern "C" fn signal_identitykeypair_deserialize(
     private_key: *mut *mut PrivateKey,
     public_key: *mut *mut PublicKey,
-    input: *const c_uchar,
-    input_len: size_t,
+    input: BorrowedSliceOf<c_uchar>,
 ) -> *mut SignalFfiError {
     run_ffi_safe(|| {
-        let input = as_slice(input, input_len)?;
+        let input = input.as_slice()?;
         let identity_key_pair = IdentityKeyPair::try_from(input)?;
-        box_object::<PublicKey>(public_key, Ok(*identity_key_pair.public_key()))?;
-        box_object::<PrivateKey>(private_key, Ok(*identity_key_pair.private_key()))
+        write_result_to(public_key, *identity_key_pair.public_key())?;
+        write_result_to(private_key, *identity_key_pair.private_key())?;
+        Ok(())
     })
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn signal_sealed_session_cipher_decrypt(
-    out: *mut *const c_uchar,
-    out_len: *mut size_t,
+    out: *mut OwnedBufferOf<c_uchar>,
     sender_e164: *mut *const c_char,
     sender_uuid: *mut *const c_char,
     sender_device_id: *mut u32,
-    ctext: *const c_uchar,
-    ctext_len: size_t,
+    ctext: BorrowedSliceOf<c_uchar>,
     trust_root: *const PublicKey,
     timestamp: u64,
     local_e164: *const c_char,
@@ -138,7 +166,8 @@ pub unsafe extern "C" fn signal_sealed_session_cipher_decrypt(
     ctx: *mut c_void,
 ) -> *mut SignalFfiError {
     run_ffi_safe(|| {
-        let ctext = as_slice(ctext, ctext_len)?;
+        let mut kyber_pre_key_store = InMemKyberPreKeyStore::new();
+        let ctext = ctext.as_slice()?;
         let trust_root = native_handle_cast::<PublicKey>(trust_root)?;
         let mut identity_store = identity_store.as_ref().ok_or(SignalFfiError::NullPointer)?;
         let mut session_store = session_store.as_ref().ok_or(SignalFfiError::NullPointer)?;
@@ -156,19 +185,21 @@ pub unsafe extern "C" fn signal_sealed_session_cipher_decrypt(
             timestamp,
             local_e164,
             local_uuid,
-            local_device_id,
+            local_device_id.into(),
             &mut identity_store,
             &mut session_store,
             &mut prekey_store,
             &mut signed_prekey_store,
+            &mut kyber_pre_key_store,
             Some(ctx),
         )
         .now_or_never()
         .expect("synchronous")?;
 
-        write_optional_cstr_to(sender_e164, Ok(decrypted.sender_e164))?;
-        write_cstr_to(sender_uuid, Ok(decrypted.sender_uuid))?;
-        write_result_to(sender_device_id, decrypted.device_id)?;
-        write_bytearray_to(out, out_len, Some(decrypted.message))
+        write_result_to(sender_e164, decrypted.sender_e164)?;
+        write_result_to(sender_uuid, decrypted.sender_uuid)?;
+        write_result_to(sender_device_id, u32::from(decrypted.device_id))?;
+        write_result_to(out, decrypted.message)?;
+        Ok(())
     })
 }

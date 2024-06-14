@@ -6,11 +6,17 @@
 use jni::objects::{GlobalRef, JObject, JString, JThrowable};
 use jni::{JNIEnv, JavaVM};
 use std::fmt;
+use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 
+use attest::hsm_enclave::Error as HsmEnclaveError;
 use device_transfer::Error as DeviceTransferError;
-use hsm_enclave::Error as HsmEnclaveError;
 use libsignal_protocol::*;
 use signal_crypto::Error as SignalCryptoError;
+use signal_pin::Error as PinError;
+use usernames::{UsernameError, UsernameLinkError};
+use zkgroup::{ZkGroupDeserializationFailure, ZkGroupVerificationFailure};
+
+use crate::support::describe_panic;
 
 use super::*;
 
@@ -20,12 +26,25 @@ pub enum SignalJniError {
     Signal(SignalProtocolError),
     DeviceTransfer(DeviceTransferError),
     SignalCrypto(SignalCryptoError),
+    HsmEnclave(HsmEnclaveError),
+    Sgx(SgxError),
+    Pin(PinError),
+    ZkGroupDeserializationFailure(ZkGroupDeserializationFailure),
+    ZkGroupVerificationFailure(ZkGroupVerificationFailure),
+    UsernameError(UsernameError),
+    UsernameLinkError(UsernameLinkError),
+    Io(IoError),
+    #[cfg(feature = "signal-media")]
+    MediaSanitizeParse(signal_media::sanitize::ParseErrorReport),
     Jni(jni::errors::Error),
     BadJniParameter(&'static str),
     UnexpectedJniResultType(&'static str, &'static str),
     NullHandle,
     IntegerOverflow(String),
-    HsmEnclave(HsmEnclaveError),
+    IncorrectArrayLength {
+        expected: usize,
+        actual: usize,
+    },
     UnexpectedPanic(std::boxed::Box<dyn std::any::Any + std::marker::Send>),
 }
 
@@ -34,7 +53,17 @@ impl fmt::Display for SignalJniError {
         match self {
             SignalJniError::Signal(s) => write!(f, "{}", s),
             SignalJniError::DeviceTransfer(s) => write!(f, "{}", s),
+            SignalJniError::HsmEnclave(e) => write!(f, "{}", e),
+            SignalJniError::Sgx(e) => write!(f, "{}", e),
+            SignalJniError::Pin(e) => write!(f, "{}", e),
             SignalJniError::SignalCrypto(s) => write!(f, "{}", s),
+            SignalJniError::ZkGroupVerificationFailure(e) => write!(f, "{}", e),
+            SignalJniError::ZkGroupDeserializationFailure(e) => write!(f, "{}", e),
+            SignalJniError::UsernameError(e) => write!(f, "{}", e),
+            SignalJniError::UsernameLinkError(e) => write!(f, "{}", e),
+            SignalJniError::Io(e) => write!(f, "{}", e),
+            #[cfg(feature = "signal-media")]
+            SignalJniError::MediaSanitizeParse(e) => write!(f, "{}", e),
             SignalJniError::Jni(s) => write!(f, "JNI error {}", s),
             SignalJniError::NullHandle => write!(f, "null handle"),
             SignalJniError::BadJniParameter(m) => write!(f, "bad parameter type {}", m),
@@ -44,13 +73,16 @@ impl fmt::Display for SignalJniError {
             SignalJniError::IntegerOverflow(m) => {
                 write!(f, "integer overflow during conversion of {}", m)
             }
-            SignalJniError::HsmEnclave(e) => {
-                write!(f, "{}", e)
+            SignalJniError::IncorrectArrayLength { expected, actual } => {
+                write!(
+                    f,
+                    "expected array with length {} (was {})",
+                    expected, actual
+                )
             }
-            SignalJniError::UnexpectedPanic(e) => match e.downcast_ref::<&'static str>() {
-                Some(s) => write!(f, "unexpected panic: {}", s),
-                None => write!(f, "unknown unexpected panic"),
-            },
+            SignalJniError::UnexpectedPanic(e) => {
+                write!(f, "unexpected panic: {}", describe_panic(e))
+            }
         }
     }
 }
@@ -73,9 +105,62 @@ impl From<HsmEnclaveError> for SignalJniError {
     }
 }
 
+impl From<SgxError> for SignalJniError {
+    fn from(e: SgxError) -> SignalJniError {
+        SignalJniError::Sgx(e)
+    }
+}
+
+impl From<PinError> for SignalJniError {
+    fn from(e: PinError) -> SignalJniError {
+        SignalJniError::Pin(e)
+    }
+}
+
 impl From<SignalCryptoError> for SignalJniError {
     fn from(e: SignalCryptoError) -> SignalJniError {
         SignalJniError::SignalCrypto(e)
+    }
+}
+
+impl From<ZkGroupVerificationFailure> for SignalJniError {
+    fn from(e: ZkGroupVerificationFailure) -> SignalJniError {
+        SignalJniError::ZkGroupVerificationFailure(e)
+    }
+}
+
+impl From<ZkGroupDeserializationFailure> for SignalJniError {
+    fn from(e: ZkGroupDeserializationFailure) -> SignalJniError {
+        SignalJniError::ZkGroupDeserializationFailure(e)
+    }
+}
+
+impl From<UsernameError> for SignalJniError {
+    fn from(e: UsernameError) -> Self {
+        SignalJniError::UsernameError(e)
+    }
+}
+
+impl From<UsernameLinkError> for SignalJniError {
+    fn from(e: UsernameLinkError) -> Self {
+        SignalJniError::UsernameLinkError(e)
+    }
+}
+
+impl From<IoError> for SignalJniError {
+    fn from(e: IoError) -> SignalJniError {
+        Self::Io(e)
+    }
+}
+
+#[cfg(feature = "signal-media")]
+impl From<signal_media::sanitize::Error> for SignalJniError {
+    fn from(e: signal_media::sanitize::Error) -> Self {
+        use signal_media::sanitize::Error;
+        match e {
+            Error::Io(e) => Self::Io(e.into()),
+            Error::Parse(e) => Self::MediaSanitizeParse(e),
+        }
     }
 }
 
@@ -94,6 +179,15 @@ impl From<SignalJniError> for SignalProtocolError {
                 SignalProtocolError::InvalidArgument(m.to_string())
             }
             _ => SignalProtocolError::FfiBindingError(format!("{}", err)),
+        }
+    }
+}
+
+impl From<SignalJniError> for IoError {
+    fn from(err: SignalJniError) -> Self {
+        match err {
+            SignalJniError::Io(e) => e,
+            e => IoError::new(IoErrorKind::Other, e.to_string()),
         }
     }
 }
@@ -134,8 +228,7 @@ impl ThrownException {
             env,
             class_type,
             "getCanonicalName",
-            jni_signature!(() -> java.lang.String),
-            &[],
+            jni_args!(() -> java.lang.String),
         )?;
 
         Ok(env.get_string(JString::from(class_name))?.into())
@@ -146,8 +239,7 @@ impl ThrownException {
             env,
             self.exception_ref.as_obj(),
             "getMessage",
-            jni_signature!(() -> java.lang.String),
-            &[],
+            jni_args!(() -> java.lang.String),
         )?;
         Ok(env.get_string(JString::from(message))?.into())
     }

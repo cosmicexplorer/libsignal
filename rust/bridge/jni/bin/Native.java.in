@@ -5,16 +5,17 @@
 
 // WARNING: this file was automatically generated
 
-package org.signal.client.internal;
+package org.signal.libsignal.internal;
 
-import org.whispersystems.libsignal.protocol.CiphertextMessage;
-import org.whispersystems.libsignal.state.IdentityKeyStore;
-import org.whispersystems.libsignal.state.SessionStore;
-import org.whispersystems.libsignal.state.PreKeyStore;
-import org.whispersystems.libsignal.state.SignedPreKeyStore;
-import org.whispersystems.libsignal.groups.state.SenderKeyStore;
-import org.whispersystems.libsignal.logging.Log;
-import org.whispersystems.libsignal.logging.SignalProtocolLogger;
+import org.signal.libsignal.protocol.message.CiphertextMessage;
+import org.signal.libsignal.protocol.state.IdentityKeyStore;
+import org.signal.libsignal.protocol.state.SessionStore;
+import org.signal.libsignal.protocol.state.PreKeyStore;
+import org.signal.libsignal.protocol.state.SignedPreKeyStore;
+import org.signal.libsignal.protocol.state.KyberPreKeyStore;
+import org.signal.libsignal.protocol.groups.state.SenderKeyStore;
+import org.signal.libsignal.protocol.logging.Log;
+import org.signal.libsignal.protocol.logging.SignalProtocolLogger;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -23,10 +24,11 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.util.UUID;
+import java.util.Map;
 
 public final class Native {
-  private static void copyToTempFileAndLoad(InputStream in, String extension) throws IOException {
-    File tempFile = Files.createTempFile("resource", extension).toFile();
+  private static void copyToTempFileAndLoad(InputStream in, String name) throws IOException {
+    File tempFile = Files.createTempFile(null, name).toFile();
     tempFile.deleteOnExit();
 
     try (OutputStream out = new FileOutputStream(tempFile)) {
@@ -41,19 +43,16 @@ public final class Native {
   }
 
   /*
-  If a .so and/or .dylib is embedded within this jar as a resource file, attempt
+  If libsignal_jni is embedded within this jar as a resource file, attempt
   to copy it to a temporary file and then load it. This allows the jar to be
-  used even without a libsignal_jni shared library existing on the filesystem.
+  used even without a shared library existing on the filesystem.
   */
   private static void loadLibrary() {
     try {
-      String  osName    = System.getProperty("os.name").toLowerCase(java.util.Locale.ROOT);
-      boolean isMacOs   = osName.startsWith("mac os");
-      String  extension = isMacOs ? ".dylib" : ".so";
-
-      try (InputStream in = Native.class.getResourceAsStream("/libsignal_jni" + extension)) {
+      String libraryName = System.mapLibraryName("signal_jni");
+      try (InputStream in = Native.class.getResourceAsStream("/" + libraryName)) {
         if (in != null) {
-          copyToTempFileAndLoad(in, extension);
+          copyToTempFileAndLoad(in, libraryName);
         } else {
           System.loadLibrary("signal_jni");
         }
@@ -69,6 +68,21 @@ public final class Native {
   }
 
   private Native() {}
+
+  /**
+   * Keeps an object from being garbage-collected until this call completes.
+   *
+   * This can be used to keep a Java wrapper around a Rust object handle alive while
+   * earlier calls use that Rust object handle. That is, you should call {@code keepAlive} 
+   * <em>after</em> the code where an object must not be garbage-collected.
+   * However, most of the time {@link NativeHandleGuard} is a better choice,
+   * since the lifetime of the guard is clear.
+   *
+   * Effectively equivalent to Java 9's <a href="https://docs.oracle.com/javase/9/docs/api/java/lang/ref/Reference.html#reachabilityFence-java.lang.Object-"><code>reachabilityFence()</code></a>.
+   * Uses {@code native} because the JVM can't look into the implementation of the method
+   * and optimize away the use of {@code obj}. (The actual implementation does nothing.)
+   */
+  public static native void keepAlive(Object obj);
 
   // INSERT DECLS HERE
 }

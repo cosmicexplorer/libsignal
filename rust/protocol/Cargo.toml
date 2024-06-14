@@ -1,26 +1,29 @@
 #
-# Copyright (C) 2020-2021 Signal Messenger, LLC.
+# Copyright (C) 2020-2022 Signal Messenger, LLC.
 # SPDX-License-Identifier: AGPL-3.0-only
 #
 
 [package]
 name = "libsignal-protocol"
 version = "0.1.0"
-authors = ["Ehren Kret <ehren@signal.org>", "Jack Lloyd <jack@signal.org>"]
+authors = ["Signal Messenger LLC"]
 edition = "2018"
 license = "AGPL-3.0-only"
-repository = "https://github.com/signalapp/libsignal-client"
 
 [dependencies]
+signal-crypto = { path = "../crypto" }
 aes = { version = "0.7.4", features = ["ctr"] }
 aes-gcm-siv = "0.10.1"
 arrayref = "0.3.6"
 async-trait = "0.1.41"
 block-modes = "0.8"
-curve25519-dalek = { version = "3.0", features = ["serde"] }
-hmac = "0.9.0"
+curve25519-dalek = "3.0"
+generic-array = "0.14.5"
+hkdf = "0.11"
+hmac = "0.11.0"
+typenum = "1.12.0"
 itertools = "0.10.1"
-prost = "0.8"
+prost = "0.9"
 rand = "0.7.3"
 sha2 = "0.9"
 subtle = "2.2.3"
@@ -28,17 +31,28 @@ x25519-dalek = "1.0"
 hex = "0.4"
 log = "0.4"
 num_enum = "0.5.1"
-uuid = "0.8"
+uuid = "1.1.2"
+displaydoc = "0.2"
+thiserror = "1.0.30"
+pqcrypto-kyber = {version = "0.7.6", default-features = false, features = ["std"]}
+pqcrypto-traits = "0.3.4"
 
 [features]
 armv8 = ["aes/armv8", "aes-gcm-siv/armv8"]
 
 [dev-dependencies]
-criterion = "0.3"
+criterion = "0.4"
+hex-literal = "0.3.4"
+proptest = "1.0"
 futures-util = "0.3.7"
+env_logger = "0.8.1"
 
 [build-dependencies]
-prost-build = "0.8"
+prost-build = "0.9"
+
+[[bench]]
+name = "curve"
+harness = false
 
 [[bench]]
 name = "session"
@@ -50,4 +64,8 @@ harness = false
 
 [[bench]]
 name = "sealed_sender"
+harness = false
+
+[[bench]]
+name = "kem"
 harness = false

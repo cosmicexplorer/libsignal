@@ -1,5 +1,6 @@
 disabled_rules:
 - cyclomatic_complexity
+- empty_enum_arguments
 - force_try
 - function_body_length
 - function_parameter_count
@@ -14,6 +15,9 @@ opt_in_rules:
 file_header:
   required_pattern: |
     //
-    // Copyright \d{4}(-\d{4})? Signal Messenger, LLC
+    // Copyright \d{4}(-\d{4})? Signal Messenger, LLC.
     // SPDX-License-Identifier: AGPL-3.0-only
     //
+inclusive_language:
+  override_allowed_terms:
+  - master

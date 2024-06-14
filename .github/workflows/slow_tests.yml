@@ -1,0 +1,204 @@
+name: Slow Tests
+
+on:
+  schedule:
+    # "High load times include the start of every hour.
+    #  To decrease the chance of delay, schedule your workflow to run
+    #  at a different time of the hour."
+    # We pick 8:25 UTC, aiming for "later than PST/UTC-8 night work" and
+    # "earlier than ADT/UTC-3 morning work".
+    - cron: '25 8 * * *'
+  workflow_dispatch: {} # no parameters
+
+jobs:
+  check-up-to-date:
+    name: Already up to date?
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'schedule' && github.repository_owner == 'signalapp' && endsWith(github.repository, '-private') }}
+    outputs:
+      has-changes: ${{ steps.check.outputs.has-changes }}
+    steps:
+    - uses: actions/checkout@v3
+    - run: git log --after '24 hours ago' --exit-code || echo 'has-changes=true' >> $GITHUB_OUTPUT
+      id: check
+
+  java-docker:
+    name: Java (Docker)
+    runs-on: ubuntu-latest
+    needs: [check-up-to-date]
+    if: ${{ always() && (needs.check-up-to-date.outputs.has-changes || github.event_name != 'schedule') }}
+
+    steps:
+    - uses: actions/checkout@v3
+    - run: make -C java java_test
+    - name: Upload JNI libraries
+      uses: actions/upload-artifact@v3
+      with:
+        name: jniLibs
+        path: java/android/src/main/jniLibs/*
+        retention-days: 2
+
+  android-emulator-tests:
+    name: Android Emulator Tests
+    # For hardware acceleration; see https://github.blog/changelog/2023-02-23-hardware-accelerated-android-virtualization-on-actions-windows-and-linux-larger-hosted-runners/
+    runs-on: ubuntu-latest-4-cores
+    needs: [java-docker]
+    if: ${{ always() && needs.java-docker.result == 'success' }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86, x86_64]
+
+    steps:
+      - run: 'echo "JAVA_HOME=$JAVA_HOME_11_X64" >> "$GITHUB_ENV"'
+
+      # For hardware acceleration; see https://github.blog/changelog/2023-02-23-hardware-accelerated-android-virtualization-on-actions-windows-and-linux-larger-hosted-runners/
+      - name: Enable KVM group perms
+        run: |
+            echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+            sudo udevadm control --reload-rules
+            sudo udevadm trigger --name-match=kvm
+
+      - uses: actions/checkout@v3
+
+      - name: Download JNI libraries
+        id: download
+        uses: actions/download-artifact@v3
+        with:
+          name: jniLibs
+          path: java/android/src/main/jniLibs/
+
+      # From reactivecircus/android-emulator-runner
+      - name: AVD cache
+        uses: actions/cache@v3
+        id: avd-cache
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-${{ matrix.arch }}-21-linux
+
+      - name: Create AVD and generate snapshot for caching
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@d94c3fbe4fe6a29e4a5ba47c12fb47677c73656b # v2.28.0
+        with:
+          arch: ${{ matrix.arch }}
+          api-level: 21
+          force-avd-creation: false
+          emulator-options: -no-window -noaudio -no-boot-anim
+          script: echo "Generated AVD snapshot for caching."
+
+      - name: Run tests
+        uses: reactivecircus/android-emulator-runner@d94c3fbe4fe6a29e4a5ba47c12fb47677c73656b # v2.28.0
+        with:
+          arch: ${{ matrix.arch }}
+          api-level: 21
+          force-avd-creation: false
+          emulator-options: -no-snapshot-save -no-window -noaudio -no-boot-anim
+          script: ./gradlew android:connectedCheck -x makeJniLibrariesDesktop -x android:makeJniLibraries
+          working-directory: java
+
+  node-docker:
+    name: Node (Ubuntu via Docker)
+    runs-on: ubuntu-latest
+    needs: [check-up-to-date]
+    if: ${{ always() && (needs.check-up-to-date.outputs.has-changes || github.event_name != 'schedule') }}
+
+    steps:
+    - uses: actions/checkout@v3
+    - run: node/docker-prebuildify.sh
+
+  node-windows-arm64:
+    name: Node (Windows ARM64 cross-compile)
+    runs-on: windows-latest
+    needs: [check-up-to-date]
+    if: ${{ always() && (needs.check-up-to-date.outputs.has-changes || github.event_name != 'schedule') }}
+
+    steps:
+    - uses: actions/checkout@v3
+    - run: rustup toolchain install $(cat rust-toolchain) --profile minimal --target aarch64-pc-windows-msvc
+    # install nasm compiler for boring
+    - name: Install nasm
+      run: choco install nasm
+      shell: cmd
+    - name: Get Node version from .nvmrc
+      id: get-nvm-version
+      shell: bash
+      run: echo "node-version=$(cat .nvmrc)" >> $GITHUB_OUTPUT
+    - uses: actions/setup-node@v3
+      with:
+        node-version-file: '.nvmrc'
+    - run: npx yarn install --ignore-scripts --frozen-lockfile
+      working-directory: node
+    - name: Build for arm64
+      run: npx prebuildify --napi -t ${{ steps.get-nvm-version.outputs.node-version }} --arch arm64
+      working-directory: node
+
+  swift-cocoapod:
+    name: Swift CocoaPod (with Catalyst)
+    runs-on: macOS-latest
+    needs: [check-up-to-date]
+    if: ${{ always() && (needs.check-up-to-date.outputs.has-changes || github.event_name != 'schedule') }}
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Check out SignalCoreKit
+        uses: actions/checkout@v3
+        with:
+          repository: signalapp/SignalCoreKit
+          path: SignalCoreKit
+
+      - run: rustup toolchain install $(cat rust-toolchain) --profile minimal --target x86_64-apple-ios,aarch64-apple-ios,aarch64-apple-ios-sim --component rust-src
+
+      - name: Build for x86_64-apple-ios
+        run: swift/build_ffi.sh --release
+        env:
+          CARGO_BUILD_TARGET: x86_64-apple-ios
+
+      - name: Build for aarch64-apple-ios
+        run: swift/build_ffi.sh --release
+        env:
+          CARGO_BUILD_TARGET: aarch64-apple-ios
+
+      - name: Build for aarch64-apple-ios-sim
+        run: swift/build_ffi.sh --release
+        env:
+          CARGO_BUILD_TARGET: aarch64-apple-ios-sim
+
+      - name: Build for x86_64-apple-ios-macabi
+        run: swift/build_ffi.sh --release --build-std
+        env:
+          CARGO_BUILD_TARGET: x86_64-apple-ios-macabi
+
+      - name: Build for aarch64-apple-ios-macabi
+        run: swift/build_ffi.sh --release --build-std
+        env:
+          CARGO_BUILD_TARGET: aarch64-apple-ios-macabi
+
+      - name: Run pod lint
+        # No import validation because it tries to build unsupported platforms (like 32-bit iOS).
+        run: pod lib lint --verbose --platforms=ios --include-podspecs=SignalCoreKit/SignalCoreKit.podspec --skip-import-validation
+
+  report_failures:
+    name: Report Failures
+    runs-on: ubuntu-latest
+    needs: [java-docker, android-emulator-tests, node-docker, node-windows-arm64, swift-cocoapod]
+    if: ${{ failure() && github.event_name == 'schedule' }}
+
+    permissions:
+      # createCommitComment is supposed to only need the default 'read' permissions...
+      # ...but maybe it's different for private repositories.
+      contents: write
+
+    steps:
+    - uses: actions/github-script@v6
+      with:
+        script: |
+          github.rest.repos.createCommitComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            commit_sha: context.sha,
+            body: 'Failed Slow Tests: <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}>'
+          })

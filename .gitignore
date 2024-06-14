@@ -3,8 +3,8 @@
 /target
 /swift/.build
 /node/dist
-/node_modules
-/build
+/node/node_modules
+/node/build
 
 /rust/bridge/node/futures/tests/node-tests/node_modules
 
@@ -15,14 +15,12 @@
 \#*\#
 .\#*
 
-java/build
-java/android/build/
-java/java/build
-java/tests/build
+java/**/build
 java/.gradle
-java/gradle.properties
 java/local.properties
 java/android/src/main/jniLibs
-java/java/src/main/resources
+java/shared/resources/*.dylib
+java/shared/resources/*.so
+java/shared/resources/*.dll
 
 .DS_Store

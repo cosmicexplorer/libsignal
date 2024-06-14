@@ -6,7 +6,7 @@
 [package]
 name = "signal-neon-futures"
 version = "0.1.0"
-authors = ["Jordan Rose <jrose@signal.org>"]
+authors = ["Signal Messenger LLC"]
 license = "AGPL-3.0-only"
 edition = "2018"
 
@@ -21,7 +21,7 @@ path = "benches/node.rs"
 harness = false
 
 [dependencies]
-neon = { version = "0.9", default-features = false, features = ["napi-4", "try-catch-api", "channel-api"] }
+neon = { version = "0.10.0", default-features = false, features = ["napi-4", "try-catch-api", "channel-api", "promise-api"] }
 futures-util = "0.3.7"
 
 [dev-dependencies]

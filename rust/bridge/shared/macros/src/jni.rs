@@ -13,26 +13,12 @@ use unzip3::Unzip3;
 use crate::ResultKind;
 
 pub(crate) fn bridge_fn(name: String, sig: &Signature, result_kind: ResultKind) -> TokenStream2 {
-    let name = format_ident!("Java_org_signal_client_internal_Native_{}", name);
+    let name = format_ident!("Java_org_signal_libsignal_internal_Native_{}", name);
 
-    let (env_arg, output, _output_type) = match (result_kind, &sig.output) {
-        (ResultKind::Regular, ReturnType::Default) => (quote!(), quote!(), quote!(())),
-        (ResultKind::Regular, ReturnType::Type(_, ref ty)) => {
-            (quote!(), quote!(-> jni_result_type!(#ty)), quote!(#ty))
-        }
-        (ResultKind::Void, _) => (quote!(), quote!(), quote!(())),
-        (ResultKind::Buffer, ReturnType::Type(_, _)) => (
-            quote!(&env,),
-            quote!(-> jni::jbyteArray),
-            quote!(jni::jbyteArray),
-        ),
-        (ResultKind::Buffer, ReturnType::Default) => {
-            return Error::new(
-                sig.paren_token.span,
-                "missing result type for bridge_fn_buffer",
-            )
-            .to_compile_error()
-        }
+    let output = match (result_kind, &sig.output) {
+        (ResultKind::Regular, ReturnType::Default) => quote!(),
+        (ResultKind::Regular, ReturnType::Type(_, ty)) => quote!(-> jni_result_type!(#ty)),
+        (ResultKind::Void, _) => quote!(),
     };
 
     let await_if_needed = sig.asyncness.map(|_| {
@@ -44,7 +30,6 @@ pub(crate) fn bridge_fn(name: String, sig: &Signature, result_kind: ResultKind) 
     let (input_names, input_args, input_processing): (Vec<_>, Vec<_>, Vec<_>) = sig
         .inputs
         .iter()
-        .skip(if result_kind.has_env() { 1 } else { 0 })
         .map(|arg| match arg {
             FnArg::Receiver(tokens) => (
                 Ident::new("self", tokens.self_token.span),
@@ -70,7 +55,7 @@ pub(crate) fn bridge_fn(name: String, sig: &Signature, result_kind: ResultKind) 
                 } else {
                     (
                         Ident::new("unexpected", pat.span()),
-                        Error::new(pat.span(), "cannot use patterns in paramater")
+                        Error::new(pat.span(), "cannot use patterns in parameter")
                             .to_compile_error(),
                         quote!(),
                     )
@@ -90,7 +75,7 @@ pub(crate) fn bridge_fn(name: String, sig: &Signature, result_kind: ResultKind) 
         ) #output {
             jni::run_ffi_safe(&env, || {
                 #(#input_processing);*;
-                let __result = #orig_name(#env_arg #(#input_names),*);
+                let __result = #orig_name(#(#input_names),*);
                 #await_if_needed;
                 jni::ResultTypeInfo::convert_into(__result, &env)
             })
@@ -99,5 +84,5 @@ pub(crate) fn bridge_fn(name: String, sig: &Signature, result_kind: ResultKind) 
 }
 
 pub(crate) fn name_from_ident(ident: &Ident) -> String {
-    ident.to_string().replace("_", "_1")
+    ident.to_string().replace('_', "_1")
 }

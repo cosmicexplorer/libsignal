@@ -16,35 +16,13 @@ use crate::ResultKind;
 pub(crate) fn bridge_fn(name: String, sig: &Signature, result_kind: ResultKind) -> TokenStream2 {
     let name = format_ident!("signal_{}", name);
 
-    let (output_args, env_arg, output_processing) = match (result_kind, &sig.output) {
-        (ResultKind::Regular, ReturnType::Default) => (quote!(), quote!(), quote!()),
-        (ResultKind::Regular, ReturnType::Type(_, ref ty)) => (
+    let (output_args, output_processing) = match (result_kind, &sig.output) {
+        (_, ReturnType::Default) => (quote!(), quote!()),
+        (ResultKind::Regular, ReturnType::Type(_, ty)) => (
             quote!(out: *mut ffi_result_type!(#ty),), // note the trailing comma
-            quote!(),
             quote!(ffi::write_result_to(out, __result)?),
         ),
-        (ResultKind::Void, ReturnType::Default) => (quote!(), quote!(), quote!()),
-        (ResultKind::Void, ReturnType::Type(_, _)) => (quote!(), quote!(), quote!(__result?;)),
-        (ResultKind::Buffer, ReturnType::Type(_, _)) => (
-            quote!(
-                out: *mut *const libc::c_uchar,
-                out_len: *mut libc::size_t, // note the trailing comma
-            ),
-            quote!(ffi::Env,), // note the trailing comma
-            quote! {
-                let __result = support::TransformHelper(__result?)
-                    .some_if_needed()
-                    .map(|helper| helper.0);
-                ffi::write_bytearray_to(out, out_len, __result)?
-            },
-        ),
-        (ResultKind::Buffer, ReturnType::Default) => {
-            return Error::new(
-                sig.paren_token.span,
-                "missing result type for bridge_fn_buffer",
-            )
-            .to_compile_error()
-        }
+        (ResultKind::Void, ReturnType::Type(_, _)) => (quote!(), quote!(__result?;)),
     };
 
     let await_if_needed = sig.asyncness.map(|_| {
@@ -56,7 +34,6 @@ pub(crate) fn bridge_fn(name: String, sig: &Signature, result_kind: ResultKind) 
     let (input_names, input_args, input_processing): (Vec<_>, Vec<_>, Vec<_>) = sig
         .inputs
         .iter()
-        .skip(if result_kind.has_env() { 1 } else { 0 })
         .map(|arg| match arg {
             FnArg::Receiver(tokens) => (
                 Ident::new("self", tokens.self_token.span),
@@ -68,36 +45,22 @@ pub(crate) fn bridge_fn(name: String, sig: &Signature, result_kind: ResultKind) 
                 attrs,
                 pat,
                 colon_token,
-                ty
+                ty,
             }) => {
                 if let Pat::Ident(name) = pat.as_ref() {
-                    match ty.as_ref() {
-                        Type::Reference(TypeReference { elem, .. }) if matches!(elem.as_ref(), Type::Slice(_)) => {
-                            let size_arg = format_ident!("{}_len", name.ident);
-                            (
-                                name.ident.clone(),
-                                quote!(
-                                    #(#attrs)* #name #colon_token ffi_arg_type!(#ty),
-                                    #size_arg: libc::size_t
-                                ),
-                                quote!(
-                                    let #name = <#ty as ffi::SizedArgTypeInfo>::convert_from(#name, #size_arg)?
-                                ),
-                            )
-                        }
-                        _ => (
-                            name.ident.clone(),
-                            quote!(#(#attrs)* #name #colon_token ffi_arg_type!(#ty)),
-                            quote! {
-                                let mut #name = <#ty as ffi::ArgTypeInfo>::borrow(#name)?;
-                                let #name = <#ty as ffi::ArgTypeInfo>::load_from(&mut #name)?
-                            },
-                        )
-                    }
+                    (
+                        name.ident.clone(),
+                        quote!(#(#attrs)* #name #colon_token ffi_arg_type!(#ty)),
+                        quote! {
+                            let mut #name = <#ty as ffi::ArgTypeInfo>::borrow(#name)?;
+                            let #name = <#ty as ffi::ArgTypeInfo>::load_from(&mut #name)?
+                        },
+                    )
                 } else {
                     (
                         Ident::new("unexpected", arg.span()),
-                        Error::new(arg.span(), "cannot use patterns in parameter").to_compile_error(),
+                        Error::new(arg.span(), "cannot use patterns in parameter")
+                            .to_compile_error(),
                         quote!(),
                     )
                 }
@@ -115,7 +78,7 @@ pub(crate) fn bridge_fn(name: String, sig: &Signature, result_kind: ResultKind) 
         ) -> *mut ffi::SignalFfiError {
             ffi::run_ffi_safe(|| {
                 #(#input_processing);*;
-                let __result = #orig_name(#env_arg #(#input_names),*);
+                let __result = #orig_name(#(#input_names),*);
                 #await_if_needed;
                 #output_processing;
                 Ok(())

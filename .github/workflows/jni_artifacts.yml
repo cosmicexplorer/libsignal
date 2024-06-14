@@ -1,0 +1,73 @@
+name: Publish JNI Artifacts to GitHub Release
+
+on:
+  push:
+    tags:
+      - v*
+  workflow_dispatch: {} # no parameters
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build
+
+    # Only run this in the public repository unless manually invoked.
+    if: ${{ github.event_name == 'workflow_dispatch' || !endsWith(github.repository, '-private') }}
+
+    runs-on: ${{ matrix.os }}
+
+    permissions:
+      # Needed for ncipollo/release-action.
+      contents: 'write'
+
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            library: libsignal_jni.so
+          - os: windows-latest
+            library: signal_jni.dll
+          - os: macos-latest
+            library: libsignal_jni.dylib
+            additional-rust-target: aarch64-apple-darwin
+
+    env:
+      # Keep this settings in sync with java/build_jni.sh, which supports Android as well.
+      CARGO_PROFILE_RELEASE_DEBUG: 1
+      CARGO_PROFILE_RELEASE_LTO: thin
+      CARGO_PROFILE_RELEASE_OPT_LEVEL: s
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - run: rustup toolchain install $(cat rust-toolchain) --profile minimal
+
+    - run: rustup target add ${{ matrix.additional-rust-target }}
+      if: ${{ matrix.additional-rust-target != '' }}
+
+    # install nasm compiler for boring
+    - name: Install nasm
+      if: startsWith(matrix.os, 'windows')
+      run: choco install nasm
+      shell: cmd
+
+    - run: cargo build --release -p libsignal-jni
+
+    - run: cargo build --release -p libsignal-jni --target aarch64-apple-darwin
+      if: matrix.os == 'macos-latest'
+
+    - name: Merge library slices (for macOS)
+      # Using target/release/ for both the input and output wouldn't normally be ideal
+      # from a build system perspective, but we're going to immediately upload the merged library.
+      run: lipo -create target/release/${{ matrix.library }} target/aarch64-apple-darwin/release/${{ matrix.library }} -output target/release/${{ matrix.library }}
+      if: matrix.os == 'macos-latest'
+
+    - name: Upload
+      uses: ncipollo/release-action@4c75f0f2e4ae5f3c807cf0904605408e319dcaac # v1.11.1
+      with:
+        allowUpdates: true
+        artifactErrorsFailBuild: true
+        artifacts: target/release/${{ matrix.library }}

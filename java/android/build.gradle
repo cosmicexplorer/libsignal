@@ -1,135 +1,124 @@
-buildscript {
-    repositories {
-        google()
-        mavenCentral()
-        jcenter {
-            content {
-                includeVersion 'org.jetbrains.trove4j', 'trove4j', '20160824'
-            }
-        }
-    }
-
-    dependencies {
-        classpath 'com.android.tools.build:gradle:3.5.1'
-    }
+plugins {
+    id 'com.android.library' version '7.0.0'
+    id 'maven-publish'
+    id 'signing'
 }
 
-apply plugin: 'com.android.library'
-apply plugin: 'maven'
-apply plugin: 'signing'
-
-archivesBaseName = "signal-client-android"
+archivesBaseName = "libsignal-android"
 version          = version_number
 group            = group_info
-
-android {
-    compileSdkVersion 28
-    buildToolsVersion '28.0.3'
-    ndkVersion '21.0.6113669'
-
-    defaultConfig {
-        minSdkVersion 19
-        targetSdkVersion 28
-    }
-
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_7
-        targetCompatibility JavaVersion.VERSION_1_7
-    }
-
-    sourceSets {
-        androidTest {
-            java.srcDirs = ['src/androidTest/java', project(':tests').file('src/test/java')]
-        }
-    }
-}
 
 repositories {
     google()
     mavenCentral()
     mavenLocal()
-    jcenter {
-        content {
-            includeVersion 'org.jetbrains.trove4j', 'trove4j', '20160824'
+}
+
+android {
+    compileSdkVersion 30
+    buildToolsVersion '30.0.2'
+    ndkVersion '25.2.9519653'
+
+    defaultConfig {
+        minSdkVersion 21
+        targetSdkVersion 30
+        multiDexEnabled true
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    compileOptions {
+        coreLibraryDesugaringEnabled true
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    sourceSets {
+        androidTest {
+            java {
+                // Also run all the Android-agnostic tests by default.
+                srcDir '../client/src/test/java'
+            }
+            resources {
+                srcDir '../client/src/test/resources'
+            }
         }
     }
 }
 
 dependencies {
-    androidTestImplementation 'junit:junit:3.8.2'
-    api project(':java')
+    androidTestImplementation "androidx.test:runner:1.4.0"
+    androidTestImplementation 'androidx.test.ext:junit:1.1.1'
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:1.1.6'
+    api project(':client')
 }
 
-def isReleaseBuild() {
-    return version.contains("SNAPSHOT") == false
+tasks.register('libsWithDebugSymbols', Zip) {
+    from 'src/main/jniLibs'
+    classifier 'debug-symbols'
 }
 
-def getReleaseRepositoryUrl() {
-    return hasProperty('sonatypeRepo') ? sonatypeRepo
-            : "https://oss.sonatype.org/service/local/staging/deploy/maven2/"
+preBuild {
+    dependsOn 'makeJniLibraries'
 }
 
-def getRepositoryUsername() {
-    return hasProperty('whisperSonatypeUsername') ? whisperSonatypeUsername : ""
+task makeJniLibraries(type:Exec) {
+  group 'Rust'
+  description 'Build the JNI libraries'
+
+  // Explicitly specify 'bash' for Windows compatibility.
+  commandLine 'bash', '../build_jni.sh', 'android'
+  environment 'ANDROID_NDK_HOME', android.ndkDirectory
 }
 
-def getRepositoryPassword() {
-    return hasProperty('whisperSonatypePassword') ? whisperSonatypePassword : ""
-}
+// MARK: Publication
+afterEvaluate {
+    publishing {
+        publications {
+            mavenJava(MavenPublication) {
+                artifactId = archivesBaseName
+                from components.release
+                artifact libsWithDebugSymbols
 
-signing {
-    required { isReleaseBuild() && gradle.taskGraph.hasTask("uploadArchives") }
-    sign configurations.archives
-}
+                pom {
+                    name = archivesBaseName
+                    packaging = 'aar'
+                    description = 'Signal Protocol cryptography library for Android'
+                    url = 'https://github.com/signalapp/libsignal'
 
-uploadArchives {
-    configuration = configurations.archives
-    repositories.mavenDeployer {
-        beforeDeployment { MavenDeployment deployment -> signing.signPom(deployment) }
+                    scm {
+                        url = 'scm:git@github.com:signalapp/libsignal.git'
+                        connection = 'scm:git@github.com:signalapp/libsignal.git'
+                        developerConnection = 'scm:git@github.com:signalapp/libsignal.git'
+                    }
 
-        repository(url: getReleaseRepositoryUrl()) {
-            authentication(userName: getRepositoryUsername(), password: getRepositoryPassword())
-        }
+                    licenses {
+                        license {
+                            name = 'AGPLv3'
+                            url = 'https://www.gnu.org/licenses/agpl-3.0.txt'
+                        }
+                    }
 
-        pom.project {
-            name 'signal-client-android'
-            packaging 'aar'
-            description 'Signal Protocol cryptography library for Android'
-            url 'https://github.com/signalapp/libsignal-client'
-
-            scm {
-                url 'scm:git@github.com:signalapp/libsignal-client.git'
-                connection 'scm:git@github.com:signalapp/libsignal-client.git'
-                developerConnection 'scm:git@github.com:signalapp/libsignal-client.git'
-            }
-
-            licenses {
-                license {
-                    name 'AGPLv3'
-                    url 'https://www.gnu.org/licenses/agpl-3.0.txt'
-                    distribution 'repo'
+                    developers {
+                        developer {
+                            name = 'Signal Messenger LLC'
+                        }
+                    }
                 }
             }
-
-            developers {
-                developer {
-                    name 'Signal Messenger LLC'
+        }
+        repositories {
+            maven {
+                url = getReleaseRepositoryUrl()
+                credentials {
+                    username = getRepositoryUsername()
+                    password = getRepositoryPassword()
                 }
             }
         }
     }
-}
 
-task installArchives(type: Upload) {
-    description "Installs the artifacts to the local Maven repository."
-    configuration = configurations['archives']
-    repositories {
-        mavenDeployer {
-            repository url: "file://${System.properties['user.home']}/.m2/repository"
-        }
+    signing {
+        required { isReleaseBuild() && gradle.taskGraph.hasTask(":android:publish") }
+        sign publishing.publications.mavenJava
     }
-}
-
-tasks.withType(JavaCompile) {
-    compileTask -> compileTask.dependsOn ':makeJniLibrariesAndroid'
 }

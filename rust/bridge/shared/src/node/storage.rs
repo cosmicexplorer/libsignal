@@ -29,7 +29,7 @@ impl NodePreKeyStore {
         JsFuture::get_promise(&self.js_channel, move |cx| {
             let store_object = store_object_shared.to_inner(cx);
             let id = id.convert_into(cx)?;
-            let result = call_method(cx, store_object, "_getPreKey", vec![id.upcast()])?;
+            let result = call_method(cx, store_object, "_getPreKey", [id.upcast()])?;
             let result = result.downcast_or_throw(cx)?;
             store_object_shared.finalize(cx);
             Ok(result)
@@ -53,7 +53,7 @@ impl NodePreKeyStore {
             let store_object = store_object_shared.to_inner(cx);
             let id: Handle<JsNumber> = id.convert_into(cx)?;
             let record: Handle<JsValue> = record.convert_into(cx)?;
-            let result = call_method(cx, store_object, "_savePreKey", vec![id.upcast(), record])?
+            let result = call_method(cx, store_object, "_savePreKey", [id.upcast(), record])?
                 .downcast_or_throw(cx)?;
             store_object_shared.finalize(cx);
             Ok(result)
@@ -76,7 +76,7 @@ impl NodePreKeyStore {
         JsFuture::get_promise(&self.js_channel, move |cx| {
             let store_object = store_object_shared.to_inner(cx);
             let id: Handle<JsNumber> = id.convert_into(cx)?;
-            let result = call_method(cx, store_object, "_removePreKey", vec![id.upcast()])?
+            let result = call_method(cx, store_object, "_removePreKey", [id.upcast()])?
                 .downcast_or_throw(cx)?;
             store_object_shared.finalize(cx);
             Ok(result)
@@ -105,31 +105,31 @@ impl Finalize for NodePreKeyStore {
 impl PreKeyStore for NodePreKeyStore {
     async fn get_pre_key(
         &self,
-        pre_key_id: u32,
+        pre_key_id: PreKeyId,
         _ctx: libsignal_protocol::Context,
     ) -> Result<PreKeyRecord, SignalProtocolError> {
-        self.do_get_pre_key(pre_key_id)
+        self.do_get_pre_key(pre_key_id.into())
             .await
             .map_err(|s| js_error_to_rust("getPreKey", s))
     }
 
     async fn save_pre_key(
         &mut self,
-        pre_key_id: u32,
+        pre_key_id: PreKeyId,
         record: &PreKeyRecord,
         _ctx: libsignal_protocol::Context,
     ) -> Result<(), SignalProtocolError> {
-        self.do_save_pre_key(pre_key_id, record.clone())
+        self.do_save_pre_key(pre_key_id.into(), record.clone())
             .await
             .map_err(|s| js_error_to_rust("savePreKey", s))
     }
 
     async fn remove_pre_key(
         &mut self,
-        pre_key_id: u32,
+        pre_key_id: PreKeyId,
         _ctx: libsignal_protocol::Context,
     ) -> Result<(), SignalProtocolError> {
-        self.do_remove_pre_key(pre_key_id)
+        self.do_remove_pre_key(pre_key_id.into())
             .await
             .map_err(|s| js_error_to_rust("removePreKey", s))
     }
@@ -153,7 +153,7 @@ impl NodeSignedPreKeyStore {
         JsFuture::get_promise(&self.js_channel, move |cx| {
             let store_object = store_object_shared.to_inner(cx);
             let id = id.convert_into(cx)?;
-            let result = call_method(cx, store_object, "_getSignedPreKey", vec![id.upcast()])?;
+            let result = call_method(cx, store_object, "_getSignedPreKey", [id.upcast()])?;
             let result = result.downcast_or_throw(cx)?;
             store_object_shared.finalize(cx);
             Ok(result)
@@ -181,13 +181,8 @@ impl NodeSignedPreKeyStore {
             let store_object = store_object_shared.to_inner(cx);
             let id: Handle<JsNumber> = id.convert_into(cx)?;
             let record: Handle<JsValue> = record.convert_into(cx)?;
-            let result = call_method(
-                cx,
-                store_object,
-                "_saveSignedPreKey",
-                vec![id.upcast(), record],
-            )?
-            .downcast_or_throw(cx)?;
+            let result = call_method(cx, store_object, "_saveSignedPreKey", [id.upcast(), record])?
+                .downcast_or_throw(cx)?;
             store_object_shared.finalize(cx);
             Ok(result)
         })
@@ -215,23 +210,151 @@ impl Finalize for NodeSignedPreKeyStore {
 impl SignedPreKeyStore for NodeSignedPreKeyStore {
     async fn get_signed_pre_key(
         &self,
-        signed_pre_key_id: u32,
+        signed_pre_key_id: SignedPreKeyId,
         _ctx: libsignal_protocol::Context,
     ) -> Result<SignedPreKeyRecord, SignalProtocolError> {
-        self.do_get_signed_pre_key(signed_pre_key_id)
+        self.do_get_signed_pre_key(signed_pre_key_id.into())
             .await
             .map_err(|s| js_error_to_rust("getSignedPreKey", s))
     }
 
     async fn save_signed_pre_key(
         &mut self,
-        signed_pre_key_id: u32,
+        signed_pre_key_id: SignedPreKeyId,
         record: &SignedPreKeyRecord,
         _ctx: libsignal_protocol::Context,
     ) -> Result<(), SignalProtocolError> {
-        self.do_save_signed_pre_key(signed_pre_key_id, record.clone())
+        self.do_save_signed_pre_key(signed_pre_key_id.into(), record.clone())
             .await
             .map_err(|s| js_error_to_rust("saveSignedPreKey", s))
+    }
+}
+
+pub struct NodeKyberPreKeyStore {
+    js_channel: Channel,
+    store_object: Arc<Root<JsObject>>,
+}
+
+impl NodeKyberPreKeyStore {
+    pub(crate) fn new(cx: &mut FunctionContext, store: Handle<JsObject>) -> Self {
+        Self {
+            js_channel: cx.channel(),
+            store_object: Arc::new(store.root(cx)),
+        }
+    }
+
+    async fn do_get_kyber_pre_key(&self, id: u32) -> Result<KyberPreKeyRecord, String> {
+        let store_object_shared = self.store_object.clone();
+        JsFuture::get_promise(&self.js_channel, move |cx| {
+            let store_object = store_object_shared.to_inner(cx);
+            let id = id.convert_into(cx)?;
+            let result = call_method(cx, store_object, "_getKyberPreKey", [id.upcast()])?;
+            let result = result.downcast_or_throw(cx)?;
+            store_object_shared.finalize(cx);
+            Ok(result)
+        })
+        .then(|cx, result| match result {
+            Ok(value) => match value.downcast::<DefaultJsBox<KyberPreKeyRecord>, _>(cx) {
+                Ok(obj) => Ok((***obj).clone()),
+                Err(_) => Err("result must be an object".to_owned()),
+            },
+            Err(error) => Err(error
+                .to_string(cx)
+                .expect("can convert to string")
+                .value(cx)),
+        })
+        .await
+    }
+
+    async fn do_save_kyber_pre_key(
+        &self,
+        id: u32,
+        record: KyberPreKeyRecord,
+    ) -> Result<(), String> {
+        let store_object_shared = self.store_object.clone();
+        JsFuture::get_promise(&self.js_channel, move |cx| {
+            let store_object = store_object_shared.to_inner(cx);
+            let id: Handle<JsNumber> = id.convert_into(cx)?;
+            let record: Handle<JsValue> = record.convert_into(cx)?;
+            let result = call_method(cx, store_object, "_saveKyberPreKey", [id.upcast(), record])?
+                .downcast_or_throw(cx)?;
+            store_object_shared.finalize(cx);
+            Ok(result)
+        })
+        .then(|cx, result| match result {
+            Ok(value) => match value.downcast::<JsUndefined, _>(cx) {
+                Ok(_) => Ok(()),
+                Err(_) => Err("unexpected result from _saveKyberPreKey".into()),
+            },
+            Err(error) => Err(error
+                .to_string(cx)
+                .expect("can convert to string")
+                .value(cx)),
+        })
+        .await
+    }
+
+    async fn do_mark_kyber_pre_key_used(&self, id: u32) -> Result<(), String> {
+        let store_object_shared = self.store_object.clone();
+        JsFuture::get_promise(&self.js_channel, move |cx| {
+            let store_object = store_object_shared.to_inner(cx);
+            let id: Handle<JsNumber> = id.convert_into(cx)?;
+            let result = call_method(cx, store_object, "_markKyberPreKeyUsed", [id.upcast()])?
+                .downcast_or_throw(cx)?;
+            store_object_shared.finalize(cx);
+            Ok(result)
+        })
+        .then(|cx, result| match result {
+            Ok(value) => match value.downcast::<JsUndefined, _>(cx) {
+                Ok(_) => Ok(()),
+                Err(_) => Err("unexpected result from _markKyberPreKeyUsed".into()),
+            },
+            Err(error) => Err(error
+                .to_string(cx)
+                .expect("can convert to string")
+                .value(cx)),
+        })
+        .await
+    }
+}
+
+impl Finalize for NodeKyberPreKeyStore {
+    fn finalize<'b, C: neon::prelude::Context<'b>>(self, cx: &mut C) {
+        self.store_object.finalize(cx)
+    }
+}
+
+#[async_trait(?Send)]
+impl KyberPreKeyStore for NodeKyberPreKeyStore {
+    async fn get_kyber_pre_key(
+        &self,
+        kyber_pre_key_id: KyberPreKeyId,
+        _ctx: libsignal_protocol::Context,
+    ) -> Result<KyberPreKeyRecord, SignalProtocolError> {
+        self.do_get_kyber_pre_key(kyber_pre_key_id.into())
+            .await
+            .map_err(|s| js_error_to_rust("getKyberPreKey", s))
+    }
+
+    async fn save_kyber_pre_key(
+        &mut self,
+        kyber_pre_key_id: KyberPreKeyId,
+        record: &KyberPreKeyRecord,
+        _ctx: libsignal_protocol::Context,
+    ) -> Result<(), SignalProtocolError> {
+        self.do_save_kyber_pre_key(kyber_pre_key_id.into(), record.clone())
+            .await
+            .map_err(|s| js_error_to_rust("saveKyberPreKey", s))
+    }
+
+    async fn mark_kyber_pre_key_used(
+        &mut self,
+        kyber_pre_key_id: KyberPreKeyId,
+        _ctx: libsignal_protocol::Context,
+    ) -> Result<(), SignalProtocolError> {
+        self.do_mark_kyber_pre_key_used(kyber_pre_key_id.into())
+            .await
+            .map_err(|s| js_error_to_rust("markKyberPreKeyUsed", s))
     }
 }
 
@@ -253,7 +376,7 @@ impl NodeSessionStore {
         JsFuture::get_promise(&self.js_channel, move |cx| {
             let store_object = store_object_shared.to_inner(cx);
             let name: Handle<JsValue> = name.convert_into(cx)?;
-            let result = call_method(cx, store_object, "_getSession", vec![name])?;
+            let result = call_method(cx, store_object, "_getSession", [name])?;
             let result = result.downcast_or_throw(cx)?;
             store_object_shared.finalize(cx);
             Ok(result)
@@ -287,13 +410,8 @@ impl NodeSessionStore {
             let store_object = store_object_shared.to_inner(cx);
             let name = name.convert_into(cx)?;
             let record = record.convert_into(cx)?;
-            let result = call_method(
-                cx,
-                store_object,
-                "_saveSession",
-                vec![name, record.upcast()],
-            )?
-            .downcast_or_throw(cx)?;
+            let result = call_method(cx, store_object, "_saveSession", [name, record.upcast()])?
+                .downcast_or_throw(cx)?;
             store_object_shared.finalize(cx);
             Ok(result)
         })
@@ -358,7 +476,7 @@ impl NodeIdentityKeyStore {
         let store_object_shared = self.store_object.clone();
         JsFuture::get_promise(&self.js_channel, move |cx| {
             let store_object = store_object_shared.to_inner(cx);
-            let result = call_method(cx, store_object, "_getIdentityKey", vec![])?;
+            let result = call_method(cx, store_object, "_getIdentityKey", [])?;
             let result = result.downcast_or_throw(cx)?;
             store_object_shared.finalize(cx);
             Ok(result)
@@ -380,7 +498,7 @@ impl NodeIdentityKeyStore {
         let store_object_shared = self.store_object.clone();
         JsFuture::get_promise(&self.js_channel, move |cx| {
             let store_object = store_object_shared.to_inner(cx);
-            let result = call_method(cx, store_object, "_getLocalRegistrationId", vec![])?
+            let result = call_method(cx, store_object, "_getLocalRegistrationId", [])?
                 .downcast_or_throw(cx)?;
             store_object_shared.finalize(cx);
             Ok(result)
@@ -403,7 +521,7 @@ impl NodeIdentityKeyStore {
         JsFuture::get_promise(&self.js_channel, move |cx| {
             let store_object = store_object_shared.to_inner(cx);
             let name: Handle<JsValue> = name.convert_into(cx)?;
-            let result = call_method(cx, store_object, "_getIdentity", vec![name])?;
+            let result = call_method(cx, store_object, "_getIdentity", [name])?;
             let result = result.downcast_or_throw(cx)?;
             store_object_shared.finalize(cx);
             Ok(result)
@@ -437,7 +555,7 @@ impl NodeIdentityKeyStore {
             let store_object = store_object_shared.to_inner(cx);
             let name: Handle<JsValue> = name.convert_into(cx)?;
             let key: Handle<JsValue> = key.convert_into(cx)?;
-            let result = call_method(cx, store_object, "_saveIdentity", vec![name, key])?
+            let result = call_method(cx, store_object, "_saveIdentity", [name, key])?
                 .downcast_or_throw(cx)?;
             store_object_shared.finalize(cx);
             Ok(result)
@@ -473,7 +591,7 @@ impl NodeIdentityKeyStore {
                 cx,
                 store_object,
                 "_isTrustedIdentity",
-                vec![name, key, sending.upcast()],
+                [name, key, sending.upcast()],
             )?
             .downcast_or_throw(cx)?;
             store_object_shared.finalize(cx);
@@ -581,12 +699,7 @@ impl NodeSenderKeyStore {
             let store_object = store_object_shared.to_inner(cx);
             let sender: Handle<JsValue> = sender.convert_into(cx)?;
             let distribution_id: Handle<JsValue> = distribution_id.convert_into(cx)?.upcast();
-            let result = call_method(
-                cx,
-                store_object,
-                "_getSenderKey",
-                vec![sender, distribution_id],
-            )?;
+            let result = call_method(cx, store_object, "_getSenderKey", [sender, distribution_id])?;
             let result = result.downcast_or_throw(cx)?;
             store_object_shared.finalize(cx);
             Ok(result)
@@ -626,7 +739,7 @@ impl NodeSenderKeyStore {
                 cx,
                 store_object,
                 "_saveSenderKey",
-                vec![sender, distribution_id, record],
+                [sender, distribution_id, record],
             )?
             .downcast_or_throw(cx)?;
             store_object_shared.finalize(cx);

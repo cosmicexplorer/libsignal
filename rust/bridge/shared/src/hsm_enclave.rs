@@ -3,18 +3,25 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-use ::hsm_enclave;
+use std::panic::RefUnwindSafe;
+
+use ::attest::{client_connection, hsm_enclave};
 use libsignal_bridge_macros::*;
 
+use self::hsm_enclave::Result;
 use crate::support::*;
 use crate::*;
-use hsm_enclave::Result;
 
+// It's okay to have a large enum because this type will be boxed for bridging after it's been
+// created.
+#[allow(clippy::large_enum_variant)]
 pub enum HsmEnclaveClient {
     ConnectionEstablishment(hsm_enclave::ClientConnectionEstablishment),
-    Connection(hsm_enclave::ClientConnection),
+    Connection(client_connection::ClientConnection),
     InvalidConnectionState,
 }
+
+impl RefUnwindSafe for HsmEnclaveClient {}
 
 impl HsmEnclaveClient {
     pub fn new(trusted_public_key: &[u8], trusted_code_hashes: &[u8]) -> Result<Self> {
@@ -58,22 +65,28 @@ impl HsmEnclaveClient {
 
     pub fn established_send(&mut self, plaintext_to_send: &[u8]) -> Result<Vec<u8>> {
         match self {
-            HsmEnclaveClient::Connection(c) => c.send(plaintext_to_send),
+            HsmEnclaveClient::Connection(c) => match c.send(plaintext_to_send) {
+                Ok(v) => Ok(v),
+                Err(e) => Err(hsm_enclave::Error::HSMCommunicationError(e)),
+            },
             _ => Err(hsm_enclave::Error::InvalidBridgeStateError),
         }
     }
 
     pub fn established_recv(&mut self, received_ciphertext: &[u8]) -> Result<Vec<u8>> {
         match self {
-            HsmEnclaveClient::Connection(c) => c.recv(received_ciphertext),
+            HsmEnclaveClient::Connection(c) => match c.recv(received_ciphertext) {
+                Ok(v) => Ok(v),
+                Err(e) => Err(hsm_enclave::Error::HSMCommunicationError(e)),
+            },
             _ => Err(hsm_enclave::Error::InvalidBridgeStateError),
         }
     }
 }
 
-bridge_handle!(HsmEnclaveClient, mut = true, ffi = false, node = false);
+bridge_handle!(HsmEnclaveClient, clone = false, mut = true);
 
-#[bridge_fn(node = false, ffi = false)]
+#[bridge_fn]
 fn HsmEnclaveClient_New(
     trusted_public_key: &[u8],
     trusted_code_hashes: &[u8],
@@ -81,12 +94,11 @@ fn HsmEnclaveClient_New(
     HsmEnclaveClient::new(trusted_public_key, trusted_code_hashes)
 }
 
-#[bridge_fn_buffer(node = false, ffi = false)]
-fn HsmEnclaveClient_InitialRequest<T: Env>(env: T, cli: &HsmEnclaveClient) -> Result<T::Buffer> {
-    Ok(env.buffer(cli.initial_request()?))
-}
+bridge_get!(
+    HsmEnclaveClient::initial_request as InitialRequest -> &[u8]
+);
 
-#[bridge_fn_void(node = false, ffi = false)]
+#[bridge_fn_void]
 fn HsmEnclaveClient_CompleteHandshake(
     cli: &mut HsmEnclaveClient,
     handshake_received: &[u8],
@@ -94,20 +106,18 @@ fn HsmEnclaveClient_CompleteHandshake(
     cli.complete_handshake(handshake_received)
 }
 
-#[bridge_fn_buffer(node = false, ffi = false)]
-fn HsmEnclaveClient_EstablishedSend<T: Env>(
-    env: T,
+#[bridge_fn]
+fn HsmEnclaveClient_EstablishedSend(
     cli: &mut HsmEnclaveClient,
     plaintext_to_send: &[u8],
-) -> Result<T::Buffer> {
-    Ok(env.buffer(cli.established_send(plaintext_to_send)?))
+) -> Result<Vec<u8>> {
+    cli.established_send(plaintext_to_send)
 }
 
-#[bridge_fn_buffer(node = false, ffi = false)]
-fn HsmEnclaveClient_EstablishedRecv<T: Env>(
-    env: T,
+#[bridge_fn]
+fn HsmEnclaveClient_EstablishedRecv(
     cli: &mut HsmEnclaveClient,
     received_ciphertext: &[u8],
-) -> Result<T::Buffer> {
-    Ok(env.buffer(cli.established_recv(received_ciphertext)?))
+) -> Result<Vec<u8>> {
+    cli.established_recv(received_ciphertext)
 }

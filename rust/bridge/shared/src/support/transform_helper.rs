@@ -18,7 +18,8 @@ impl<T> TransformHelper<T> {
     /// Extracts the value from the TransformHelper and transforms it as requested.
     ///
     /// This isn't an actual implementation of Into (or From)
-    /// because `U` could be anything, including types outside this crate.
+    /// because that would conflict with the identity implementation
+    /// `TransformHelper<T>: From<TransformHelper<T>>`.
     pub(crate) fn into<U: From<T>>(self) -> U {
         self.0.into()
     }
@@ -56,14 +57,6 @@ impl<T> TransformHelper<Option<T>> {
     }
 }
 
-impl<T> TransformHelper<Box<[T]>> {
-    /// Transforms `TransformHelper<Box<[T]>>` into a `TransformHelper<Vec<T>>`
-    /// and leaves other TransformHelper values unchanged.
-    pub(crate) fn into_vec_if_needed(self) -> TransformHelper<Vec<T>> {
-        TransformHelper(self.0.into_vec())
-    }
-}
-
 pub(crate) trait TransformHelperImpl: Sized {
     fn ok_if_needed(self) -> Result<Self, libsignal_protocol::SignalProtocolError> {
         Ok(self)
@@ -72,9 +65,6 @@ pub(crate) trait TransformHelperImpl: Sized {
         Some(self)
     }
     fn option_map_into(self) -> Self {
-        self
-    }
-    fn into_vec_if_needed(self) -> Self {
         self
     }
 }

@@ -29,7 +29,7 @@ def update_version(file, pattern, new_version):
 
 
 PODSPEC_PATTERN = re.compile(r"^(.*\.version\s+=\s+')(.*)(')")
-GRADLE_PATTERN = re.compile(r'^(\s+ext\.version_number\s+=\s+")(.*)(")')
+GRADLE_PATTERN = re.compile(r'^(def\s+version_number\s+=\s+")(.*)(")')
 NODE_PATTERN = re.compile(r'^(\s+"version": ")(.*)(")')
 CARGO_PATTERN = re.compile(r'^(version = ")(.*)(")')
 
@@ -39,19 +39,24 @@ def bridge_path(bridge):
 
 
 def main():
+    os.chdir(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+
     if len(sys.argv) > 1:
-        update_version('SignalClient.podspec', PODSPEC_PATTERN, sys.argv[1])
-        update_version(os.path.join('java', 'build.gradle'), GRADLE_PATTERN, sys.argv[1])
-        update_version('package.json', NODE_PATTERN, sys.argv[1])
-        update_version(bridge_path('ffi'), CARGO_PATTERN, sys.argv[1])
-        update_version(bridge_path('jni'), CARGO_PATTERN, sys.argv[1])
-        update_version(bridge_path('node'), CARGO_PATTERN, sys.argv[1])
+        new_version = sys.argv[1]
+        if new_version[0] == 'v':
+            new_version = new_version[1:]
+        update_version('LibSignalClient.podspec', PODSPEC_PATTERN, new_version)
+        update_version(os.path.join('java', 'build.gradle'), GRADLE_PATTERN, new_version)
+        update_version(os.path.join('node', 'package.json'), NODE_PATTERN, new_version)
+        update_version(bridge_path('ffi'), CARGO_PATTERN, new_version)
+        update_version(bridge_path('jni'), CARGO_PATTERN, new_version)
+        update_version(bridge_path('node'), CARGO_PATTERN, new_version)
         return 0
 
     package_versions = {
-        'swift': read_version('SignalClient.podspec', PODSPEC_PATTERN),
+        'swift': read_version('LibSignalClient.podspec', PODSPEC_PATTERN),
         'java': read_version(os.path.join('java', 'build.gradle'), GRADLE_PATTERN),
-        'node': read_version('package.json', NODE_PATTERN)
+        'node': read_version(os.path.join('node', 'package.json'), NODE_PATTERN)
     }
 
     bridge_versions = {

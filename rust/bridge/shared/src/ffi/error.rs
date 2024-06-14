@@ -5,22 +5,40 @@
 
 use std::convert::TryFrom;
 use std::fmt;
+use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 
+use attest::hsm_enclave::Error as HsmEnclaveError;
+use attest::sgx_session::Error as SgxError;
 use device_transfer::Error as DeviceTransferError;
 use libsignal_protocol::*;
 use signal_crypto::Error as SignalCryptoError;
+use signal_pin::Error as PinError;
+use usernames::{UsernameError, UsernameLinkError};
+use zkgroup::{ZkGroupDeserializationFailure, ZkGroupVerificationFailure};
+
+use crate::support::describe_panic;
+
+use super::NullPointerError;
 
 /// The top-level error type (opaquely) returned to C clients when something goes wrong.
 #[derive(Debug)]
 pub enum SignalFfiError {
     Signal(SignalProtocolError),
     DeviceTransfer(DeviceTransferError),
+    HsmEnclave(HsmEnclaveError),
+    Sgx(SgxError),
+    Pin(PinError),
     SignalCrypto(SignalCryptoError),
-    InsufficientOutputSize(usize, usize),
+    ZkGroupVerificationFailure(ZkGroupVerificationFailure),
+    ZkGroupDeserializationFailure(ZkGroupDeserializationFailure),
+    UsernameError(UsernameError),
+    UsernameLinkError(UsernameLinkError),
+    Io(IoError),
+    #[cfg(feature = "signal-media")]
+    MediaSanitizeParse(signal_media::sanitize::ParseErrorReport),
     NullPointer,
     InvalidUtf8String,
     UnexpectedPanic(std::boxed::Box<dyn std::any::Any + std::marker::Send>),
-    InvalidType,
 }
 
 impl fmt::Display for SignalFfiError {
@@ -30,20 +48,30 @@ impl fmt::Display for SignalFfiError {
             SignalFfiError::DeviceTransfer(c) => {
                 write!(f, "Device transfer operation failed: {}", c)
             }
+            SignalFfiError::HsmEnclave(e) => {
+                write!(f, "HSM enclave operation failed: {}", e)
+            }
+            SignalFfiError::Sgx(e) => {
+                write!(f, "SGX operation failed: {}", e)
+            }
             SignalFfiError::SignalCrypto(c) => {
                 write!(f, "Cryptographic operation failed: {}", c)
             }
-            SignalFfiError::NullPointer => write!(f, "null pointer"),
-            SignalFfiError::InvalidType => write!(f, "invalid type"),
-            SignalFfiError::InvalidUtf8String => write!(f, "invalid UTF8 string"),
-            SignalFfiError::InsufficientOutputSize(n, h) => {
-                write!(f, "needed {} elements only {} provided", n, h)
+            SignalFfiError::Pin(e) => write!(f, "{}", e),
+            SignalFfiError::ZkGroupVerificationFailure(e) => write!(f, "{}", e),
+            SignalFfiError::ZkGroupDeserializationFailure(e) => write!(f, "{}", e),
+            SignalFfiError::UsernameError(e) => write!(f, "{}", e),
+            SignalFfiError::UsernameLinkError(e) => write!(f, "{}", e),
+            SignalFfiError::Io(e) => write!(f, "IO error: {}", e),
+            #[cfg(feature = "signal-media")]
+            SignalFfiError::MediaSanitizeParse(e) => {
+                write!(f, "Media sanitizer failed to parse media file: {}", e)
             }
-
-            SignalFfiError::UnexpectedPanic(e) => match e.downcast_ref::<&'static str>() {
-                Some(s) => write!(f, "unexpected panic: {}", s),
-                None => write!(f, "unknown unexpected panic"),
-            },
+            SignalFfiError::NullPointer => write!(f, "null pointer"),
+            SignalFfiError::InvalidUtf8String => write!(f, "invalid UTF8 string"),
+            SignalFfiError::UnexpectedPanic(e) => {
+                write!(f, "unexpected panic: {}", describe_panic(e))
+            }
         }
     }
 }
@@ -60,9 +88,83 @@ impl From<DeviceTransferError> for SignalFfiError {
     }
 }
 
+impl From<HsmEnclaveError> for SignalFfiError {
+    fn from(e: HsmEnclaveError) -> SignalFfiError {
+        SignalFfiError::HsmEnclave(e)
+    }
+}
+
+impl From<SgxError> for SignalFfiError {
+    fn from(e: SgxError) -> SignalFfiError {
+        SignalFfiError::Sgx(e)
+    }
+}
+
+impl From<PinError> for SignalFfiError {
+    fn from(e: PinError) -> SignalFfiError {
+        SignalFfiError::Pin(e)
+    }
+}
+
 impl From<SignalCryptoError> for SignalFfiError {
     fn from(e: SignalCryptoError) -> SignalFfiError {
         SignalFfiError::SignalCrypto(e)
+    }
+}
+
+impl From<ZkGroupVerificationFailure> for SignalFfiError {
+    fn from(e: ZkGroupVerificationFailure) -> SignalFfiError {
+        SignalFfiError::ZkGroupVerificationFailure(e)
+    }
+}
+
+impl From<ZkGroupDeserializationFailure> for SignalFfiError {
+    fn from(e: ZkGroupDeserializationFailure) -> SignalFfiError {
+        SignalFfiError::ZkGroupDeserializationFailure(e)
+    }
+}
+
+impl From<UsernameError> for SignalFfiError {
+    fn from(e: UsernameError) -> SignalFfiError {
+        SignalFfiError::UsernameError(e)
+    }
+}
+
+impl From<UsernameLinkError> for SignalFfiError {
+    fn from(e: UsernameLinkError) -> SignalFfiError {
+        SignalFfiError::UsernameLinkError(e)
+    }
+}
+
+impl From<IoError> for SignalFfiError {
+    fn from(e: IoError) -> SignalFfiError {
+        Self::Io(e)
+    }
+}
+
+#[cfg(feature = "signal-media")]
+impl From<signal_media::sanitize::Error> for SignalFfiError {
+    fn from(e: signal_media::sanitize::Error) -> SignalFfiError {
+        use signal_media::sanitize::Error;
+        match e {
+            Error::Io(e) => Self::Io(e.into()),
+            Error::Parse(e) => Self::MediaSanitizeParse(e),
+        }
+    }
+}
+
+impl From<NullPointerError> for SignalFfiError {
+    fn from(_: NullPointerError) -> SignalFfiError {
+        SignalFfiError::NullPointer
+    }
+}
+
+impl From<SignalFfiError> for IoError {
+    fn from(e: SignalFfiError) -> Self {
+        match e {
+            SignalFfiError::Io(e) => e,
+            e => IoError::new(IoErrorKind::Other, e.to_string()),
+        }
     }
 }
 

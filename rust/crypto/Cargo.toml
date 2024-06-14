@@ -6,24 +6,28 @@
 [package]
 name = "signal-crypto"
 version = "0.1.0"
-authors = ["Jack Lloyd <jack@signal.org>"]
+authors = ["Signal Messenger LLC"]
 edition = "2018"
+license = "AGPL-3.0-only"
 
 [dependencies]
 aes = { version = "0.7.4", features = ["ctr"] }
+block-modes = "0.8"
 subtle = "2.3"
 generic-array = "0.14"
 ghash = "0.4.2"
-hmac = "0.9.0"
+hmac = "0.11"
 sha-1 = "0.9"
 sha2 = "0.9"
+thiserror = "1.0.38"
+displaydoc = "0.2"
 
 [dev-dependencies]
 rand = "0.7.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 hex = "0.4"
-criterion = "0.3"
+criterion = "0.4"
 
 [features]
 armv8 = ["aes/armv8", "ghash/armv8"]

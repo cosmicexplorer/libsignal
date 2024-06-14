@@ -6,8 +6,7 @@
 use jni::objects::{GlobalRef, JClass, JObject, JValue};
 use jni::sys::jint;
 use jni::{JNIEnv, JavaVM};
-use libsignal_bridge::jni_signature;
-use std::any::Any;
+use libsignal_bridge::{describe_panic, jni_args};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::process::abort;
 
@@ -82,17 +81,12 @@ impl JniLogger {
             record.line().unwrap_or(0),
             record.args(),
         );
-        let args: [JValue; 3] = [
-            level.into(),
-            env.new_string("libsignal-client")?.into(),
-            env.new_string(message)?.into(),
-        ];
-        let result = env.call_static_method(
-            &self.logger_class,
-            "log",
-            jni_signature!((int, java.lang.String, java.lang.String) -> void),
-            &args,
-        );
+        let args = jni_args!((
+            level.into() => int,
+            env.new_string("libsignal")? => java.lang.String,
+            env.new_string(message)? => java.lang.String,
+        ) -> void);
+        let result = env.call_static_method(&self.logger_class, "log", args.sig, &args.args);
 
         let throwable = env.exception_occurred()?;
         if **throwable == *JObject::null() {
@@ -118,17 +112,6 @@ impl log::Log for JniLogger {
     fn flush(&self) {}
 }
 
-// See https://github.com/rust-lang/rfcs/issues/1389
-fn describe_panic(any: &Box<dyn Any + Send>) -> String {
-    if let Some(msg) = any.downcast_ref::<&str>() {
-        msg.to_string()
-    } else if let Some(msg) = any.downcast_ref::<String>() {
-        msg.to_string()
-    } else {
-        "(break on rust_panic to debug)".to_string()
-    }
-}
-
 /// A low-level version of `run_ffi_safe` that just aborts on errors.
 ///
 /// This is important for logging failures because we might want to log during the normal
@@ -144,7 +127,7 @@ fn set_max_level_from_java_level(max_level: jint) {
     // Keep this in sync with SignalProtocolLogger.java.
     let level = match max_level {
         // The jni crate uses trace! in its own implementation.
-        2 => panic!("invalid log level (must be DEBUG or higher for libsignal-client)"),
+        2 => panic!("invalid log level (must be DEBUG or higher for libsignal)"),
         3 => JavaLogLevel::Debug,
         4 => JavaLogLevel::Info,
         5 => JavaLogLevel::Warn,
@@ -158,7 +141,7 @@ fn set_max_level_from_java_level(max_level: jint) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn Java_org_signal_client_internal_Native_Logger_1Initialize(
+pub unsafe extern "C" fn Java_org_signal_libsignal_internal_Native_Logger_1Initialize(
     env: JNIEnv,
     _class: JClass,
     max_level: jint,
@@ -171,20 +154,31 @@ pub unsafe extern "C" fn Java_org_signal_client_internal_Native_Logger_1Initiali
             Ok(_) => {
                 set_max_level_from_java_level(max_level);
                 log::info!(
-                    "Initializing libsignal-client version:{}",
+                    "Initializing libsignal version:{}",
                     env!("CARGO_PKG_VERSION")
                 );
-                log_panics::init();
+                let backtrace_mode = {
+                    cfg_if::cfg_if! {
+                        if #[cfg(target_os = "android")] {
+                            log_panics::BacktraceMode::Unresolved
+                        } else {
+                            log_panics::BacktraceMode::Resolved
+                        }
+                    }
+                };
+                log_panics::Config::new()
+                    .backtrace_mode(backtrace_mode)
+                    .install_panic_hook();
             }
             Err(_) => {
-                log::warn!("logging already initialized for libsignal-client; ignoring later call");
+                log::warn!("logging already initialized for libsignal; ignoring later call");
             }
         }
     });
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn Java_org_signal_client_internal_Native_Logger_1SetMaxLevel(
+pub unsafe extern "C" fn Java_org_signal_libsignal_internal_Native_Logger_1SetMaxLevel(
     _env: JNIEnv,
     _class: JClass,
     max_level: jint,

@@ -3,8 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-use proc_macro2::Span;
-use proc_macro2::TokenStream as TokenStream2;
+use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::*;
 use std::fmt::Display;
 use syn::spanned::Spanned;
@@ -13,11 +12,7 @@ use syn_mid::{FnArg, Pat, PatType, Signature};
 
 use crate::ResultKind;
 
-fn bridge_fn_body(
-    orig_name: &Ident,
-    input_args: &[(&Ident, &Type)],
-    result_kind: ResultKind,
-) -> TokenStream2 {
+fn bridge_fn_body(orig_name: &Ident, input_args: &[(&Ident, &Type)]) -> TokenStream2 {
     let input_borrowing = input_args.iter().zip(0..).map(|((name, ty), i)| {
         let name_arg = format_ident!("{}_arg", name);
         let name_stored = format_ident!("{}_stored", name);
@@ -36,17 +31,12 @@ fn bridge_fn_body(
         }
     });
 
-    let env_arg = if result_kind.has_env() {
-        quote!(&mut cx,)
-    } else {
-        quote!()
-    };
     let input_names = input_args.iter().map(|(name, _ty)| name);
 
     quote! {
         #(#input_borrowing)*
         #(#input_loading)*
-        let __result = #orig_name(#env_arg #(#input_names),*);
+        let __result = #orig_name(#(#input_names),*);
         match TransformHelper(__result).ok_if_needed() {
             Ok(TransformHelper(success)) =>
                 Ok(node::ResultTypeInfo::convert_into(success, &mut cx)?.upcast()),
@@ -60,8 +50,8 @@ fn bridge_fn_body(
 
 fn bridge_fn_async_body(
     orig_name: &Ident,
+    custom_name: &String,
     input_args: &[(&Ident, &Type)],
-    result_kind: ResultKind,
 ) -> TokenStream2 {
     let input_saving = input_args.iter().zip(0..).map(|((name, ty), i)| {
         let name_arg = format_ident!("{}_arg", name);
@@ -95,11 +85,6 @@ fn bridge_fn_async_body(
         }
     });
 
-    let env_arg = if result_kind.has_env() {
-        quote!(node::AsyncEnv,)
-    } else {
-        quote!()
-    };
     let input_names = input_args.iter().map(|(name, _ty)| name);
 
     let input_finalization = input_args.iter().map(|(name, _ty)| {
@@ -123,7 +108,7 @@ fn bridge_fn_async_body(
             &mut cx,
             std::panic::AssertUnwindSafe(async move {
                 #(#input_loading)*
-                let __result = #orig_name(#env_arg #(#input_names),*).await;
+                let __result = #orig_name(#(#input_names),*).await;
                 signal_neon_futures::settle_promise(move |cx| {
                     let mut cx = scopeguard::guard(cx, |cx| {
                         #(#input_finalization)*
@@ -137,7 +122,7 @@ fn bridge_fn_async_body(
                             failure,
                             *cx,
                             __this,
-                            stringify!(#orig_name),
+                            #custom_name,
                         ),
                     }
                 })
@@ -159,20 +144,11 @@ pub(crate) fn bridge_fn(name: String, sig: &Signature, result_kind: ResultKind) 
         (ResultKind::Regular, ReturnType::Default) => result_type_format(&"()"),
         (ResultKind::Regular, ReturnType::Type(_, ty)) => result_type_format(&quote!(#ty)),
         (ResultKind::Void, _) => result_type_format(&"()"),
-        (ResultKind::Buffer, ReturnType::Type(_, _)) => result_type_format(&"Buffer"),
-        (ResultKind::Buffer, ReturnType::Default) => {
-            return Error::new(
-                sig.paren_token.span,
-                "missing result type for bridge_fn_buffer",
-            )
-            .to_compile_error()
-        }
     };
 
     let input_args: Result<Vec<_>> = sig
         .inputs
         .iter()
-        .skip(if result_kind.has_env() { 1 } else { 0 })
         .map(|arg| match arg {
             FnArg::Receiver(tokens) => Err(Error::new(
                 tokens.self_token.span,
@@ -199,8 +175,8 @@ pub(crate) fn bridge_fn(name: String, sig: &Signature, result_kind: ResultKind) 
     };
 
     let body = match sig.asyncness {
-        Some(_) => bridge_fn_async_body(&sig.ident, &input_args, result_kind),
-        None => bridge_fn_body(&sig.ident, &input_args, result_kind),
+        Some(_) => bridge_fn_async_body(&sig.ident, &name, &input_args),
+        None => bridge_fn_body(&sig.ident, &input_args),
     };
 
     let node_annotation = format!(
@@ -208,7 +184,6 @@ pub(crate) fn bridge_fn(name: String, sig: &Signature, result_kind: ResultKind) 
         name_without_prefix,
         sig.inputs
             .iter()
-            .skip(if result_kind.has_env() { 1 } else { 0 })
             .map(|arg| quote!(#arg).to_string())
             .collect::<Vec<_>>()
             .join(", "),

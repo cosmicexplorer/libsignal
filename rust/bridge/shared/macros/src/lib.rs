@@ -76,8 +76,8 @@
 //!
 //! - FFI: Convert the function's name to `lower_snake_case` and prepend `signal_`.
 //! - JNI: Escape any underscores in the function's name per the [JNI spec][], then prepend
-//!  `Java_org_signal_client_internal_Native_` to expose the function as a static method of the
-//!  class `org.signal.client.internal.Native`.
+//!  `Java_org_signal_libsignal_internal_Native_` to expose the function as a static method of the
+//!  class `org.signal.libsignal.internal.Native`.
 //! - Node: Use the original function's name.
 //!
 //! As such, the recommended naming scheme for `bridge_fn` functions is `ObjectOrGroup_Operation`.
@@ -181,17 +181,7 @@ fn name_for_meta_key(
 #[derive(Clone, Copy)]
 enum ResultKind {
     Regular,
-    Buffer,
     Void,
-}
-
-impl ResultKind {
-    fn has_env(self) -> bool {
-        match self {
-            Self::Regular | Self::Void => false,
-            Self::Buffer => true,
-        }
-    }
 }
 
 fn bridge_fn_impl(attr: TokenStream, item: TokenStream, result_kind: ResultKind) -> TokenStream {
@@ -231,6 +221,7 @@ fn bridge_fn_impl(attr: TokenStream, item: TokenStream, result_kind: ResultKind)
     quote!(
         #[allow(non_snake_case)]
         #[cfg(any(#(#feature_list,)*))]
+        #[inline(always)]
         #function
 
         #ffi_fn
@@ -261,33 +252,6 @@ fn bridge_fn_impl(attr: TokenStream, item: TokenStream, result_kind: ResultKind)
 #[proc_macro_attribute]
 pub fn bridge_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
     bridge_fn_impl(attr, item, ResultKind::Regular)
-}
-
-/// Generates C, Java, and Node entry points for a Rust function that returns a buffer,
-/// avoiding unnecessary copies of the return value.
-///
-/// Unlike a normal `bridge_fn`, functions annotated with `bridge_fn_buffer` take an extra initial
-/// parameter of type `E: Env` and have a return type containing `E::Buffer`. All other parameters
-/// behave the same as they do in a normal `bridge_fn`.
-///
-/// See the [crate-level documentation](crate) for more information.
-///
-/// # Example
-///
-/// ```ignore
-/// // Produces a JNI function manually named "Cipher_Rot13" (with JNI "_1" mangling)
-/// // and a TypeScript function named "Rot13",
-/// // with the FFI entry point disabled.
-/// # #[cfg(ignore_even_when_running_all_tests)]
-/// #[bridge_fn_buffer(ffi = false, jni = "Cipher_1Rot13")]
-/// fn Rot13<E: Env>(env: E, buffer: &[u8]) -> E::Buffer {
-///   // let result = ...;
-///   e.buffer(result)
-/// }
-/// ```
-#[proc_macro_attribute]
-pub fn bridge_fn_buffer(attr: TokenStream, item: TokenStream) -> TokenStream {
-    bridge_fn_impl(attr, item, ResultKind::Buffer)
 }
 
 /// Generates C, Java, and Node entry points for a Rust function that returns `Result<(), _>`.

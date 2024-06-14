@@ -1,28 +1,36 @@
+plugins {
+    id "de.undercouch.download" version "5.0.2"
+}
+
+def version_number = "0.30.1"
+
 subprojects {
-    ext.version_number     = "0.9.6"
-    ext.group_info         = "org.whispersystems"
+    ext.version_number     = version_number
+    ext.group_info         = "org.signal"
 
     if (JavaVersion.current().isJava8Compatible()) {
         allprojects {
             tasks.withType(Javadoc) {
+                options.encoding = 'UTF-8'
                 options.addStringOption('Xdoclint:none', '-quiet')
             }
         }
     }
-}
 
-task makeJniLibrariesAndroid(type:Exec) {
-  group 'Rust'
-  description 'Build the JNI libraries'
-
-  commandLine './build_jni.sh', 'android'
+    allprojects {
+        tasks.withType(JavaCompile) {
+            options.encoding = 'UTF-8'
+            options.compilerArgs += ["-Xlint:deprecation", "-Xlint:fallthrough", "-Xlint:unchecked"]
+        }
+    }
 }
 
 task makeJniLibrariesDesktop(type:Exec) {
   group 'Rust'
   description 'Build the JNI libraries'
 
-  commandLine './build_jni.sh', 'desktop'
+  // Explicitly specify 'bash' for Windows compatibility.
+  commandLine 'bash', './build_jni.sh', 'desktop'
 }
 
 task cargoClean(type:Exec) {
@@ -35,7 +43,7 @@ task clean(type: Delete) {
   delete fileTree('./android/src/main/jniLibs') {
     include '**/*.so'
   }
-  delete fileTree('./java/src/main/resources') {
+  delete fileTree('./shared/resources') {
     include '**/*.so'
     include '**/*.dylib'
     include '**/*.dll'
@@ -43,9 +51,33 @@ task clean(type: Delete) {
 }
 clean.dependsOn(cargoClean)
 
-task makeAll() {
-  group 'Rust'
-  description 'Build the native libraries'
+task downloadNonLinuxLibraries(type: Download) {
+  // Must be explicitly enabled.
+  enabled false
 
-  dependsOn 'makeJniLibrariesDesktop', 'makeJniLibrariesAndroid'
+  def extraResources = ['signal_jni.dll', 'libsignal_jni.dylib']
+
+  src(extraResources.collect {
+    'https://github.com/signalapp/libsignal/releases/download/v' + version_number + '/' + it
+  })
+  dest 'shared/resources'
+}
+
+// PUBLISHING
+
+def isReleaseBuild() {
+    return version.contains("SNAPSHOT") == false
+}
+
+def getReleaseRepositoryUrl() {
+    return hasProperty('sonatypeRepo') ? sonatypeRepo
+            : "https://oss.sonatype.org/service/local/staging/deploy/maven2/"
+}
+
+def getRepositoryUsername() {
+    return hasProperty('sonatypeUsername') ? sonatypeUsername : ""
+}
+
+def getRepositoryPassword() {
+    return hasProperty('sonatypePassword') ? sonatypePassword : ""
 }

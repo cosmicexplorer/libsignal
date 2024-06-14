@@ -7,6 +7,7 @@ use rand::Rng;
 use serde::Deserialize;
 use std::collections::HashMap;
 
+#[allow(dead_code)]
 #[derive(Deserialize, Debug)]
 struct WycheproofTest {
     #[serde(rename = "tcId")]
@@ -24,6 +25,7 @@ struct WycheproofTest {
     flags: Vec<String>,
 }
 
+#[allow(dead_code)]
 #[derive(Deserialize, Debug)]
 struct WycheproofTestGroup {
     #[serde(rename = "ivSize")]
@@ -37,6 +39,7 @@ struct WycheproofTestGroup {
     tests: Vec<WycheproofTest>,
 }
 
+#[allow(dead_code)]
 #[derive(Deserialize, Debug)]
 struct WycheproofTestSet {
     algorithm: String,
@@ -117,10 +120,10 @@ fn test_kat(kat: WycheproofTest) -> Result<(), signal_crypto::Error> {
 
         gcm_dec.decrypt(&mut buf)?;
 
-        assert_eq!(
+        assert!(matches!(
             gcm_dec.verify_tag(&tag),
             Err(signal_crypto::Error::InvalidTag)
-        );
+        ));
     }
 
     Ok(())

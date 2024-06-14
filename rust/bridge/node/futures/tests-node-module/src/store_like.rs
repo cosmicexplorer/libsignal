@@ -27,8 +27,7 @@ impl NameStore {
         let store_object_shared = self.store_object.clone();
         JsFuture::get_promise(&self.js_channel, move |cx| {
             let store_object = store_object_shared.to_inner(cx);
-            let result = call_method(cx, store_object, "getName", std::iter::empty())?
-                .downcast_or_throw(cx)?;
+            let result = call_method(cx, store_object, "getName", [])?.downcast_or_throw(cx)?;
             store_object_shared.finalize(cx);
             Ok(result)
         })
@@ -61,7 +60,7 @@ async fn double_name_from_store_impl(store: &mut NameStore) -> Result<String, St
 }
 
 // function doubleNameFromStore(store: { getName: () => Promise<string> }): Promise<string>
-pub fn double_name_from_store(mut cx: FunctionContext) -> JsResult<JsObject> {
+pub fn double_name_from_store(mut cx: FunctionContext) -> JsResult<JsPromise> {
     let js_store = cx.argument(0)?;
     let mut store = NameStore::new(&mut cx, js_store);
 
@@ -84,7 +83,7 @@ async fn double_name_from_store_using_join_impl(store: &mut NameStore) -> Result
 }
 
 // function doubleNameFromStoreUsingJoin(store: { getName: () => Promise<string> }): Promise<string>
-pub fn double_name_from_store_using_join(mut cx: FunctionContext) -> JsResult<JsObject> {
+pub fn double_name_from_store_using_join(mut cx: FunctionContext) -> JsResult<JsPromise> {
     let js_store = cx.argument(0)?;
     let mut store = NameStore::new(&mut cx, js_store);
 

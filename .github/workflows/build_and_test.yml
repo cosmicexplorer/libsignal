@@ -2,15 +2,22 @@ name: Build and Test
 
 on:
   push:
-    branches: [ master ]
+    branches: [ main ]
   pull_request: # all target branches
 
 env:
   CARGO_TERM_COLOR: always
+  NDK_VERSION: 25.2.9519653
+  RUST_BACKTRACE: 1
 
 jobs:
   changes:
     name: Classify changes
+
+    permissions:
+      # Needed for dorny/paths-filter
+      contents: read
+      pull-requests: read
 
     runs-on: ubuntu-latest
 
@@ -22,9 +29,9 @@ jobs:
       rust_ios: ${{ steps.filter.outputs.rust_ios }}
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
 
-    - uses: dorny/paths-filter@v2
+    - uses: dorny/paths-filter@4512585405083f25c027a35db413c2b3b9006d50 # v2.11.1
       id: filter
       with:
         filters: |
@@ -51,24 +58,21 @@ jobs:
           node:
           - *all
           - '.nvmrc'
-          - '.prettierignore'
-          - '.prettierrc'
-          - 'binding.gyp'
+          - '.prettierrc.js'
           - 'node/**'
-          - 'package.json'
           - 'rust/bridge/node/**'
-          - 'yarn.lock'
           rust_ios: &rust_ios
           - *all
           - 'rust/bridge/ffi/**'
           swift:
           - *rust_ios
           - 'swift/**'
-          - 'SignalClient.podspec'
+          - 'LibSignalClient.podspec'
           ignored:
           - 'LICENSE'
           - '*.md'
           - '.github/FUNDING.yml'
+          - '.github/stale.yml'
           - '.github/workflows/**'
           - '.gitignore'
 
@@ -76,8 +80,8 @@ jobs:
       run: echo "::error file=.github/workflows/build_and_test.yml::File not included in any filter" && false
       if: ${{ !contains(steps.filter.outputs.*, 'true') }}
 
-  rust-stable:
-    name: Rust stable
+  rust:
+    name: Rust
 
     runs-on: ubuntu-latest
 
@@ -85,84 +89,77 @@ jobs:
 
     if: ${{ needs.changes.outputs.rust == 'true' }}
 
+    strategy:
+      fail-fast: false
+      matrix:
+        version: [nightly, stable]
+        include:
+          - version: stable
+            toolchain: "+stable"
+
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
 
-    - run: sudo apt-get install gcc-multilib
+    - run: sudo apt-get update && sudo apt-get install gcc-multilib g++-multilib
 
-    - name: Install Rust
+    - run: rustup toolchain install $(cat rust-toolchain) --profile minimal --component rustfmt,clippy --target i686-unknown-linux-gnu
+      if: matrix.version == 'nightly'
+
+    - name: Install Rust (stable)
       run: rustup +stable target add i686-unknown-linux-gnu
-
-    - name: Build
-      run: cargo +stable build --verbose
-
-    - name: Run tests
-      run: cargo +stable test --workspace --verbose -- --include-ignored
-
-    - name: Run tests (32-bit)
-      # Exclude device-transfer because OpenSSL, used for reference results,
-      # doesn't support the --target option.
-      # Exclude signal-neon-futures because those tests run Node
-      run: cargo +stable test --workspace --verbose --target i686-unknown-linux-gnu --exclude device-transfer --exclude signal-neon-futures -- --include-ignored
-
-    - name: Build benches
-      run: cargo +stable build --workspace --benches --verbose
-
-  rust-nightly:
-    name: Rust nightly
-
-    runs-on: ubuntu-latest
-
-    needs: changes
-
-    if: ${{ needs.changes.outputs.rust == 'true' }}
-
-    steps:
-    - uses: actions/checkout@v2
-
-    - run: sudo apt-get install gcc-multilib
-
-    - name: Install Rust
-      uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
-        components: rustfmt, clippy
-        target: i686-unknown-linux-gnu
+      if: matrix.version == 'stable'
 
     # This should be done before anything else
     # because it also checks that the lockfile is up to date.
     - name: Check for duplicate dependencies
       run: ./bin/verify_duplicate_crates
+      if: matrix.version == 'nightly'
 
     - name: Rustfmt check
       run: cargo fmt --all -- --check
+      if: matrix.version == 'nightly'
 
     - name: Check bridge versioning
       run: ./bin/update_versions.py
+      if: matrix.version == 'nightly'
 
     - name: Build
-      run: cargo build --all --verbose
+      run: cargo ${{ matrix.toolchain }} build --workspace --features libsignal-ffi/signal-media --verbose
 
     - name: Run tests
-      run: cargo test --all --verbose -- -Z unstable-options --include-ignored
+      run: cargo ${{ matrix.toolchain }} test --workspace --all-features --verbose -- --include-ignored
 
     - name: Run tests (32-bit)
-      # Exclude device-transfer because OpenSSL, used for reference results,
-      # doesn't support the --target option.
       # Exclude signal-neon-futures because those tests run Node
-      run: cargo test --all --verbose --target i686-unknown-linux-gnu --exclude device-transfer --exclude signal-neon-futures -- -Z unstable-options --include-ignored
+      run: cargo ${{ matrix.toolchain }} test --workspace --all-features --verbose --target i686-unknown-linux-gnu --exclude signal-neon-futures -- --include-ignored
 
-    - name: Build benches
-      run: cargo build --benches --verbose
+    - name: Test run benches
+      run: cargo ${{ matrix.toolchain }} test --workspace --benches --all-features --verbose
+
+    - name: Build bins
+      run: cargo ${{ matrix.toolchain }} build  --bins --all-features --verbose
 
     - name: Clippy
-      run: cargo clippy --workspace --all-targets -- -D warnings
+      run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      if: matrix.version == 'nightly'
 
-    - name: Clippy (protocol fuzzing)
-      run: cargo clippy --all-targets -- -D warnings
+    # We check the fuzz targets on stable because they don't have lockfiles,
+    # and crates don't generally support arbitrary nightly versions.
+    # See https://github.com/dtolnay/proc-macro2/issues/307 for an example.
+
+    - name: Check that the protocol fuzz target still builds
+      run: cargo +stable check --all-targets
       working-directory: rust/protocol/fuzz
       env:
         RUSTFLAGS: --cfg fuzzing
+      if: matrix.version == 'stable'
+
+    - name: Check that the attest fuzz target still builds
+      run: cargo +stable check --all-targets
+      working-directory: rust/attest/fuzz
+      env:
+        RUSTFLAGS: --cfg fuzzing
+      if: matrix.version == 'stable'
 
   java:
     name: Java
@@ -174,30 +171,18 @@ jobs:
     if: ${{ needs.changes.outputs.java == 'true' }}
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
 
-    - name: Install NDK 21.0.6113669
-      run: sudo ${ANDROID_HOME}/tools/bin/sdkmanager --install "ndk;21.0.6113669"
+    - name: Install NDK
+      run: sudo ${ANDROID_HOME}/tools/bin/sdkmanager --install "ndk;${NDK_VERSION}"
 
-    - name: Install Rust
-      uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
-
-    - name: Install Android toolchains
-      run: rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android i686-linux-android
-
-    - name: Install NDK tool
-      run: cargo install --version=1.0.0 cargo-ndk
+    - run: rustup toolchain install $(cat rust-toolchain) --profile minimal --target aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
 
     - name: Verify that the JNI bindings are up to date
       run: rust/bridge/jni/bin/gen_java_decl.py --verify
 
-    - name: Build libsignal-client-java
-      run: ./gradlew build
+    - run: ./gradlew build
       working-directory: java
-      env:
-        ANDROID_NDK_HOME: /usr/local/lib/android/sdk/ndk-bundle
 
     - run: java/check_code_size.py
 
@@ -215,82 +200,60 @@ jobs:
     if: ${{ needs.changes.outputs.node == 'true' }}
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
 
-    - name: Install nightly rust
-      uses: actions-rs/toolchain@v1
+    - run: rustup toolchain install $(cat rust-toolchain) --profile minimal
+
+    # install nasm compiler for boring
+    - name: Install nasm
+      if: startsWith(matrix.os, 'windows')
+      run: choco install nasm
+      shell: cmd
+
+    - uses: actions/setup-node@v3
       with:
-        profile: minimal
-
-    - name: Get Node version from .nvmrc
-      id: get-nvm-version
-      shell: bash
-      run: echo "::set-output name=node-version::$(cat .nvmrc)"
-
-    - uses: actions/setup-node@v2
-      with:
-        node-version: ${{ steps.get-nvm-version.outputs.node-version }}
+        node-version-file: '.nvmrc'
 
     - name: Verify that the Node bindings are up to date
       run: rust/bridge/node/bin/gen_ts_decl.py --verify
       if: matrix.os == 'ubuntu-latest'
 
     - run: yarn install --frozen-lockfile
+      working-directory: node
 
     - run: yarn tsc
+      working-directory: node
 
     - run: yarn lint
       if: matrix.os == 'ubuntu-latest'
+      working-directory: node
 
     - run: yarn format -c
       if: matrix.os == 'ubuntu-latest'
+      working-directory: node
 
-    - name: Run yarn test
-      uses: GabrielBB/xvfb-action@v1.4
-      with:
-        # The tests use an Electron-based runner, so we need to set up a dummy display for them.
-        run: yarn test
+    - run: yarn test
+      working-directory: node
 
   swift_package:
     name: Swift Package
 
-    runs-on: macOS-latest
+    runs-on: ubuntu-latest
 
     needs: changes
 
     if: ${{ needs.changes.outputs.swift == 'true' }}
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
 
-    - name: Install Rust
-      uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
+    - run: rustup toolchain install $(cat rust-toolchain) --profile minimal
 
     - name: Build libsignal-ffi
       run: swift/build_ffi.sh -d -v --verify-ffi
 
     - name: Build Swift and run tests
-      run: swift test -v --enable-code-coverage
-      working-directory: swift
-
-    - name: Run lint
-      run: swiftlint lint --strict --reporter github-actions-logging
-      working-directory: swift
-
-    - name: Generate coverage report
-      run: xcrun llvm-cov show --format=html --instr-profile .build/x86_64-apple-macosx/debug/codecov/default.profdata .build/x86_64-apple-macosx/debug/*.xctest/Contents/MacOS/* Sources --output-dir coverage-report
-      working-directory: swift
-
-    - name: Upload coverage report
-      uses: actions/upload-artifact@v2
-      with:
-        name: Coverage
-        path: swift/coverage-report
-
-    - name: Summarize coverage
-      run: xcrun llvm-cov report --instr-profile .build/x86_64-apple-macosx/debug/codecov/default.profdata .build/x86_64-apple-macosx/debug/*.xctest/Contents/MacOS/* Sources
+      run: swift test -v
       working-directory: swift
 
   swift_cocoapod:
@@ -303,31 +266,33 @@ jobs:
     if: ${{ needs.changes.outputs.swift == 'true' }}
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
+
+      - name: Run lint
+        run: swiftlint lint --strict --reporter github-actions-logging
+        working-directory: swift
 
       - name: Check out SignalCoreKit
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           repository: signalapp/SignalCoreKit
           path: SignalCoreKit
 
-      - name: Install Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
+      - run: rustup toolchain install $(cat rust-toolchain) --profile minimal --target x86_64-apple-ios,aarch64-apple-ios-sim
 
-      - name: Add iOS targets
-        run: rustup target add x86_64-apple-ios aarch64-apple-ios
+      # Build only the targets that `pod lib lint` will test building.
+      - name: Build for x86_64-apple-ios
+        run: swift/build_ffi.sh --release
+        env:
+          CARGO_BUILD_TARGET: x86_64-apple-ios
 
-      - name: Install Xargo
-        run: cargo install xargo
-
-      - name: Add rust-src component
-        run: rustup component add rust-src
+      - name: Build for aarch64-apple-ios-sim
+        run: swift/build_ffi.sh --release
+        env:
+          CARGO_BUILD_TARGET: aarch64-apple-ios-sim
 
       - name: Run pod lint
         # No import validation because it tries to build unsupported platforms (like 32-bit iOS).
         run: pod lib lint --verbose --platforms=ios --include-podspecs=SignalCoreKit/SignalCoreKit.podspec --skip-import-validation
         env:
-          XCODE_XCCONFIG_FILE: swift/PodLibLint.xcconfig
-
+          SKIP_CATALYST: 1

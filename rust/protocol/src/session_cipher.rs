@@ -1,21 +1,19 @@
 //
-// Copyright 2020-2021 Signal Messenger, LLC.
+// Copyright 2020-2022 Signal Messenger, LLC.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-use crate::{
-    CiphertextMessage, Context, Direction, IdentityKeyStore, KeyPair, PreKeySignalMessage,
-    PreKeyStore, ProtocolAddress, PublicKey, Result, SessionRecord, SessionStore, SignalMessage,
-    SignalProtocolError, SignedPreKeyStore,
-};
+use rand::{CryptoRng, Rng};
 
 use crate::consts::MAX_FORWARD_JUMPS;
-use crate::crypto;
 use crate::ratchet::{ChainKey, MessageKeys};
-use crate::session;
-use crate::state::SessionState;
-
-use rand::{CryptoRng, Rng};
+use crate::state::{InvalidSessionError, SessionState};
+use crate::{
+    session, CiphertextMessage, CiphertextMessageType, Context, Direction, IdentityKeyStore,
+    KeyPair, KyberPayload, KyberPreKeyStore, PreKeySignalMessage, PreKeyStore, ProtocolAddress,
+    PublicKey, Result, SessionRecord, SessionStore, SignalMessage, SignalProtocolError,
+    SignedPreKeyStore,
+};
 
 pub async fn message_encrypt(
     ptext: &[u8],
@@ -27,32 +25,42 @@ pub async fn message_encrypt(
     let mut session_record = session_store
         .load_session(remote_address, ctx)
         .await?
-        .ok_or_else(|| SignalProtocolError::SessionNotFound(format!("{}", remote_address)))?;
-    let session_state = session_record.session_state_mut()?;
+        .ok_or_else(|| SignalProtocolError::SessionNotFound(remote_address.clone()))?;
+    let session_state = session_record
+        .session_state_mut()
+        .ok_or_else(|| SignalProtocolError::SessionNotFound(remote_address.clone()))?;
 
     let chain_key = session_state.get_sender_chain_key()?;
 
-    let message_keys = chain_key.message_keys()?;
+    let message_keys = chain_key.message_keys();
 
     let sender_ephemeral = session_state.sender_ratchet_key()?;
-    let previous_counter = session_state.previous_counter()?;
+    let previous_counter = session_state.previous_counter();
     let session_version = session_state.session_version()? as u8;
 
     let local_identity_key = session_state.local_identity_key()?;
-    let their_identity_key = session_state
-        .remote_identity_key()?
-        .ok_or(SignalProtocolError::InvalidSessionStructure)?;
+    let their_identity_key = session_state.remote_identity_key()?.ok_or_else(|| {
+        SignalProtocolError::InvalidState(
+            "message_encrypt",
+            format!("no remote identity key for {}", remote_address),
+        )
+    })?;
 
-    let ctext = crypto::aes_256_cbc_encrypt(ptext, message_keys.cipher_key(), message_keys.iv())?;
+    let ctext =
+        signal_crypto::aes_256_cbc_encrypt(ptext, message_keys.cipher_key(), message_keys.iv())
+            .map_err(|_| {
+                log::error!("session state corrupt for {}", remote_address);
+                SignalProtocolError::InvalidSessionStructure("invalid sender chain message keys")
+            })?;
 
     let message = if let Some(items) = session_state.unacknowledged_pre_key_message_items()? {
-        let local_registration_id = session_state.local_registration_id()?;
+        let local_registration_id = session_state.local_registration_id();
 
         log::info!(
             "Building PreKeyWhisperMessage for: {} with preKeyId: {}",
             remote_address,
             items
-                .pre_key_id()?
+                .pre_key_id()
                 .map_or_else(|| "<none>".to_string(), |id| id.to_string())
         );
 
@@ -67,12 +75,18 @@ pub async fn message_encrypt(
             &their_identity_key,
         )?;
 
+        let kyber_payload = items
+            .kyber_pre_key_id()
+            .zip(items.kyber_ciphertext())
+            .map(|(id, ciphertext)| KyberPayload::new(id, ciphertext.into()));
+
         CiphertextMessage::PreKeySignalMessage(PreKeySignalMessage::new(
             session_version,
             local_registration_id,
-            items.pre_key_id()?,
-            items.signed_pre_key_id()?,
-            *items.base_key()?,
+            items.pre_key_id(),
+            items.signed_pre_key_id(),
+            kyber_payload,
+            *items.base_key(),
             local_identity_key,
             message,
         )?)
@@ -89,7 +103,7 @@ pub async fn message_encrypt(
         )?)
     };
 
-    session_state.set_sender_chain_key(&chain_key.next_chain_key()?)?;
+    session_state.set_sender_chain_key(&chain_key.next_chain_key());
 
     // XXX why is this check after everything else?!!
     if !identity_store
@@ -120,6 +134,7 @@ pub async fn message_encrypt(
     Ok(message)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn message_decrypt<R: Rng + CryptoRng>(
     ciphertext: &CiphertextMessage,
     remote_address: &ProtocolAddress,
@@ -127,6 +142,7 @@ pub async fn message_decrypt<R: Rng + CryptoRng>(
     identity_store: &mut dyn IdentityKeyStore,
     pre_key_store: &mut dyn PreKeyStore,
     signed_pre_key_store: &mut dyn SignedPreKeyStore,
+    kyber_pre_key_store: &mut dyn KyberPreKeyStore,
     csprng: &mut R,
     ctx: Context,
 ) -> Result<Vec<u8>> {
@@ -150,17 +166,20 @@ pub async fn message_decrypt<R: Rng + CryptoRng>(
                 identity_store,
                 pre_key_store,
                 signed_pre_key_store,
+                kyber_pre_key_store,
                 csprng,
                 ctx,
             )
             .await
         }
-        _ => Err(SignalProtocolError::InvalidArgument(
-            "SessionCipher::decrypt cannot decrypt this message type".to_owned(),
-        )),
+        _ => Err(SignalProtocolError::InvalidArgument(format!(
+            "message_decrypt cannot be used to decrypt {:?} messages",
+            ciphertext.message_type()
+        ))),
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn message_decrypt_prekey<R: Rng + CryptoRng>(
     ciphertext: &PreKeySignalMessage,
     remote_address: &ProtocolAddress,
@@ -168,6 +187,7 @@ pub async fn message_decrypt_prekey<R: Rng + CryptoRng>(
     identity_store: &mut dyn IdentityKeyStore,
     pre_key_store: &mut dyn PreKeyStore,
     signed_pre_key_store: &mut dyn SignedPreKeyStore,
+    kyber_pre_key_store: &mut dyn KyberPreKeyStore,
     csprng: &mut R,
     ctx: Context,
 ) -> Result<Vec<u8>> {
@@ -177,19 +197,20 @@ pub async fn message_decrypt_prekey<R: Rng + CryptoRng>(
         .unwrap_or_else(SessionRecord::new_fresh);
 
     // Make sure we log the session state if we fail to process the pre-key.
-    let pre_key_id_or_err = session::process_prekey(
+    let pre_key_used_or_err = session::process_prekey(
         ciphertext,
         remote_address,
         &mut session_record,
         identity_store,
         pre_key_store,
         signed_pre_key_store,
+        kyber_pre_key_store,
         ctx,
     )
     .await;
 
-    let pre_key_id = match pre_key_id_or_err {
-        Ok(id) => id,
+    let pre_key_used = match pre_key_used_or_err {
+        Ok(result) => result,
         Err(e) => {
             let errs = [e];
             log::error!(
@@ -210,6 +231,7 @@ pub async fn message_decrypt_prekey<R: Rng + CryptoRng>(
         remote_address,
         &mut session_record,
         ciphertext.message(),
+        CiphertextMessageType::PreKey,
         csprng,
     )?;
 
@@ -217,8 +239,14 @@ pub async fn message_decrypt_prekey<R: Rng + CryptoRng>(
         .store_session(remote_address, &session_record, ctx)
         .await?;
 
-    if let Some(pre_key_id) = pre_key_id {
+    if let Some(pre_key_id) = pre_key_used.pre_key_id {
         pre_key_store.remove_pre_key(pre_key_id, ctx).await?;
+    }
+
+    if let Some(kyber_pre_key_id) = pre_key_used.kyber_pre_key_id {
+        kyber_pre_key_store
+            .mark_kyber_pre_key_used(kyber_pre_key_id, ctx)
+            .await?;
     }
 
     Ok(ptext)
@@ -235,16 +263,23 @@ pub async fn message_decrypt_signal<R: Rng + CryptoRng>(
     let mut session_record = session_store
         .load_session(remote_address, ctx)
         .await?
-        .ok_or_else(|| SignalProtocolError::SessionNotFound(format!("{}", remote_address)))?;
+        .ok_or_else(|| SignalProtocolError::SessionNotFound(remote_address.clone()))?;
 
-    let ptext =
-        decrypt_message_with_record(remote_address, &mut session_record, ciphertext, csprng)?;
+    let ptext = decrypt_message_with_record(
+        remote_address,
+        &mut session_record,
+        ciphertext,
+        CiphertextMessageType::Whisper,
+        csprng,
+    )?;
 
     // Why are we performing this check after decryption instead of before?
     let their_identity_key = session_record
-        .session_state()?
-        .remote_identity_key()?
-        .ok_or(SignalProtocolError::InvalidSessionStructure)?;
+        .session_state()
+        .expect("successfully decrypted; must have a current state")
+        .remote_identity_key()
+        .expect("successfully decrypted; must have a remote identity key")
+        .expect("successfully decrypted; must have a remote identity key");
 
     if !identity_store
         .is_trusted_identity(
@@ -288,10 +323,10 @@ fn create_decryption_failure_log(
     fn append_session_summary(
         lines: &mut Vec<String>,
         idx: usize,
-        state: Result<&SessionState>,
+        state: std::result::Result<&SessionState, InvalidSessionError>,
         err: Option<&SignalProtocolError>,
     ) {
-        let chains = state.and_then(|state| state.all_receiver_chain_logging_info());
+        let chains = state.map(|state| state.all_receiver_chain_logging_info());
         match (err, &chains) {
             (Some(err), Ok(chains)) => {
                 lines.push(format!(
@@ -347,7 +382,7 @@ fn create_decryption_failure_log(
         ciphertext.counter()
     ));
 
-    if let Ok(current_session) = record.session_state() {
+    if let Some(current_session) = record.session_state() {
         let err = errs.first();
         if err.is_some() {
             errs = &errs[1..];
@@ -376,13 +411,19 @@ fn decrypt_message_with_record<R: Rng + CryptoRng>(
     remote_address: &ProtocolAddress,
     record: &mut SessionRecord,
     ciphertext: &SignalMessage,
+    original_message_type: CiphertextMessageType,
     csprng: &mut R,
 ) -> Result<Vec<u8>> {
+    debug_assert!(matches!(
+        original_message_type,
+        CiphertextMessageType::Whisper | CiphertextMessageType::PreKey
+    ));
     let log_decryption_failure = |state: &SessionState, error: &SignalProtocolError| {
         // A warning rather than an error because we try multiple sessions.
         log::warn!(
-            "Failed to decrypt whisper message with ratchet key: {} and counter: {}. \
+            "Failed to decrypt {:?} message with ratchet key: {} and counter: {}. \
              Session loaded for {}. Local session has base key: {} and counter: {}. {}",
+            original_message_type,
             ciphertext
                 .sender_ratchet_key()
                 .public_key_bytes()
@@ -392,28 +433,35 @@ fn decrypt_message_with_record<R: Rng + CryptoRng>(
             state
                 .sender_ratchet_key_for_logging()
                 .unwrap_or_else(|e| format!("<error: {}>", e)),
-            state.previous_counter().unwrap_or(u32::MAX),
+            state.previous_counter(),
             error
         );
     };
 
     let mut errs = vec![];
 
-    if let Ok(current_state) = record.session_state() {
+    if let Some(current_state) = record.session_state() {
         let mut current_state = current_state.clone();
-        let result =
-            decrypt_message_with_state(&mut current_state, ciphertext, remote_address, csprng);
+        let result = decrypt_message_with_state(
+            CurrentOrPrevious::Current,
+            &mut current_state,
+            ciphertext,
+            original_message_type,
+            remote_address,
+            csprng,
+        );
 
         match result {
             Ok(ptext) => {
                 log::info!(
-                    "decrypted message from {} with current session state (base key {})",
+                    "decrypted {:?} message from {} with current session state (base key {})",
+                    original_message_type,
                     remote_address,
                     current_state
                         .sender_ratchet_key_for_logging()
                         .expect("successful decrypt always has a valid base key"),
                 );
-                record.set_session_state(current_state)?; // update the state
+                record.set_session_state(current_state); // update the state
                 return Ok(ptext);
             }
             Err(SignalProtocolError::DuplicatedMessage(_, _)) => {
@@ -432,12 +480,20 @@ fn decrypt_message_with_record<R: Rng + CryptoRng>(
     for (idx, previous) in record.previous_session_states().enumerate() {
         let mut previous = previous?;
 
-        let result = decrypt_message_with_state(&mut previous, ciphertext, remote_address, csprng);
+        let result = decrypt_message_with_state(
+            CurrentOrPrevious::Previous,
+            &mut previous,
+            ciphertext,
+            original_message_type,
+            remote_address,
+            csprng,
+        );
 
         match result {
             Ok(ptext) => {
                 log::info!(
-                    "decrypted message from {} with PREVIOUS session state (base key {})",
+                    "decrypted {:?} message from {} with PREVIOUS session state (base key {})",
+                    original_message_type,
                     remote_address,
                     previous
                         .sender_ratchet_key_for_logging()
@@ -457,12 +513,12 @@ fn decrypt_message_with_record<R: Rng + CryptoRng>(
     }
 
     if let Some((ptext, idx, updated_session)) = updated_session {
-        record.promote_old_session(idx, updated_session)?;
+        record.promote_old_session(idx, updated_session);
         Ok(ptext)
     } else {
         let previous_state_count = || record.previous_session_states().len();
 
-        if let Ok(current_state) = record.session_state() {
+        if let Some(current_state) = record.session_state() {
             log::error!(
                 "No valid session for recipient: {}, current session base key {}, number of previous states: {}",
                 remote_address,
@@ -482,19 +538,38 @@ fn decrypt_message_with_record<R: Rng + CryptoRng>(
             create_decryption_failure_log(remote_address, &errs, record, ciphertext)?
         );
         Err(SignalProtocolError::InvalidMessage(
-            "Message decryption failed",
+            original_message_type,
+            "decryption failed",
         ))
     }
 }
 
+#[derive(Clone, Copy)]
+enum CurrentOrPrevious {
+    Current,
+    Previous,
+}
+
+impl std::fmt::Display for CurrentOrPrevious {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Current => write!(f, "current"),
+            Self::Previous => write!(f, "previous"),
+        }
+    }
+}
+
 fn decrypt_message_with_state<R: Rng + CryptoRng>(
+    current_or_previous: CurrentOrPrevious,
     state: &mut SessionState,
     ciphertext: &SignalMessage,
+    original_message_type: CiphertextMessageType,
     remote_address: &ProtocolAddress,
     csprng: &mut R,
 ) -> Result<Vec<u8>> {
     if !state.has_sender_chain()? {
         return Err(SignalProtocolError::InvalidMessage(
+            original_message_type,
             "No session available to decrypt",
         ));
     }
@@ -509,12 +584,21 @@ fn decrypt_message_with_state<R: Rng + CryptoRng>(
     let their_ephemeral = ciphertext.sender_ratchet_key();
     let counter = ciphertext.counter();
     let chain_key = get_or_create_chain_key(state, their_ephemeral, remote_address, csprng)?;
-    let message_keys =
-        get_or_create_message_key(state, their_ephemeral, remote_address, &chain_key, counter)?;
+    let message_keys = get_or_create_message_key(
+        state,
+        their_ephemeral,
+        remote_address,
+        original_message_type,
+        &chain_key,
+        counter,
+    )?;
 
-    let their_identity_key = state
-        .remote_identity_key()?
-        .ok_or(SignalProtocolError::InvalidSessionStructure)?;
+    let their_identity_key =
+        state
+            .remote_identity_key()?
+            .ok_or(SignalProtocolError::InvalidSessionStructure(
+                "cannot decrypt without remote identity key",
+            ))?;
 
     let mac_valid = ciphertext.verify_mac(
         &their_identity_key,
@@ -523,16 +607,38 @@ fn decrypt_message_with_state<R: Rng + CryptoRng>(
     )?;
 
     if !mac_valid {
-        return Err(SignalProtocolError::InvalidCiphertext);
+        return Err(SignalProtocolError::InvalidMessage(
+            original_message_type,
+            "MAC verification failed",
+        ));
     }
 
-    let ptext = crypto::aes_256_cbc_decrypt(
+    let ptext = match signal_crypto::aes_256_cbc_decrypt(
         ciphertext.body(),
         message_keys.cipher_key(),
         message_keys.iv(),
-    )?;
+    ) {
+        Ok(ptext) => ptext,
+        Err(signal_crypto::DecryptionError::BadKeyOrIv) => {
+            log::warn!(
+                "{} session state corrupt for {}",
+                current_or_previous,
+                remote_address,
+            );
+            return Err(SignalProtocolError::InvalidSessionStructure(
+                "invalid receiver chain message keys",
+            ));
+        }
+        Err(signal_crypto::DecryptionError::BadCiphertext(msg)) => {
+            log::warn!("failed to decrypt 1:1 message: {}", msg);
+            return Err(SignalProtocolError::InvalidMessage(
+                original_message_type,
+                "failed to decrypt",
+            ));
+        }
+    };
 
-    state.clear_unacknowledged_pre_key_message()?;
+    state.clear_unacknowledged_pre_key_message();
 
     Ok(ptext)
 }
@@ -558,8 +664,8 @@ fn get_or_create_chain_key<R: Rng + CryptoRng>(
         .0
         .create_chain(their_ephemeral, &our_new_ephemeral.private_key)?;
 
-    state.set_root_key(&sender_chain.0)?;
-    state.add_receiver_chain(their_ephemeral, &receiver_chain.1)?;
+    state.set_root_key(&sender_chain.0);
+    state.add_receiver_chain(their_ephemeral, &receiver_chain.1);
 
     let current_index = state.get_sender_chain_key()?.index();
     let previous_index = if current_index > 0 {
@@ -567,8 +673,8 @@ fn get_or_create_chain_key<R: Rng + CryptoRng>(
     } else {
         0
     };
-    state.set_previous_counter(previous_index)?;
-    state.set_sender_chain(&our_new_ephemeral, &sender_chain.1)?;
+    state.set_previous_counter(previous_index);
+    state.set_sender_chain(&our_new_ephemeral, &sender_chain.1);
 
     Ok(receiver_chain.1)
 }
@@ -577,6 +683,7 @@ fn get_or_create_message_key(
     state: &mut SessionState,
     their_ephemeral: &PublicKey,
     remote_address: &ProtocolAddress,
+    original_message_type: CiphertextMessageType,
     chain_key: &ChainKey,
     counter: u32,
 ) -> Result<MessageKeys> {
@@ -618,6 +725,7 @@ fn get_or_create_message_key(
                 counter
             );
             return Err(SignalProtocolError::InvalidMessage(
+                original_message_type,
                 "message from too far into the future",
             ));
         }
@@ -626,11 +734,11 @@ fn get_or_create_message_key(
     let mut chain_key = chain_key.clone();
 
     while chain_key.index() < counter {
-        let message_keys = chain_key.message_keys()?;
+        let message_keys = chain_key.message_keys();
         state.set_message_keys(their_ephemeral, &message_keys)?;
-        chain_key = chain_key.next_chain_key()?;
+        chain_key = chain_key.next_chain_key();
     }
 
-    state.set_receiver_chain_key(their_ephemeral, &chain_key.next_chain_key()?)?;
-    chain_key.message_keys()
+    state.set_receiver_chain_key(their_ephemeral, &chain_key.next_chain_key())?;
+    Ok(chain_key.message_keys())
 }
